@@ -10,6 +10,7 @@
 mod canonical;
 mod character;
 mod chat;
+mod codec;
 mod command;
 mod depths;
 #[doc(hidden)]
@@ -21,6 +22,7 @@ pub mod party;
 mod projection;
 mod quest;
 mod raid;
+mod records;
 mod redirect;
 mod rewards;
 mod sheet;

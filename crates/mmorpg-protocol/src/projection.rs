@@ -8,31 +8,32 @@
 use std::collections::BTreeSet;
 
 use mmorpg_core::{
-    AbilityId, CastView, ClassChoice, EntityFlags, EntityKind, EntitySnapshot,
-    GLOBAL_COOLDOWN_TICKS, GuardView, MAX_CHAT_PER_TICK, MAX_EVENTS_PER_PLAYER,
-    MAX_VISIBLE_ENTITIES, PlayerProjection, ResourceKind, ResourceView, TargetDetail, ViewerState,
-    ZoneSnapshot, ability_by_id,
+    CastView, ClassChoice, EntityKind, EntitySnapshot, GLOBAL_COOLDOWN_TICKS, GuardView,
+    MAX_CHAT_PER_TICK, MAX_EVENTS_PER_PLAYER, MAX_VISIBLE_ENTITIES, PlayerProjection, ResourceKind,
+    ResourceView, TargetDetail, ViewerState, ZoneEvent, ZoneSnapshot,
 };
 
+use crate::codec::Codec;
+use crate::records::{CastRecord, DebrisRecord, EntityRecord, ProjectileRecord};
 use crate::sheet::{
     Abilities, PublishStamps, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions,
     encode_sheets, revision,
 };
 use crate::wire::{
     COMMON_HEADER_BYTES, ENTITY_REF_BYTES, PLAYER_SNAPSHOT_SCOPE, decode_common_header,
-    decode_entity_kind, decode_entity_ref, decode_event, decode_u8_count, decode_u16_count,
-    encode_common_header, encode_entity_ref, encode_event, encode_u8_count, ensure_fully_consumed,
-    entity_kind_code, flag_byte, read_bool, read_flags, read_u8, take,
+    decode_entity_ref, decode_u8_count, decode_u16_count, encode_common_header, encode_entity_ref,
+    encode_u8_count, ensure_fully_consumed, flag_byte, read_bool, read_flags, read_u8, take,
 };
+use crate::wire::{EventRecord, SummonedRecord, TrapRecord};
 use crate::{MAX_PLAYER_PROJECTION_BYTES, ProtocolError};
 
 /// Content revision, acknowledged sequence and viewer ID after the prefix.
 const HEADER_BYTES: usize = COMMON_HEADER_BYTES + 8 + 4 + 4;
 /// Health, maximum health, level, flags and the viewer's target.
 const SELF_BYTES: usize = 4 + 4 + 1 + 8 + 4 + 1 + ENTITY_REF_BYTES;
-/// Ability ID (`u32`), flags (bit 0 channel), elapsed and total ticks; ability 0
-/// means no cast.
-pub const CAST_RECORD_BYTES: usize = 4 + 1 + 2 + 2;
+/// A [`CastRecord`]: ability ID (`u32`), flags (bit 0 channel), elapsed and total ticks;
+/// ability 0 means no cast.
+pub const CAST_RECORD_BYTES: usize = CastRecord::BYTES;
 /// Class code, resource kind/value/max, global cooldown, cast, melee damage
 /// range, the guard (lane code, protecting flag, break ticks), the melee
 /// stance and combo phase codes, breath ticks (#274), the harm stored against the target
@@ -46,47 +47,26 @@ const TARGET_BYTES: usize = ENTITY_REF_BYTES + CAST_RECORD_BYTES;
 /// projectile count (`u8`) and debris count (`u8`).
 pub const PLAYER_SNAPSHOT_FIXED_BYTES: usize =
     HEADER_BYTES + SELF_BYTES + SELF_ABILITY_BYTES + TARGET_BYTES + 2 + 1 + 1 + 1 + 1 + 2 + 1 + 1;
-/// A summoned obstacle (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health percent.
-pub const SUMMONED_RECORD_BYTES: usize = 4 + 1 + 12 + 2 + 1;
-/// A fired trap (#300): `u32` ID and `u16` age.
-pub const TRAP_RECORD_BYTES: usize = 4 + 2;
-/// `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16` rotation quaternion and age
-/// (#288).
-pub const DEBRIS_RECORD_BYTES: usize = 2 + 1 + 1 + 12 + 8 + 1;
+/// A [`SummonedRecord`] (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health percent.
+pub const SUMMONED_RECORD_BYTES: usize = SummonedRecord::BYTES;
+/// A [`TrapRecord`] (#300): `u32` ID and `u16` age.
+pub const TRAP_RECORD_BYTES: usize = TrapRecord::BYTES;
+/// A [`DebrisRecord`] (#288): `u16` ID, prop kind, piece index, `3 × i32` position, `4 × i16`
+/// rotation quaternion and age.
+pub const DEBRIS_RECORD_BYTES: usize = DebrisRecord::BYTES;
 /// At most this many pieces of debris, nearest first, take what budget the units leave.
 pub const MAX_WIRE_DEBRIS: usize = 16;
-/// `u16` ID, kind, `3 × i32` position, `u16` yaw, `i16` pitch and flags (#286).
-pub const PROJECTILE_RECORD_BYTES: usize = 2 + 1 + 12 + 2 + 2 + 1;
+/// A [`ProjectileRecord`] (#286): `u16` ID, kind, `3 × i32` position, `u16` yaw, `i16` pitch
+/// and state.
+pub const PROJECTILE_RECORD_BYTES: usize = ProjectileRecord::BYTES;
 /// At most this many projectiles, nearest first, share a projection's budget.
 pub const MAX_WIRE_PROJECTILES: usize = 8;
-/// Kind, `u32` flags or ID, source and target references, `u16` amount.
-pub const EVENT_RECORD_BYTES: usize = 1 + 4 + 2 * ENTITY_REF_BYTES + 2;
-/// Kind, ID, `u32` appearance, `3 × i32` position, `3 × i8` velocity, `u16`
-/// facing, level, health percent and flags. Only creatures are tapped, evade or are lootable,
-/// so on a player record those three flag bits carry its [`mmorpg_core::TraversalView`] code
-/// instead (#490, #516, #500): tapped is bit 0, evading bit 1 and lootable bit 2.
-/// On an NPC record the tapped, evading and lootable bits carry its posture code instead (#619,
-/// #991), and on a player record the health byte's high bit says it sits (#619).
-pub const ENTITY_RECORD_BYTES: usize = 1 + 4 + 4 + 12 + 3 + 2 + 1 + 1 + 1;
-/// The health byte's high bit on a player record: the player sits (#619).
-const SITTING_BIT: u8 = 0x80;
-/// The appearance word's high bit on a player record: the weapon is drawn (#802).
-const DRAWN_BIT: u32 = 0x8000_0000;
-/// The appearance word's bits 19–22 on a player record: 1 + its weapon family's code, 0 for
-/// none (#914; four bits since the two-handed family, #1073).
-const WEAPON_SHIFT: u32 = 19;
-const WEAPON_MASK: u32 = 0x0078_0000;
-/// The appearance word's bits 24–26 on a player record: 1 + its great weapon's code, 0 for
-/// none (#1073).
-const GREAT_SHIFT: u32 = 24;
-const GREAT_MASK: u32 = 0x0700_0000;
-/// The appearance word's bits 27–30 on a player record: 1 + its named weapon's code, 0 for none
-/// (#918).
-const NAMED_SHIFT: u32 = 27;
-const NAMED_MASK: u32 = 0x7800_0000;
-/// The appearance word's bit 23 on a player record: the player is in wolf form (#957).
-const SHIFTED_BIT: u32 = 0x0080_0000;
-/// Records that fit the budget without events or sheets: (1,077 − 112) / 29 = 33.
+/// An [`EventRecord`]: kind, `u32` flags or ID, source and target references, `u16` amount.
+pub const EVENT_RECORD_BYTES: usize = EventRecord::BYTES;
+/// An [`EntityRecord`]: kind, ID, `u32` appearance, `3 × i32` position, `3 × i8` velocity,
+/// `u16` facing, level, health percent, flags and the player's weapon (#1088).
+pub const ENTITY_RECORD_BYTES: usize = EntityRecord::BYTES;
+/// Records that fit the budget without events or sheets: (1,077 − 117) / 30 = 32.
 pub const MAX_WIRE_ENTITIES: usize =
     (MAX_PLAYER_PROJECTION_BYTES - PLAYER_SNAPSHOT_FIXED_BYTES) / ENTITY_RECORD_BYTES;
 const MAX_EVENT_SECTION_BYTES: usize = MAX_EVENTS_PER_PLAYER * EVENT_RECORD_BYTES;
@@ -240,7 +220,7 @@ fn pack(
         byte(viewer.global_cooldown_total),
         byte(viewer.global_cooldown),
     ]);
-    encode_cast(&mut payload, viewer.cast);
+    viewer.cast.encode(&mut payload)?;
     for value in viewer.damage {
         payload.extend_from_slice(&value.to_be_bytes());
     }
@@ -254,7 +234,7 @@ fn pack(
     payload.push(viewer.mastery.level);
     payload.extend_from_slice(&viewer.mastery.progress.to_be_bytes());
     encode_entity_ref(&mut payload, snapshot.target_of_target);
-    encode_cast(&mut payload, snapshot.target_detail.cast);
+    snapshot.target_detail.cast.encode(&mut payload)?;
 
     let mut world_payload = Vec::new();
     crate::wire::encode_summoned_views(&mut world_payload, &snapshot.summoned)?;
@@ -344,7 +324,7 @@ fn pack(
         "too many projection events",
     )?);
     for event in events {
-        encode_event(&mut payload, event);
+        event.encode(&mut payload)?;
     }
     payload.extend_from_slice(&chat_payload);
 
@@ -357,13 +337,13 @@ fn pack(
         if payload.len() + ENTITY_RECORD_BYTES + projectile_bytes > MAX_PLAYER_PROJECTION_BYTES {
             break;
         }
-        encode_entity(&mut payload, entity)?;
+        entity.encode(&mut payload)?;
         packed_entities += 1;
     }
     payload[count_offset..count_offset + 2].copy_from_slice(&packed_entities.to_be_bytes());
     payload.push(u8::try_from(projectiles).unwrap_or(u8::MAX));
     for projectile in &snapshot.projectiles[..projectiles] {
-        encode_projectile(&mut payload, projectile)?;
+        projectile.encode(&mut payload)?;
     }
     // Debris (#288) takes what the units left.
     let debris = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(payload.len() + 1)
@@ -372,7 +352,7 @@ fn pack(
         .min(snapshot.debris.len());
     payload.push(u8::try_from(debris).unwrap_or(u8::MAX));
     for piece in &snapshot.debris[..debris] {
-        encode_debris(&mut payload, piece)?;
+        piece.encode(&mut payload)?;
     }
     Ok(PackedSnapshot {
         payload,
@@ -407,257 +387,6 @@ const fn resource_code(kind: ResourceKind) -> u8 {
         ResourceKind::Mana => 3,
         ResourceKind::Faith => 4,
     }
-}
-
-fn encode_cast(payload: &mut Vec<u8>, cast: Option<CastView>) {
-    match cast {
-        Some(cast) => {
-            payload.extend_from_slice(&cast.ability.get().to_be_bytes());
-            payload.push(u8::from(cast.channel));
-            payload.extend_from_slice(&cast.elapsed.to_be_bytes());
-            payload.extend_from_slice(&cast.total.to_be_bytes());
-        }
-        None => payload.extend_from_slice(&[0; CAST_RECORD_BYTES]),
-    }
-}
-
-/// A cast must name a casting catalog ability with its exact cast time and
-/// channel flag, and be in progress.
-fn decode_cast(payload: &[u8], offset: &mut usize) -> Result<Option<CastView>, ProtocolError> {
-    let ability = u32::from_be_bytes(take(payload, offset)?);
-    let [channel] = read_flags(read_u8(payload, offset)?)?;
-    let elapsed = u16::from_be_bytes(take(payload, offset)?);
-    let total = u16::from_be_bytes(take(payload, offset)?);
-    if ability == 0 {
-        if channel || elapsed != 0 || total != 0 {
-            return Err(ProtocolError::new("cast state is inconsistent"));
-        }
-        return Ok(None);
-    }
-    let ability = AbilityId::new(ability);
-    let valid = ability_by_id(ability).is_some_and(|catalog| {
-        catalog.cast.ticks() == total && catalog.cast.is_channel() == channel && elapsed < total
-    });
-    if !valid {
-        return Err(ProtocolError::new("cast state is inconsistent"));
-    }
-    Ok(Some(CastView {
-        ability,
-        elapsed,
-        total,
-        channel,
-    }))
-}
-
-fn encode_projectile(
-    payload: &mut Vec<u8>,
-    projectile: &mmorpg_core::ProjectileView,
-) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&projectile.id.to_be_bytes());
-    payload.push(projectile.kind.code());
-    for component in projectile.position {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    payload.extend_from_slice(&projectile.yaw.to_be_bytes());
-    payload.extend_from_slice(&projectile.pitch.to_be_bytes());
-    // State: 0 flying, 1 stuck, 2 bursting (#290).
-    payload.push(if projectile.burst {
-        2
-    } else {
-        u8::from(projectile.stuck)
-    });
-    Ok(())
-}
-
-fn encode_debris(
-    payload: &mut Vec<u8>,
-    piece: &mmorpg_core::DebrisView,
-) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&piece.id.to_be_bytes());
-    payload.push(piece.kind.code());
-    payload.push(piece.piece);
-    for component in piece.position {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    for component in piece.rotation {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    payload.push(piece.age);
-    Ok(())
-}
-
-fn decode_debris(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<mmorpg_core::DebrisView, ProtocolError> {
-    let id = u16::from_be_bytes(take(payload, offset)?);
-    let kind = mmorpg_core::PropKind::from_code(read_u8(payload, offset)?)
-        .ok_or_else(|| ProtocolError::new("unknown debris kind"))?;
-    let piece = read_u8(payload, offset)?;
-    if usize::from(piece) >= mmorpg_core::debris_pieces(kind).len() {
-        return Err(ProtocolError::new("unknown debris piece"));
-    }
-    let mut position = [0; 3];
-    for axis in &mut position {
-        *axis = i32::from_be_bytes(take(payload, offset)?);
-    }
-    let mut rotation = [0; 4];
-    for axis in &mut rotation {
-        *axis = i16::from_be_bytes(take(payload, offset)?);
-    }
-    let age = read_u8(payload, offset)?;
-    Ok(mmorpg_core::DebrisView {
-        id,
-        kind,
-        piece,
-        position,
-        rotation,
-        age,
-    })
-}
-
-fn decode_projectile(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<mmorpg_core::ProjectileView, ProtocolError> {
-    let id = u16::from_be_bytes(take(payload, offset)?);
-    let kind = mmorpg_core::ProjectileKind::from_code(read_u8(payload, offset)?)
-        .ok_or_else(|| ProtocolError::new("unknown projectile kind"))?;
-    let position = [
-        i32::from_be_bytes(take(payload, offset)?),
-        i32::from_be_bytes(take(payload, offset)?),
-        i32::from_be_bytes(take(payload, offset)?),
-    ];
-    let yaw = u16::from_be_bytes(take(payload, offset)?);
-    let pitch = i16::from_be_bytes(take(payload, offset)?);
-    let (stuck, burst) = match read_u8(payload, offset)? {
-        0 => (false, false),
-        1 => (true, false),
-        2 => (false, true),
-        _ => return Err(ProtocolError::new("unknown projectile state")),
-    };
-    Ok(mmorpg_core::ProjectileView {
-        id,
-        kind,
-        position,
-        yaw,
-        pitch,
-        stuck,
-        burst,
-    })
-}
-
-fn encode_entity(payload: &mut Vec<u8>, entity: &EntitySnapshot) -> Result<(), ProtocolError> {
-    payload.push(entity_kind_code(entity.kind));
-    payload.extend_from_slice(&entity.id.to_be_bytes());
-    if (entity.kind == EntityKind::Player
-        && entity.appearance & (DRAWN_BIT | WEAPON_MASK | GREAT_MASK | NAMED_MASK | SHIFTED_BIT)
-            != 0)
-        || (entity.kind != EntityKind::Player
-            && (entity.flags.weapon_drawn
-                || entity.flags.weapon.is_some()
-                || entity.flags.named_weapon.is_some()
-                || entity.flags.great_weapon.is_some()
-                || entity.flags.shapeshifted))
-    {
-        return Err(ProtocolError::new("invalid drawn weapon appearance"));
-    }
-    let weapon = entity
-        .flags
-        .weapon
-        .map_or(0, |family| (u32::from(family.code()) + 1) << WEAPON_SHIFT);
-    let named = entity
-        .flags
-        .named_weapon
-        .map_or(0, |named| (u32::from(named.code()) + 1) << NAMED_SHIFT);
-    let great = entity
-        .flags
-        .great_weapon
-        .map_or(0, |great| (u32::from(great.code()) + 1) << GREAT_SHIFT);
-    // The player-only high bits are free in the appearance word. Threat remains
-    // its own flag; NPC and creature appearance IDs are untouched.
-    payload.extend_from_slice(
-        &(entity.appearance
-            | weapon
-            | great
-            | named
-            | if entity.flags.shapeshifted {
-                SHIFTED_BIT
-            } else {
-                0
-            }
-            | if entity.flags.weapon_drawn {
-                DRAWN_BIT
-            } else {
-                0
-            })
-        .to_be_bytes(),
-    );
-    for component in entity.position {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    for component in entity.velocity {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    payload.extend_from_slice(&entity.facing.to_be_bytes());
-    payload.push(entity.level);
-    if entity.health_percent > 100 {
-        return Err(ProtocolError::new("health percent exceeds 100"));
-    }
-    let flags = entity.flags;
-    let posture = flags.posture;
-    let sitting_player =
-        entity.kind == EntityKind::Player && posture == mmorpg_core::PostureView::Sitting;
-    match entity.kind {
-        EntityKind::Player
-            if !matches!(
-                posture,
-                mmorpg_core::PostureView::Free | mmorpg_core::PostureView::Sitting
-            ) =>
-        {
-            return Err(ProtocolError::new("a player is never in bed"));
-        }
-        EntityKind::Player | EntityKind::Npc => {}
-        _ if posture != mmorpg_core::PostureView::Free => {
-            return Err(ProtocolError::new("only players and npcs sit"));
-        }
-        _ => {}
-    }
-    // The percent needs seven bits; the eighth says a player sits (#619).
-    payload.push(entity.health_percent | if sitting_player { SITTING_BIT } else { 0 });
-    let (tapped, evading, lootable) = if entity.kind == EntityKind::Npc {
-        if flags.tapped_by_other || flags.evading || flags.lootable {
-            return Err(ProtocolError::new(
-                "an npc is never tapped, evading or lootable",
-            ));
-        }
-        let code = posture.code();
-        (code & 1 != 0, code & 2 != 0, code & 4 != 0)
-    } else if entity.kind == EntityKind::Player {
-        if flags.tapped_by_other || flags.evading || flags.lootable {
-            return Err(ProtocolError::new(
-                "a player is never tapped, evading or lootable",
-            ));
-        }
-        let code = flags.traversal.code();
-        (code & 1 != 0, code & 2 != 0, code & 4 != 0)
-    } else {
-        if flags.traversal != mmorpg_core::TraversalView::Free {
-            return Err(ProtocolError::new("only a player climbs, mantles or rolls"));
-        }
-        (flags.tapped_by_other, flags.evading, flags.lootable)
-    };
-    payload.push(flag_byte(&[
-        flags.dead,
-        flags.in_combat,
-        flags.hostile,
-        flags.attackable,
-        tapped,
-        evading,
-        flags.targets_viewer,
-        lootable,
-    ]));
-    Ok(())
 }
 
 /// Decodes one projection without any sheet received before: sheets it does not carry are
@@ -753,7 +482,7 @@ fn decode_projection(
     let resource_value = u16::from_be_bytes(take(payload, &mut offset)?);
     let resource_max = u16::from_be_bytes(take(payload, &mut offset)?);
     let [global_cooldown_total, global_cooldown] = take::<2>(payload, &mut offset)?.map(u16::from);
-    let cast = decode_cast(payload, &mut offset)?;
+    let cast = Option::<CastView>::decode(payload, &mut offset)?;
     let damage = [
         u16::from_be_bytes(take(payload, &mut offset)?),
         u16::from_be_bytes(take(payload, &mut offset)?),
@@ -826,7 +555,7 @@ fn decode_projection(
         return Err(ProtocolError::new("viewer ability state is inconsistent"));
     }
     let target_of_target = decode_entity_ref(payload, &mut offset)?;
-    let target_cast = decode_cast(payload, &mut offset)?;
+    let target_cast = Option::<CastView>::decode(payload, &mut offset)?;
     if target.is_none() && target_cast.is_some() {
         return Err(ProtocolError::new("target detail needs a target"));
     }
@@ -856,7 +585,7 @@ fn decode_projection(
     )?;
     let mut events = Vec::with_capacity(event_count);
     for _ in 0..event_count {
-        events.push(decode_event(payload, &mut offset)?);
+        events.push(ZoneEvent::decode(payload, &mut offset)?);
     }
     let chat_count = decode_u8_count(
         payload,
@@ -877,7 +606,7 @@ fn decode_projection(
     )?;
     let mut entities = Vec::with_capacity(count);
     for _ in 0..count {
-        entities.push(decode_entity(payload, &mut offset)?);
+        entities.push(EntitySnapshot::decode(payload, &mut offset)?);
     }
     let count = decode_u8_count(
         payload,
@@ -887,7 +616,7 @@ fn decode_projection(
     )?;
     let mut projectiles = Vec::with_capacity(count);
     for _ in 0..count {
-        projectiles.push(decode_projectile(payload, &mut offset)?);
+        projectiles.push(mmorpg_core::ProjectileView::decode(payload, &mut offset)?);
     }
     let count = decode_u8_count(
         payload,
@@ -897,7 +626,7 @@ fn decode_projection(
     )?;
     let mut debris = Vec::with_capacity(count);
     for _ in 0..count {
-        debris.push(decode_debris(payload, &mut offset)?);
+        debris.push(mmorpg_core::DebrisView::decode(payload, &mut offset)?);
     }
     ensure_fully_consumed(payload, offset)?;
     if entities
@@ -1088,159 +817,6 @@ fn loot_matches(
         }))
 }
 
-fn decode_entity(payload: &[u8], offset: &mut usize) -> Result<EntitySnapshot, ProtocolError> {
-    let kind = decode_entity_kind(read_u8(payload, offset)?)?;
-    let id = u32::from_be_bytes(take(payload, offset)?);
-    let encoded_appearance = u32::from_be_bytes(take(payload, offset)?);
-    let weapon_drawn = kind == EntityKind::Player && encoded_appearance & DRAWN_BIT != 0;
-    let shapeshifted = kind == EntityKind::Player && encoded_appearance & SHIFTED_BIT != 0;
-    let weapon = match (encoded_appearance & WEAPON_MASK) >> WEAPON_SHIFT {
-        _ if kind != EntityKind::Player => None,
-        0 => None,
-        code => Some(
-            u8::try_from(code - 1)
-                .ok()
-                .and_then(mmorpg_core::WeaponFamily::from_code)
-                .ok_or_else(|| ProtocolError::new("invalid weapon family"))?,
-        ),
-    };
-    let named_weapon = match (encoded_appearance & NAMED_MASK) >> NAMED_SHIFT {
-        _ if kind != EntityKind::Player => None,
-        0 => None,
-        code => Some(
-            u8::try_from(code - 1)
-                .ok()
-                .and_then(mmorpg_core::NamedWeapon::from_code)
-                .ok_or_else(|| ProtocolError::new("invalid named weapon"))?,
-        ),
-    };
-    let great_weapon = match (encoded_appearance & GREAT_MASK) >> GREAT_SHIFT {
-        _ if kind != EntityKind::Player => None,
-        0 => None,
-        code => Some(
-            u8::try_from(code - 1)
-                .ok()
-                .and_then(mmorpg_core::GreatWeapon::from_code)
-                .ok_or_else(|| ProtocolError::new("invalid great weapon"))?,
-        ),
-    };
-    let appearance = if kind == EntityKind::Player {
-        encoded_appearance & !(DRAWN_BIT | WEAPON_MASK | GREAT_MASK | NAMED_MASK | SHIFTED_BIT)
-    } else {
-        encoded_appearance
-    };
-    let position = [
-        i32::from_be_bytes(take(payload, offset)?),
-        i32::from_be_bytes(take(payload, offset)?),
-        i32::from_be_bytes(take(payload, offset)?),
-    ];
-    let velocity = [
-        i8::from_be_bytes(take(payload, offset)?),
-        i8::from_be_bytes(take(payload, offset)?),
-        i8::from_be_bytes(take(payload, offset)?),
-    ];
-    let facing = u16::from_be_bytes(take(payload, offset)?);
-    let level = read_u8(payload, offset)?;
-    let health_byte = read_u8(payload, offset)?;
-    let sitting_player = health_byte & SITTING_BIT != 0;
-    let health_percent = health_byte & !SITTING_BIT;
-    if sitting_player && kind != EntityKind::Player {
-        return Err(ProtocolError::new(
-            "only a player record carries the sit bit",
-        ));
-    }
-    if health_percent > 100 {
-        return Err(ProtocolError::new("health percent exceeds 100"));
-    }
-    let [
-        dead,
-        in_combat,
-        hostile,
-        attackable,
-        tapped_by_other,
-        evading,
-        targets_viewer,
-        lootable,
-    ] = read_flags(read_u8(payload, offset)?)?;
-    // An NPC is never tapped, evading or lootable: those bits carry its posture code (#619,
-    // #991).
-    let npc_posture = (kind == EntityKind::Npc).then(|| {
-        mmorpg_core::PostureView::from_code(
-            u8::from(tapped_by_other) | u8::from(evading) << 1 | u8::from(lootable) << 2,
-        )
-    });
-    let posture = match npc_posture {
-        Some(Some(posture)) => posture,
-        Some(None) => return Err(ProtocolError::new("npc posture code is out of range")),
-        None if sitting_player => mmorpg_core::PostureView::Sitting,
-        None => mmorpg_core::PostureView::Free,
-    };
-    if dead && posture != mmorpg_core::PostureView::Free {
-        return Err(ProtocolError::new("a dead unit does not sit"));
-    }
-    let (tapped_by_other, evading, lootable) = if kind == EntityKind::Npc {
-        (false, false, false)
-    } else {
-        (tapped_by_other, evading, lootable)
-    };
-    // On a player record the tapped, evading and lootable bits carry its traversal code
-    // (#490, #516, #500).
-    let (tapped_by_other, evading, lootable, traversal) = if kind == EntityKind::Player {
-        let code = u8::from(tapped_by_other) | u8::from(evading) << 1 | u8::from(lootable) << 2;
-        let traversal = mmorpg_core::TraversalView::from_code(code)
-            .ok_or_else(|| ProtocolError::new("player traversal code is out of range"))?;
-        if dead && traversal != mmorpg_core::TraversalView::Free {
-            return Err(ProtocolError::new(
-                "a dead player cannot climb, mantle or roll",
-            ));
-        }
-        (false, false, false, traversal)
-    } else {
-        if lootable
-            && (kind != EntityKind::Creature
-                || !dead
-                || health_percent != 0
-                || attackable
-                || tapped_by_other)
-        {
-            return Err(ProtocolError::new("lootable entity flags are inconsistent"));
-        }
-        (
-            tapped_by_other,
-            evading,
-            lootable,
-            mmorpg_core::TraversalView::Free,
-        )
-    };
-    Ok(EntitySnapshot {
-        kind,
-        id,
-        appearance,
-        position,
-        velocity,
-        facing,
-        level,
-        health_percent,
-        flags: EntityFlags {
-            dead,
-            in_combat,
-            weapon_drawn,
-            weapon,
-            named_weapon,
-            great_weapon,
-            shapeshifted,
-            hostile,
-            attackable,
-            tapped_by_other,
-            evading,
-            targets_viewer,
-            lootable,
-            traversal,
-            posture,
-        },
-    })
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1248,6 +824,7 @@ pub(crate) mod tests {
     use crate::{
         DATAGRAM_SAFETY_MARGIN_BYTES, MEASURED_MIN_DATAGRAM_BYTES, SESSION_SNAPSHOT_HEADER_BYTES,
     };
+    use mmorpg_core::{AbilityId, EntityFlags, ability_by_id};
     use mmorpg_core::{AuraKind, AuraView, Cooldown, MAX_COOLDOWNS};
     use mmorpg_core::{
         CreatureId, EntityRef, ErrorCode, NpcId, PlayerId, ZoneCommand, ZoneEvent, ZoneId,
@@ -2570,9 +2147,9 @@ pub(crate) mod tests {
                 EVENT_RECORD_BYTES,
                 ENTITY_RECORD_BYTES
             ),
-            (117, 17, 29)
+            (117, 17, 30)
         );
-        assert_eq!(MAX_WIRE_ENTITIES, 33);
+        assert_eq!(MAX_WIRE_ENTITIES, 32);
         let viewer_id = u32::MAX;
         let target = EntityRef::Creature(CreatureId::new(u32::MAX));
         let entities: Vec<_> = (0..MAX_VISIBLE_ENTITIES)
@@ -2729,8 +2306,8 @@ pub(crate) mod tests {
             encode_snapshot(&snapshot).unwrap_err().to_string(),
             "player projection exceeds the byte budget"
         );
-        // Without events, doors, a raid signal or a bag sheet the budget holds 32 records beside
-        // the empty loot (1 byte), ability (8), world (7) and waystone (2) sheets, and all 33
+        // Without events, doors, a raid signal or a bag sheet the budget holds 31 records beside
+        // the empty loot (1 byte), ability (8), world (7) and waystone (2) sheets, and all 32
         // once the client holds those sheets.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
@@ -2739,10 +2316,10 @@ pub(crate) mod tests {
             ..snapshot
         };
         let packed = pack_snapshot(&quiet).unwrap();
-        assert_eq!(packed.packed_entities, 32);
+        assert_eq!(packed.packed_entities, 31);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 20 + 32 * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 20 + 31 * ENTITY_RECORD_BYTES
         );
         let mut holder = SnapshotDecoder::new();
         holder.decode(&packed.payload).unwrap();
@@ -2774,13 +2351,13 @@ pub(crate) mod tests {
             assert_eq!(decoded.events, with_sheet.events);
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
-            // The full bag and quest sheets are 136 + 203 bytes beside the other 16:
-            // (1,077 − 114 − 355) / 29 = 20 and (1,077 − 114 − 355 − 272) / 29 = 11.
+            // The full bag and quest sheets (136 + 203 bytes beside the other 16) leave room for
+            // 20 whole records, and for 10 beside a full event section.
             if events == 0 {
                 assert_eq!(packed.packed_entities, 20);
             }
             if events == 16 {
-                assert_eq!(packed.packed_entities, 11);
+                assert_eq!(packed.packed_entities, 10);
             }
         }
         // Whole records only, within the budget.
@@ -2798,7 +2375,7 @@ pub(crate) mod tests {
             MAX_CHAT_PER_TICK
         ];
         let packed = pack_snapshot(&chatty).unwrap();
-        // (1,077 − 111 − 16 − 272 − 4 × 84) / 29 = 11 records.
+        // (1,077 − 117 − 16 − 272 − 4 × 84) / 30 = 11 records.
         assert_eq!(packed.packed_entities, 11);
         assert_eq!(decode_snapshot(&packed.payload).unwrap().chat, chatty.chat);
         for item in [
@@ -2841,10 +2418,10 @@ pub(crate) mod tests {
                 assert_eq!(decoded.viewer.copper, u32::MAX);
                 assert_eq!(decoded.inventory, with_loot.inventory);
                 assert_eq!(decoded.entities[1].entity(), target);
-                // The bag, quest and corpse sheets beside the other 16 bytes are 385:
-                // (1,077 − 111 − 385 − 272) / 29 = 10.
+                // The bag, quest and corpse sheets beside the other 16 bytes and a full event
+                // section leave room for 9 whole records.
                 if events == 16 && item.is_some() {
-                    assert_eq!(packed.packed_entities, 10);
+                    assert_eq!(packed.packed_entities, 9);
                 }
             }
         }
@@ -2947,9 +2524,8 @@ pub(crate) mod tests {
 mod posture_tests {
     use mmorpg_core::{EntityFlags, EntityKind, EntitySnapshot, PostureView};
 
-    use super::{
-        decode_entity, decode_snapshot, encode_entity, encode_snapshot, tests::fixture_snapshot,
-    };
+    use super::{decode_snapshot, encode_snapshot, tests::fixture_snapshot};
+    use crate::codec::Codec;
 
     fn record(kind: EntityKind, posture: PostureView) -> EntitySnapshot {
         EntitySnapshot {
@@ -2970,8 +2546,8 @@ mod posture_tests {
 
     fn round_trip(entity: &EntitySnapshot) -> Result<EntitySnapshot, crate::ProtocolError> {
         let mut bytes = Vec::new();
-        encode_entity(&mut bytes, entity)?;
-        decode_entity(&bytes, &mut 0)
+        entity.encode(&mut bytes)?;
+        EntitySnapshot::decode(&bytes, &mut 0)
     }
 
     #[test]

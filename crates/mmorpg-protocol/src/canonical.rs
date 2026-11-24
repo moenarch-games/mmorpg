@@ -9,16 +9,17 @@ use mmorpg_core::{
     CanonicalZoneSnapshot, CastState, ClassChoice, Cooldown, CreatureAi, CreatureId, CreatureLife,
     EntityRef, MAX_AURAS, MAX_CHAT_PER_TICK, MAX_COOLDOWNS, MAX_CREATURE_SPAWNS,
     MAX_ENCOUNTER_PLAYERS, MAX_EVENTS_PER_PLAYER, MAX_PENDING_INTENTS, MAX_PLAYERS_PER_ZONE,
-    MAX_THREAT_ENTRIES, PlayerIntent, ThreatEntry,
+    MAX_THREAT_ENTRIES, PlayerIntent, ThreatEntry, ZoneEvent,
 };
 
 use crate::ProtocolError;
+use crate::codec::Codec;
 use crate::inventory::{decode_equipment, decode_inventory, encode_equipment, encode_inventory};
 use crate::wire::{
-    CANONICAL_SNAPSHOT_SCOPE, decode_common_header, decode_entity_ref, decode_event,
-    decode_optional_yaw, decode_u8_count, decode_u16_count, encode_common_header,
-    encode_entity_ref, encode_event, encode_optional_yaw, encode_u8_count, encode_u16_count,
-    ensure_fully_consumed, read_bool, read_f32_vector, read_u8, take,
+    CANONICAL_SNAPSHOT_SCOPE, decode_common_header, decode_entity_ref, decode_optional_yaw,
+    decode_u8_count, decode_u16_count, encode_common_header, encode_entity_ref,
+    encode_optional_yaw, encode_u8_count, encode_u16_count, ensure_fully_consumed, read_bool,
+    read_f32_vector, read_u8, take,
 };
 
 const SELECT_TARGET_INTENT: u8 = 1;
@@ -88,11 +89,11 @@ pub fn encode_canonical_snapshot(
     payload.extend_from_slice(&snapshot.world_seed.to_be_bytes());
     payload.extend_from_slice(&player_count.to_be_bytes());
     for player in &snapshot.players {
-        encode_player(&mut payload, player)?;
+        player.encode(&mut payload)?;
     }
     payload.extend_from_slice(&creature_count.to_be_bytes());
     for creature in &snapshot.creatures {
-        encode_creature(&mut payload, creature)?;
+        creature.encode(&mut payload)?;
     }
     encode_canonical_doors(&mut payload, &snapshot.doors)?;
     encode_projectiles(
@@ -156,312 +157,740 @@ fn decode_gathering(
     Ok(mmorpg_core::GatheringState { veins, skinned })
 }
 
-fn encode_player(
-    payload: &mut Vec<u8>,
-    player: &CanonicalPlayerSnapshot,
-) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&player.player_id.to_be_bytes());
-    for component in player.position.into_iter().chain(player.velocity) {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    payload.extend_from_slice(&player.facing.to_be_bytes());
-    payload.extend_from_slice(&player.forward.to_be_bytes());
-    payload.extend_from_slice(&player.strafe.to_be_bytes());
-    payload.push(u8::from(player.jump_pending));
-    payload.extend_from_slice(&player.rise.to_be_bytes());
-    payload.extend_from_slice(&player.breath.remaining.to_be_bytes());
-    payload.extend_from_slice(&player.breath.drowning.to_be_bytes());
-    payload.extend_from_slice(&player.last_sequence.to_be_bytes());
-    payload.extend_from_slice(&player.spawn_slot.to_be_bytes());
-    payload.extend_from_slice(&player.inventory_revision.to_be_bytes());
-    encode_inventory(payload, &player.inventory);
-    encode_equipment(payload, &player.equipment);
-    payload.extend_from_slice(&player.copper.to_be_bytes());
-    let combat = &player.combat;
-    payload.push(combat.level);
-    payload.extend_from_slice(&combat.experience.to_be_bytes());
-    payload.extend_from_slice(&combat.health.to_be_bytes());
-    encode_entity_ref(payload, combat.target);
-    payload.push(u8::from(combat.swing_queued));
-    payload.push(u8::from(combat.weapon_drawn));
-    for timer in [combat.swing_timer, combat.combat_timer, combat.calm_ticks] {
-        payload.extend_from_slice(&timer.to_be_bytes());
-    }
-    payload.push(encode_u8_count(
-        combat.intents.len(),
-        MAX_PENDING_INTENTS,
-        "player has too many pending intents",
-    )?);
-    for queued in &combat.intents {
-        // Each intent leads with its lateness in ticks (#415).
-        payload.push(queued.late);
-        let (code, target) = match queued.intent {
-            PlayerIntent::SelectTarget(target) => (SELECT_TARGET_INTENT, target),
-            PlayerIntent::Swing { facing } => {
-                payload.push(SWING_INTENT);
-                payload.extend_from_slice(&facing.to_be_bytes());
-                continue;
-            }
-            PlayerIntent::Loot(claim) => {
-                payload.push(LOOT_INTENT);
-                crate::loot::encode_claim(payload, claim);
-                continue;
-            }
-            PlayerIntent::Skin(creature) => {
-                payload.push(SKIN_INTENT);
-                payload.extend_from_slice(&creature.get().to_be_bytes());
-                continue;
-            }
-            PlayerIntent::Gather(node) => {
-                payload.push(GATHER_INTENT);
-                payload.extend_from_slice(&node.to_be_bytes());
-                continue;
-            }
-            PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
-            PlayerIntent::MoveItem {
-                source,
-                destination,
-                quantity,
-            } => {
-                payload.extend_from_slice(&[MOVE_ITEM_INTENT, source, destination]);
-                payload.extend_from_slice(&quantity.to_be_bytes());
-                payload.push(0);
-                continue;
-            }
-            PlayerIntent::UseAbility {
-                ability,
-                target,
-                facing,
-            } => {
-                payload.push(USE_ABILITY_INTENT);
-                payload.extend_from_slice(&ability.to_be_bytes());
-                encode_entity_ref(payload, target);
-                encode_optional_yaw(payload, facing);
-                continue;
-            }
-            PlayerIntent::DirectedStrike {
-                ability,
-                facing,
-                aim,
-            } => {
-                payload.push(DIRECTED_STRIKE_INTENT);
-                payload.extend_from_slice(&ability.to_be_bytes());
-                payload.extend_from_slice(&facing.to_be_bytes());
-                payload.extend_from_slice(&crate::wire::encode_aim(aim));
-                continue;
-            }
-            PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
-            PlayerIntent::Guard(lane) => {
-                payload.extend_from_slice(&[GUARD_INTENT, crate::wire::encode_lane(lane)]);
-                continue;
-            }
-            PlayerIntent::SetWeaponDrawn(drawn) => {
-                payload.extend_from_slice(&[SET_WEAPON_DRAWN_INTENT, u8::from(drawn)]);
-                continue;
-            }
-            PlayerIntent::UseDoor { door, open } => {
-                payload.push(USE_DOOR_INTENT);
-                payload.extend_from_slice(&door.get().to_be_bytes());
-                payload.push(u8::from(open));
-                continue;
-            }
-            PlayerIntent::Sit(seat) => {
-                payload.push(SIT_INTENT);
-                payload.extend_from_slice(&seat.map_or(0, mmorpg_core::SeatId::get).to_be_bytes());
-                continue;
-            }
-            PlayerIntent::Repair(piece) => {
-                payload.push(REPAIR_INTENT);
-                payload.extend_from_slice(&crate::wire::encode_piece(piece).to_be_bytes());
-                continue;
-            }
-            PlayerIntent::CommandMinions(order) => {
-                payload.push(COMMAND_MINIONS_INTENT);
-                crate::wire::encode_minion_order(payload, order);
-                continue;
-            }
-            PlayerIntent::ChooseClass { class, sex } => {
-                payload.extend_from_slice(&[CHOOSE_CLASS_INTENT, class, sex]);
-                continue;
-            }
-            PlayerIntent::EquipItem { bag_slot } => {
-                payload.extend_from_slice(&[EQUIP_ITEM_INTENT, bag_slot]);
-                continue;
-            }
-            PlayerIntent::UnequipItem { equipment_slot } => {
-                payload.extend_from_slice(&[UNEQUIP_ITEM_INTENT, equipment_slot]);
-                continue;
-            }
-            PlayerIntent::BuyItem {
-                npc,
-                offer,
-                quantity,
-            } => {
-                encode_trade_intent(payload, BUY_ITEM_INTENT, npc, offer, quantity);
-                continue;
-            }
-            PlayerIntent::SellItem {
-                npc,
-                bag_slot,
-                quantity,
-            } => {
-                encode_trade_intent(
-                    payload,
-                    SELL_ITEM_INTENT,
-                    npc,
-                    u32::from(bag_slot),
+/// A canonical player record: its whole continuation state, variable in length.
+impl Codec for CanonicalPlayerSnapshot {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        let player = self;
+        payload.extend_from_slice(&player.player_id.to_be_bytes());
+        for component in player.position.into_iter().chain(player.velocity) {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        payload.extend_from_slice(&player.facing.to_be_bytes());
+        payload.extend_from_slice(&player.forward.to_be_bytes());
+        payload.extend_from_slice(&player.strafe.to_be_bytes());
+        payload.push(u8::from(player.jump_pending));
+        payload.extend_from_slice(&player.rise.to_be_bytes());
+        payload.extend_from_slice(&player.breath.remaining.to_be_bytes());
+        payload.extend_from_slice(&player.breath.drowning.to_be_bytes());
+        payload.extend_from_slice(&player.last_sequence.to_be_bytes());
+        payload.extend_from_slice(&player.spawn_slot.to_be_bytes());
+        payload.extend_from_slice(&player.inventory_revision.to_be_bytes());
+        encode_inventory(payload, &player.inventory);
+        encode_equipment(payload, &player.equipment);
+        payload.extend_from_slice(&player.copper.to_be_bytes());
+        let combat = &player.combat;
+        payload.push(combat.level);
+        payload.extend_from_slice(&combat.experience.to_be_bytes());
+        payload.extend_from_slice(&combat.health.to_be_bytes());
+        encode_entity_ref(payload, combat.target);
+        payload.push(u8::from(combat.swing_queued));
+        payload.push(u8::from(combat.weapon_drawn));
+        for timer in [combat.swing_timer, combat.combat_timer, combat.calm_ticks] {
+            payload.extend_from_slice(&timer.to_be_bytes());
+        }
+        payload.push(encode_u8_count(
+            combat.intents.len(),
+            MAX_PENDING_INTENTS,
+            "player has too many pending intents",
+        )?);
+        for queued in &combat.intents {
+            // Each intent leads with its lateness in ticks (#415).
+            payload.push(queued.late);
+            let (code, target) = match queued.intent {
+                PlayerIntent::SelectTarget(target) => (SELECT_TARGET_INTENT, target),
+                PlayerIntent::Swing { facing } => {
+                    payload.push(SWING_INTENT);
+                    payload.extend_from_slice(&facing.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Loot(claim) => {
+                    payload.push(LOOT_INTENT);
+                    crate::loot::encode_claim(payload, claim);
+                    continue;
+                }
+                PlayerIntent::Skin(creature) => {
+                    payload.push(SKIN_INTENT);
+                    payload.extend_from_slice(&creature.get().to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Gather(node) => {
+                    payload.push(GATHER_INTENT);
+                    payload.extend_from_slice(&node.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
+                PlayerIntent::MoveItem {
+                    source,
+                    destination,
                     quantity,
-                );
-                continue;
-            }
-            PlayerIntent::Chat(message) => {
-                payload.push(CHAT_INTENT);
-                crate::chat::encode_message(payload, message);
-                continue;
-            }
-            PlayerIntent::AcceptQuest { npc, quest } => {
-                payload.push(ACCEPT_QUEST_INTENT);
-                payload.extend_from_slice(&npc.get().to_be_bytes());
-                payload.extend_from_slice(&quest.to_be_bytes());
-                continue;
-            }
-            PlayerIntent::CompleteQuest { npc, quest, choice } => {
-                payload.push(COMPLETE_QUEST_INTENT);
-                payload.extend_from_slice(&npc.get().to_be_bytes());
-                payload.extend_from_slice(&quest.to_be_bytes());
-                payload.push(choice);
-                continue;
-            }
-            PlayerIntent::AbandonQuest { quest } => {
-                payload.push(ABANDON_QUEST_INTENT);
-                payload.extend_from_slice(&quest.to_be_bytes());
-                continue;
-            }
-            PlayerIntent::UseWaystone(waystone) => {
-                payload.push(USE_WAYSTONE_INTENT);
-                payload.extend_from_slice(&waystone.get().to_be_bytes());
-                continue;
-            }
-            PlayerIntent::RaidAid(task) => {
-                payload.push(RAID_AID_INTENT);
-                payload.extend_from_slice(&task.to_be_bytes());
-                continue;
-            }
-            PlayerIntent::RaidPrepare(prep) => {
-                payload.push(RAID_PREPARE_INTENT);
-                payload.extend_from_slice(&crate::raid::encode_prep(prep));
-                continue;
-            }
-            PlayerIntent::Notice(code) => {
-                payload.push(NOTICE_INTENT);
-                payload.extend_from_slice(&crate::wire::error_code(code).to_be_bytes());
-                continue;
-            }
-            PlayerIntent::RollDepthsDrop { run, drop, choice } => {
-                payload.push(ROLL_DEPTHS_DROP_INTENT);
-                payload.extend_from_slice(&run.to_be_bytes());
-                payload.push(drop);
-                payload.push(crate::depths::encode_choice(choice));
-                continue;
-            }
-            PlayerIntent::ClaimDepthsDrop { run, drop } => {
-                payload.push(CLAIM_DEPTHS_DROP_INTENT);
-                payload.extend_from_slice(&run.to_be_bytes());
-                payload.push(drop);
-                continue;
-            }
+                } => {
+                    payload.extend_from_slice(&[MOVE_ITEM_INTENT, source, destination]);
+                    payload.extend_from_slice(&quantity.to_be_bytes());
+                    payload.push(0);
+                    continue;
+                }
+                PlayerIntent::UseAbility {
+                    ability,
+                    target,
+                    facing,
+                } => {
+                    payload.push(USE_ABILITY_INTENT);
+                    payload.extend_from_slice(&ability.to_be_bytes());
+                    encode_entity_ref(payload, target);
+                    encode_optional_yaw(payload, facing);
+                    continue;
+                }
+                PlayerIntent::DirectedStrike {
+                    ability,
+                    facing,
+                    aim,
+                } => {
+                    payload.push(DIRECTED_STRIKE_INTENT);
+                    payload.extend_from_slice(&ability.to_be_bytes());
+                    payload.extend_from_slice(&facing.to_be_bytes());
+                    payload.extend_from_slice(&crate::wire::encode_aim(aim));
+                    continue;
+                }
+                PlayerIntent::CancelCast => (CANCEL_CAST_INTENT, None),
+                PlayerIntent::Guard(lane) => {
+                    payload.extend_from_slice(&[GUARD_INTENT, crate::wire::encode_lane(lane)]);
+                    continue;
+                }
+                PlayerIntent::SetWeaponDrawn(drawn) => {
+                    payload.extend_from_slice(&[SET_WEAPON_DRAWN_INTENT, u8::from(drawn)]);
+                    continue;
+                }
+                PlayerIntent::UseDoor { door, open } => {
+                    payload.push(USE_DOOR_INTENT);
+                    payload.extend_from_slice(&door.get().to_be_bytes());
+                    payload.push(u8::from(open));
+                    continue;
+                }
+                PlayerIntent::Sit(seat) => {
+                    payload.push(SIT_INTENT);
+                    payload
+                        .extend_from_slice(&seat.map_or(0, mmorpg_core::SeatId::get).to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Repair(piece) => {
+                    payload.push(REPAIR_INTENT);
+                    payload.extend_from_slice(&crate::wire::encode_piece(piece).to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::CommandMinions(order) => {
+                    payload.push(COMMAND_MINIONS_INTENT);
+                    crate::wire::encode_minion_order(payload, order);
+                    continue;
+                }
+                PlayerIntent::ChooseClass { class, sex } => {
+                    payload.extend_from_slice(&[CHOOSE_CLASS_INTENT, class, sex]);
+                    continue;
+                }
+                PlayerIntent::EquipItem { bag_slot } => {
+                    payload.extend_from_slice(&[EQUIP_ITEM_INTENT, bag_slot]);
+                    continue;
+                }
+                PlayerIntent::UnequipItem { equipment_slot } => {
+                    payload.extend_from_slice(&[UNEQUIP_ITEM_INTENT, equipment_slot]);
+                    continue;
+                }
+                PlayerIntent::BuyItem {
+                    npc,
+                    offer,
+                    quantity,
+                } => {
+                    encode_trade_intent(payload, BUY_ITEM_INTENT, npc, offer, quantity);
+                    continue;
+                }
+                PlayerIntent::SellItem {
+                    npc,
+                    bag_slot,
+                    quantity,
+                } => {
+                    encode_trade_intent(
+                        payload,
+                        SELL_ITEM_INTENT,
+                        npc,
+                        u32::from(bag_slot),
+                        quantity,
+                    );
+                    continue;
+                }
+                PlayerIntent::Chat(message) => {
+                    payload.push(CHAT_INTENT);
+                    crate::chat::encode_message(payload, message);
+                    continue;
+                }
+                PlayerIntent::AcceptQuest { npc, quest } => {
+                    payload.push(ACCEPT_QUEST_INTENT);
+                    payload.extend_from_slice(&npc.get().to_be_bytes());
+                    payload.extend_from_slice(&quest.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::CompleteQuest { npc, quest, choice } => {
+                    payload.push(COMPLETE_QUEST_INTENT);
+                    payload.extend_from_slice(&npc.get().to_be_bytes());
+                    payload.extend_from_slice(&quest.to_be_bytes());
+                    payload.push(choice);
+                    continue;
+                }
+                PlayerIntent::AbandonQuest { quest } => {
+                    payload.push(ABANDON_QUEST_INTENT);
+                    payload.extend_from_slice(&quest.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::UseWaystone(waystone) => {
+                    payload.push(USE_WAYSTONE_INTENT);
+                    payload.extend_from_slice(&waystone.get().to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::RaidAid(task) => {
+                    payload.push(RAID_AID_INTENT);
+                    payload.extend_from_slice(&task.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::RaidPrepare(prep) => {
+                    payload.push(RAID_PREPARE_INTENT);
+                    payload.extend_from_slice(&crate::raid::encode_prep(prep));
+                    continue;
+                }
+                PlayerIntent::Notice(code) => {
+                    payload.push(NOTICE_INTENT);
+                    payload.extend_from_slice(&crate::wire::error_code(code).to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::RollDepthsDrop { run, drop, choice } => {
+                    payload.push(ROLL_DEPTHS_DROP_INTENT);
+                    payload.extend_from_slice(&run.to_be_bytes());
+                    payload.push(drop);
+                    payload.push(crate::depths::encode_choice(choice));
+                    continue;
+                }
+                PlayerIntent::ClaimDepthsDrop { run, drop } => {
+                    payload.push(CLAIM_DEPTHS_DROP_INTENT);
+                    payload.extend_from_slice(&run.to_be_bytes());
+                    payload.push(drop);
+                    continue;
+                }
+            };
+            payload.push(code);
+            encode_entity_ref(payload, target);
+        }
+        payload.push(u8::from(combat.intents_dropped));
+        payload.extend_from_slice(&combat.last_observed.to_be_bytes());
+        payload.push(encode_u8_count(
+            combat.events.len(),
+            MAX_EVENTS_PER_PLAYER,
+            "player has too many events",
+        )?);
+        for event in &combat.events {
+            event.encode(payload)?;
+        }
+        let abilities = &combat.abilities;
+        payload.push(
+            abilities
+                .class
+                .map_or(0, |choice| u8::try_from(choice.appearance()).unwrap_or(0)),
+        );
+        for value in [
+            abilities.resource,
+            abilities.resource_ticks,
+            abilities.mana_delay,
+            abilities.global_cooldown,
+            abilities.global_cooldown_total,
+        ] {
+            payload.extend_from_slice(&value.to_be_bytes());
+        }
+        payload.push(encode_u8_count(
+            abilities.cooldowns.len(),
+            MAX_COOLDOWNS,
+            "player has too many cooldowns",
+        )?);
+        for cooldown in &abilities.cooldowns {
+            payload.extend_from_slice(&cooldown.ability.get().to_be_bytes());
+            payload.extend_from_slice(&cooldown.remaining.to_be_bytes());
+        }
+        encode_cast(payload, abilities.cast);
+        encode_auras(payload, &abilities.auras)?;
+        payload.push(crate::wire::encode_lane(abilities.guard.raised));
+        payload.extend_from_slice(&abilities.guard.broken.to_be_bytes());
+        // Divine Reckoning pools (#936): count, then creature ID (`u32`) and harm (`u16`) each.
+        payload.push(encode_u8_count(
+            abilities.reckoning.len(),
+            mmorpg_core::MAX_RECKONING_POOLS,
+            "player has too many reckoning pools",
+        )?);
+        for harm in &abilities.reckoning {
+            payload.extend_from_slice(&harm.creature.get().to_be_bytes());
+            payload.extend_from_slice(&harm.amount.to_be_bytes());
+        }
+        let landing = combat.landing;
+        payload.push(u8::from(landing.airborne));
+        payload.extend_from_slice(&landing.recovery.to_be_bytes());
+        payload.push(u8::from(landing.attacked_airborne));
+        encode_traversal(payload, combat.traversal);
+        // What the player sits on (#619): 0 nothing, 1 the ground, 2 + a seat ID (`u32`).
+        let (sitting, seat) = match combat.sitting {
+            mmorpg_core::Sitting::No => (0, 0),
+            mmorpg_core::Sitting::Ground => (1, 0),
+            mmorpg_core::Sitting::On(seat) => (2, seat.get()),
         };
-        payload.push(code);
-        encode_entity_ref(payload, target);
+        payload.push(sitting);
+        payload.extend_from_slice(&seat.to_be_bytes());
+        encode_roll(payload, combat.roll);
+        payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
+        payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
+        encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
+        payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
+        payload.push(combat.combo.map_or(0, |combo| combo.hits));
+        encode_swing(payload, combat.swing);
+        encode_melee(payload, combat.melee);
+        payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
+        payload.push(encode_u8_count(
+            player.chat.len(),
+            MAX_CHAT_PER_TICK,
+            "player heard too many chat lines",
+        )?);
+        for line in &player.chat {
+            crate::chat::encode_line(payload, line);
+        }
+        crate::quest::encode_log(payload, &player.quests)?;
+        crate::wire::encode_waystones(payload, &player.waystones)?;
+        crate::wire::encode_discoveries(payload, &player.discoveries)?;
+        crate::wire::encode_caches(payload, &player.caches)?;
+        crate::wire::encode_mastery(payload, player.mastery);
+        crate::wire::encode_practice(payload, &player.practice)?;
+        crate::character::encode_optional_character(payload, player.character.as_ref())?;
+        crate::character::encode_depths_record(payload, player.depths);
+        crate::character::encode_physique(payload, &player.physique);
+        Ok(())
     }
-    payload.push(u8::from(combat.intents_dropped));
-    payload.extend_from_slice(&combat.last_observed.to_be_bytes());
-    payload.push(encode_u8_count(
-        combat.events.len(),
-        MAX_EVENTS_PER_PLAYER,
-        "player has too many events",
-    )?);
-    for event in &combat.events {
-        encode_event(payload, event);
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let player_id = u32::from_be_bytes(take(payload, offset)?);
+        let position = read_f32_vector(payload, offset)?;
+        let velocity = read_f32_vector(payload, offset)?;
+        let facing = u16::from_be_bytes(take(payload, offset)?);
+        let forward = i8::from_be_bytes(take(payload, offset)?);
+        let strafe = i8::from_be_bytes(take(payload, offset)?);
+        let jump_pending = match read_u8(payload, offset)? {
+            0 => false,
+            1 => true,
+            _ => return Err(ProtocolError::new("jump flag must be 0 or 1")),
+        };
+        let rise = i8::from_be_bytes(take(payload, offset)?);
+        let breath = mmorpg_core::Breath {
+            remaining: u16::from_be_bytes(take(payload, offset)?),
+            drowning: u16::from_be_bytes(take(payload, offset)?),
+        };
+        let last_sequence = u32::from_be_bytes(take(payload, offset)?);
+        let spawn_slot = u16::from_be_bytes(take(payload, offset)?);
+        let inventory_revision = u64::from_be_bytes(take(payload, offset)?);
+        let inventory = decode_inventory(payload, offset)?;
+        let equipment = decode_equipment(payload, offset)?;
+        let copper = u32::from_be_bytes(take(payload, offset)?);
+        let level = read_u8(payload, offset)?;
+        let experience = u32::from_be_bytes(take(payload, offset)?);
+        let health = u32::from_be_bytes(take(payload, offset)?);
+        let target = decode_entity_ref(payload, offset)?;
+        let swing_queued = read_bool(payload, offset)?;
+        let weapon_drawn = read_bool(payload, offset)?;
+        let swing_timer = u16::from_be_bytes(take(payload, offset)?);
+        let combat_timer = u16::from_be_bytes(take(payload, offset)?);
+        let calm_ticks = u16::from_be_bytes(take(payload, offset)?);
+        let intent_count = decode_u8_count(
+            payload,
+            offset,
+            MAX_PENDING_INTENTS,
+            "player has too many pending intents",
+        )?;
+        let mut intents = Vec::with_capacity(intent_count);
+        let mut lateness = Vec::with_capacity(intent_count);
+        for _ in 0..intent_count {
+            lateness.push(read_u8(payload, offset)?);
+            let code = read_u8(payload, offset)?;
+            if code == LOOT_INTENT {
+                intents.push(PlayerIntent::Loot(crate::loot::decode_claim(
+                    payload, offset,
+                )?));
+                continue;
+            }
+            if code == SKIN_INTENT {
+                intents.push(PlayerIntent::Skin(mmorpg_core::CreatureId::new(
+                    u32::from_be_bytes(take(payload, offset)?),
+                )));
+                continue;
+            }
+            if code == GATHER_INTENT {
+                intents.push(PlayerIntent::Gather(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)));
+                continue;
+            }
+            if code == USE_ABILITY_INTENT {
+                let ability = u32::from_be_bytes(take(payload, offset)?);
+                intents.push(PlayerIntent::UseAbility {
+                    ability,
+                    target: decode_entity_ref(payload, offset)?,
+                    facing: decode_optional_yaw(payload, offset)?,
+                });
+                continue;
+            }
+            if code == DIRECTED_STRIKE_INTENT {
+                let ability = u32::from_be_bytes(take(payload, offset)?);
+                let [high, low, side, height] = take(payload, offset)?;
+                intents.push(PlayerIntent::DirectedStrike {
+                    ability,
+                    facing: u16::from_be_bytes([high, low]),
+                    aim: crate::wire::decode_aim([side, height])?,
+                });
+                continue;
+            }
+            if code == SWING_INTENT {
+                intents.push(PlayerIntent::Swing {
+                    facing: u16::from_be_bytes(take(payload, offset)?),
+                });
+                continue;
+            }
+            if code == GUARD_INTENT {
+                intents.push(PlayerIntent::Guard(crate::wire::decode_lane(read_u8(
+                    payload, offset,
+                )?)?));
+                continue;
+            }
+            if code == SET_WEAPON_DRAWN_INTENT {
+                intents.push(PlayerIntent::SetWeaponDrawn(read_bool(payload, offset)?));
+                continue;
+            }
+            if code == USE_DOOR_INTENT {
+                let door = u32::from_be_bytes(take(payload, offset)?);
+                let open = read_u8(payload, offset)?;
+                intents.push(PlayerIntent::UseDoor {
+                    door: mmorpg_core::DoorId::new(door),
+                    open: match open {
+                        0 => false,
+                        1 => true,
+                        _ => return Err(ProtocolError::new("door state must be 0 or 1")),
+                    },
+                });
+                continue;
+            }
+            if code == SIT_INTENT {
+                let seat = u32::from_be_bytes(take(payload, offset)?);
+                intents.push(PlayerIntent::Sit(
+                    (seat != 0).then(|| mmorpg_core::SeatId::new(seat)),
+                ));
+                continue;
+            }
+            if code == REPAIR_INTENT {
+                let piece = u32::from_be_bytes(take(payload, offset)?);
+                intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
+                continue;
+            }
+            if code == COMMAND_MINIONS_INTENT {
+                intents.push(PlayerIntent::CommandMinions(
+                    crate::wire::decode_minion_order(payload, offset)?,
+                ));
+                continue;
+            }
+            if code == CHOOSE_CLASS_INTENT {
+                let [class, sex] = take(payload, offset)?;
+                intents.push(PlayerIntent::ChooseClass { class, sex });
+                continue;
+            }
+            if code == ACCEPT_QUEST_INTENT || code == COMPLETE_QUEST_INTENT {
+                let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+                let quest = u32::from_be_bytes(take(payload, offset)?);
+                intents.push(if code == ACCEPT_QUEST_INTENT {
+                    PlayerIntent::AcceptQuest { npc, quest }
+                } else {
+                    PlayerIntent::CompleteQuest {
+                        npc,
+                        quest,
+                        choice: read_u8(payload, offset)?,
+                    }
+                });
+                continue;
+            }
+            if code == ABANDON_QUEST_INTENT {
+                intents.push(PlayerIntent::AbandonQuest {
+                    quest: u32::from_be_bytes(take(payload, offset)?),
+                });
+                continue;
+            }
+            if code == USE_WAYSTONE_INTENT {
+                intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
+                    u32::from_be_bytes(take(payload, offset)?),
+                )?));
+                continue;
+            }
+            if code == RAID_AID_INTENT {
+                intents.push(PlayerIntent::RaidAid(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)));
+                continue;
+            }
+            if code == NOTICE_INTENT {
+                let wire = u16::from_be_bytes(take(payload, offset)?);
+                intents.push(PlayerIntent::Notice(crate::wire::decode_error_code(wire)?));
+                continue;
+            }
+            if code == ROLL_DEPTHS_DROP_INTENT {
+                let run = u64::from_be_bytes(take(payload, offset)?);
+                let drop = read_u8(payload, offset)?;
+                let choice = crate::depths::decode_choice(read_u8(payload, offset)?)?;
+                intents.push(PlayerIntent::RollDepthsDrop { run, drop, choice });
+                continue;
+            }
+            if code == CLAIM_DEPTHS_DROP_INTENT {
+                let run = u64::from_be_bytes(take(payload, offset)?);
+                let drop = read_u8(payload, offset)?;
+                intents.push(PlayerIntent::ClaimDepthsDrop { run, drop });
+                continue;
+            }
+            if code == RAID_PREPARE_INTENT {
+                intents.push(PlayerIntent::RaidPrepare(crate::raid::decode_prep(take(
+                    payload, offset,
+                )?)?));
+                continue;
+            }
+            if code == CHAT_INTENT {
+                intents.push(PlayerIntent::Chat(crate::chat::decode_message(
+                    payload, offset,
+                )?));
+                continue;
+            }
+            if code == BUY_ITEM_INTENT || code == SELL_ITEM_INTENT {
+                let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+                let index = u32::from_be_bytes(take(payload, offset)?);
+                let quantity = u16::from_be_bytes(take(payload, offset)?);
+                intents.push(if code == BUY_ITEM_INTENT {
+                    PlayerIntent::BuyItem {
+                        npc,
+                        offer: index,
+                        quantity,
+                    }
+                } else {
+                    PlayerIntent::SellItem {
+                        npc,
+                        bag_slot: u8::try_from(index).map_err(|_| {
+                            ProtocolError::new("sell intent bag slot is out of range")
+                        })?,
+                        quantity,
+                    }
+                });
+                continue;
+            }
+            if code == EQUIP_ITEM_INTENT {
+                let [bag_slot] = take(payload, offset)?;
+                intents.push(PlayerIntent::EquipItem { bag_slot });
+                continue;
+            }
+            if code == UNEQUIP_ITEM_INTENT {
+                let [equipment_slot] = take(payload, offset)?;
+                intents.push(PlayerIntent::UnequipItem { equipment_slot });
+                continue;
+            }
+            if code == MOVE_ITEM_INTENT {
+                let [source, destination, high, low, reserved] = take(payload, offset)?;
+                if reserved != 0 {
+                    return Err(ProtocolError::new("malformed pending inventory intent"));
+                }
+                intents.push(PlayerIntent::MoveItem {
+                    source,
+                    destination,
+                    quantity: u16::from_be_bytes([high, low]),
+                });
+                continue;
+            }
+            let target = decode_entity_ref(payload, offset)?;
+            intents.push(match (code, target) {
+                (SELECT_TARGET_INTENT, target) => PlayerIntent::SelectTarget(target),
+                (RELEASE_SPIRIT_INTENT, None) => PlayerIntent::ReleaseSpirit,
+                (CANCEL_CAST_INTENT, None) => PlayerIntent::CancelCast,
+                _ => return Err(ProtocolError::new("malformed pending intent")),
+            });
+        }
+        let intents = intents
+            .into_iter()
+            .zip(lateness)
+            .map(|(intent, late)| mmorpg_core::QueuedIntent { intent, late })
+            .collect();
+        let intents_dropped = read_bool(payload, offset)?;
+        let last_observed = u64::from_be_bytes(take(payload, offset)?);
+        let event_count = decode_u8_count(
+            payload,
+            offset,
+            MAX_EVENTS_PER_PLAYER,
+            "player has too many events",
+        )?;
+        let mut events = Vec::with_capacity(event_count);
+        for _ in 0..event_count {
+            events.push(ZoneEvent::decode(payload, offset)?);
+        }
+        let class_code = read_u8(payload, offset)?;
+        let class = ClassChoice::from_appearance(u32::from(class_code));
+        if class_code != 0 && class.is_none() {
+            return Err(ProtocolError::new("unknown class choice"));
+        }
+        let resource = u16::from_be_bytes(take(payload, offset)?);
+        let resource_ticks = u16::from_be_bytes(take(payload, offset)?);
+        let mana_delay = u16::from_be_bytes(take(payload, offset)?);
+        let global_cooldown = u16::from_be_bytes(take(payload, offset)?);
+        let global_cooldown_total = u16::from_be_bytes(take(payload, offset)?);
+        let cooldown_count = decode_u8_count(
+            payload,
+            offset,
+            MAX_COOLDOWNS,
+            "player has too many cooldowns",
+        )?;
+        let mut cooldowns = Vec::with_capacity(cooldown_count);
+        for _ in 0..cooldown_count {
+            let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
+            cooldowns.push(Cooldown {
+                ability,
+                remaining: u16::from_be_bytes(take(payload, offset)?),
+            });
+        }
+        let abilities = CanonicalPlayerAbilities {
+            class,
+            resource,
+            resource_ticks,
+            mana_delay,
+            global_cooldown,
+            global_cooldown_total,
+            cooldowns,
+            cast: decode_cast(payload, offset)?,
+            auras: decode_auras(payload, offset)?,
+            guard: mmorpg_core::GuardState {
+                raised: crate::wire::decode_lane(read_u8(payload, offset)?)?,
+                broken: u16::from_be_bytes(take(payload, offset)?),
+            },
+            reckoning: {
+                let count = decode_u8_count(
+                    payload,
+                    offset,
+                    mmorpg_core::MAX_RECKONING_POOLS,
+                    "player has too many reckoning pools",
+                )?;
+                let mut pools = Vec::with_capacity(count);
+                for _ in 0..count {
+                    pools.push(mmorpg_core::Harm {
+                        creature: CreatureId::new(u32::from_be_bytes(take(payload, offset)?)),
+                        amount: u16::from_be_bytes(take(payload, offset)?),
+                    });
+                }
+                pools
+            },
+        };
+        let landing = mmorpg_core::LandingState {
+            airborne: read_bool(payload, offset)?,
+            recovery: u16::from_be_bytes(take(payload, offset)?),
+            attacked_airborne: read_bool(payload, offset)?,
+        };
+        let traversal = decode_traversal(payload, offset)?;
+        let sitting = match (
+            read_u8(payload, offset)?,
+            u32::from_be_bytes(take(payload, offset)?),
+        ) {
+            (0, 0) => mmorpg_core::Sitting::No,
+            (1, 0) => mmorpg_core::Sitting::Ground,
+            (2, seat) if seat != 0 => mmorpg_core::Sitting::On(mmorpg_core::SeatId::new(seat)),
+            _ => return Err(ProtocolError::new("player sit code is out of range")),
+        };
+        let roll = decode_roll(payload, offset)?;
+        let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
+        let repairing = crate::wire::decode_piece(u32::from_be_bytes(take(payload, offset)?));
+        let combo_target = decode_entity_ref(payload, offset)?;
+        let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
+        let combo_hits = read_u8(payload, offset)?;
+        let combo = if let Some(target) = combo_target {
+            Some(mmorpg_core::ComboOpening {
+                target,
+                elapsed: combo_elapsed,
+                hits: combo_hits,
+            })
+        } else if combo_elapsed != 0 || combo_hits != 0 {
+            return Err(ProtocolError::new("absent combo has nonzero fields"));
+        } else {
+            None
+        };
+        let swing = decode_swing(payload, offset)?;
+        let melee = decode_melee(payload, offset)?;
+        let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
+        let chat_count = decode_u8_count(
+            payload,
+            offset,
+            MAX_CHAT_PER_TICK,
+            "player heard too many chat lines",
+        )?;
+        let mut chat = Vec::with_capacity(chat_count);
+        for _ in 0..chat_count {
+            chat.push(crate::chat::decode_line(payload, offset)?);
+        }
+        let quests = crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word)?;
+        let waystones = crate::wire::decode_waystones(payload, offset)?;
+        let discoveries = crate::wire::decode_discoveries(payload, offset)?;
+        let caches = crate::wire::decode_caches(payload, offset)?;
+        let mastery = crate::wire::decode_mastery(payload, offset)?;
+        let practice = crate::wire::decode_practice(payload, offset)?;
+        let character = crate::character::decode_optional_character(payload, offset)?;
+        let depths = crate::character::decode_depths_record(payload, offset)?;
+        let physique = crate::character::decode_physique(payload, offset)?;
+        Ok(CanonicalPlayerSnapshot {
+            quests,
+            waystones,
+            discoveries,
+            caches,
+            mastery,
+            practice,
+            character,
+            depths,
+            physique,
+            chat_ready_at,
+            chat,
+            player_id,
+            position,
+            velocity,
+            facing,
+            forward,
+            strafe,
+            jump_pending,
+            rise,
+            breath,
+            last_sequence,
+            spawn_slot,
+            inventory,
+            copper,
+            inventory_revision,
+            equipment,
+            combat: CanonicalPlayerCombat {
+                level,
+                experience,
+                health,
+                target,
+                swing_queued,
+                swing_timer,
+                combat_timer,
+                weapon_drawn,
+                calm_ticks,
+                intents,
+                intents_dropped,
+                last_observed,
+                events,
+                abilities,
+                landing,
+                traversal,
+                sitting,
+                roll,
+                combo,
+                strike_recovery,
+                swing,
+                melee,
+                repairing,
+            },
+        })
     }
-    let abilities = &combat.abilities;
-    payload.push(
-        abilities
-            .class
-            .map_or(0, |choice| u8::try_from(choice.appearance()).unwrap_or(0)),
-    );
-    for value in [
-        abilities.resource,
-        abilities.resource_ticks,
-        abilities.mana_delay,
-        abilities.global_cooldown,
-        abilities.global_cooldown_total,
-    ] {
-        payload.extend_from_slice(&value.to_be_bytes());
-    }
-    payload.push(encode_u8_count(
-        abilities.cooldowns.len(),
-        MAX_COOLDOWNS,
-        "player has too many cooldowns",
-    )?);
-    for cooldown in &abilities.cooldowns {
-        payload.extend_from_slice(&cooldown.ability.get().to_be_bytes());
-        payload.extend_from_slice(&cooldown.remaining.to_be_bytes());
-    }
-    encode_cast(payload, abilities.cast);
-    encode_auras(payload, &abilities.auras)?;
-    payload.push(crate::wire::encode_lane(abilities.guard.raised));
-    payload.extend_from_slice(&abilities.guard.broken.to_be_bytes());
-    // Divine Reckoning pools (#936): count, then creature ID (`u32`) and harm (`u16`) each.
-    payload.push(encode_u8_count(
-        abilities.reckoning.len(),
-        mmorpg_core::MAX_RECKONING_POOLS,
-        "player has too many reckoning pools",
-    )?);
-    for harm in &abilities.reckoning {
-        payload.extend_from_slice(&harm.creature.get().to_be_bytes());
-        payload.extend_from_slice(&harm.amount.to_be_bytes());
-    }
-    let landing = combat.landing;
-    payload.push(u8::from(landing.airborne));
-    payload.extend_from_slice(&landing.recovery.to_be_bytes());
-    payload.push(u8::from(landing.attacked_airborne));
-    encode_traversal(payload, combat.traversal);
-    // What the player sits on (#619): 0 nothing, 1 the ground, 2 + a seat ID (`u32`).
-    let (sitting, seat) = match combat.sitting {
-        mmorpg_core::Sitting::No => (0, 0),
-        mmorpg_core::Sitting::Ground => (1, 0),
-        mmorpg_core::Sitting::On(seat) => (2, seat.get()),
-    };
-    payload.push(sitting);
-    payload.extend_from_slice(&seat.to_be_bytes());
-    encode_roll(payload, combat.roll);
-    payload.extend_from_slice(&combat.strike_recovery.to_be_bytes());
-    payload.extend_from_slice(&crate::wire::encode_piece(combat.repairing).to_be_bytes());
-    encode_entity_ref(payload, combat.combo.map(|combo| combo.target));
-    payload.extend_from_slice(&combat.combo.map_or(0, |combo| combo.elapsed).to_be_bytes());
-    payload.push(combat.combo.map_or(0, |combo| combo.hits));
-    encode_swing(payload, combat.swing);
-    encode_melee(payload, combat.melee);
-    payload.extend_from_slice(&player.chat_ready_at.to_be_bytes());
-    payload.push(encode_u8_count(
-        player.chat.len(),
-        MAX_CHAT_PER_TICK,
-        "player heard too many chat lines",
-    )?);
-    for line in &player.chat {
-        crate::chat::encode_line(payload, line);
-    }
-    crate::quest::encode_log(payload, &player.quests)?;
-    crate::wire::encode_waystones(payload, &player.waystones)?;
-    crate::wire::encode_discoveries(payload, &player.discoveries)?;
-    crate::wire::encode_caches(payload, &player.caches)?;
-    crate::wire::encode_mastery(payload, player.mastery);
-    crate::wire::encode_practice(payload, &player.practice)?;
-    crate::character::encode_optional_character(payload, player.character.as_ref())?;
-    crate::character::encode_depths_record(payload, player.depths);
-    crate::character::encode_physique(payload, &player.physique);
-    Ok(())
 }
 
 /// 19 bytes (#490, #500): kind (0 free, 1 released, 2 climbing, 3 mantling), ticks, wall yaw,
@@ -643,89 +1072,226 @@ fn decode_auras(payload: &[u8], offset: &mut usize) -> Result<Vec<Aura>, Protoco
     Ok(auras)
 }
 
-fn encode_creature(
-    payload: &mut Vec<u8>,
-    creature: &CanonicalCreatureSnapshot,
-) -> Result<(), ProtocolError> {
-    payload.extend_from_slice(&creature.creature_id.get().to_be_bytes());
-    payload.extend_from_slice(&creature.generation.to_be_bytes());
-    payload.extend_from_slice(&creature.rng_state.to_be_bytes());
-    payload.push(creature.level);
-    payload.extend_from_slice(&creature.health.to_be_bytes());
-    payload.extend_from_slice(&creature.facing.to_be_bytes());
-    for component in creature.position.into_iter().chain(creature.velocity) {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    let (life, died_at) = match creature.life {
-        CreatureLife::Alive => (ALIVE, 0),
-        CreatureLife::Corpse { died_at } => (CORPSE, died_at),
-        CreatureLife::Despawned { died_at } => (DESPAWNED, died_at),
-    };
-    payload.push(life);
-    payload.extend_from_slice(&died_at.to_be_bytes());
-    let (ai, timer, destination) = match creature.ai {
-        CreatureAi::Idle { timer, destination } => (IDLE, timer, destination),
-        CreatureAi::Engaged => (ENGAGED, 0, None),
-        CreatureAi::Evading { ticks } => (EVADING, ticks, None),
-        CreatureAi::Rallying { ticks, point } => (RALLYING, ticks, Some(point)),
-        CreatureAi::Trailing { ticks, .. } => (TRAILING, ticks, None),
-    };
-    payload.push(ai);
-    payload.extend_from_slice(&timer.to_be_bytes());
-    payload.push(u8::from(destination.is_some()));
-    for component in destination.unwrap_or([0; 2]) {
-        payload.extend_from_slice(&component.to_be_bytes());
-    }
-    // A trailing creature (#274) names the player it follows.
-    if let CreatureAi::Trailing { player, .. } = creature.ai {
-        payload.extend_from_slice(&player.to_be_bytes());
-    }
-    payload.push(encode_u8_count(
-        creature.threat.len(),
-        MAX_THREAT_ENTRIES,
-        "creature threat table exceeds its capacity",
-    )?);
-    for entry in &creature.threat {
-        encode_entity_ref(payload, Some(entry.entity));
-        payload.extend_from_slice(&entry.threat.to_be_bytes());
-    }
-    payload.extend_from_slice(&creature.swing_timer.to_be_bytes());
-    encode_creature_attack(payload, creature.attack);
-    payload.extend_from_slice(&creature.combat_timer.to_be_bytes());
-    payload.extend_from_slice(&creature.wary_ticks.to_be_bytes());
-    payload.push(u8::from(creature.tapped_by.is_some()));
-    payload.extend_from_slice(&creature.tapped_by.unwrap_or(0).to_be_bytes());
-    payload.push(u8::from(creature.loot.is_some()));
-    if let Some(rewards) = creature.loot {
-        crate::loot::encode_rewards(payload, rewards);
-    }
-    payload.push(encode_u8_count(
-        creature.loot_party.len(),
-        mmorpg_core::MAX_PARTY_MEMBERS,
-        "corpse loot party is too large",
-    )?);
-    for player in &creature.loot_party {
-        payload.extend_from_slice(&player.to_be_bytes());
-    }
-    let abilities = &creature.abilities;
-    payload.extend_from_slice(&abilities.ability_timer.to_be_bytes());
-    encode_cast(payload, abilities.cast);
-    encode_auras(payload, &abilities.auras)?;
-    payload.push(u8::from(creature.encounter.is_some()));
-    if let Some(encounter) = &creature.encounter {
-        for players in [&encounter.participants, &encounter.contributors] {
-            payload.push(encode_u8_count(
-                players.len(),
-                MAX_ENCOUNTER_PLAYERS,
-                "boss encounter exceeds its capacity",
-            )?);
-            for player in players {
-                payload.extend_from_slice(&player.to_be_bytes());
+/// A canonical creature record: its whole continuation state, variable in length.
+impl Codec for CanonicalCreatureSnapshot {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        let creature = self;
+        payload.extend_from_slice(&creature.creature_id.get().to_be_bytes());
+        payload.extend_from_slice(&creature.generation.to_be_bytes());
+        payload.extend_from_slice(&creature.rng_state.to_be_bytes());
+        payload.push(creature.level);
+        payload.extend_from_slice(&creature.health.to_be_bytes());
+        payload.extend_from_slice(&creature.facing.to_be_bytes());
+        for component in creature.position.into_iter().chain(creature.velocity) {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        let (life, died_at) = match creature.life {
+            CreatureLife::Alive => (ALIVE, 0),
+            CreatureLife::Corpse { died_at } => (CORPSE, died_at),
+            CreatureLife::Despawned { died_at } => (DESPAWNED, died_at),
+        };
+        payload.push(life);
+        payload.extend_from_slice(&died_at.to_be_bytes());
+        let (ai, timer, destination) = match creature.ai {
+            CreatureAi::Idle { timer, destination } => (IDLE, timer, destination),
+            CreatureAi::Engaged => (ENGAGED, 0, None),
+            CreatureAi::Evading { ticks } => (EVADING, ticks, None),
+            CreatureAi::Rallying { ticks, point } => (RALLYING, ticks, Some(point)),
+            CreatureAi::Trailing { ticks, .. } => (TRAILING, ticks, None),
+        };
+        payload.push(ai);
+        payload.extend_from_slice(&timer.to_be_bytes());
+        payload.push(u8::from(destination.is_some()));
+        for component in destination.unwrap_or([0; 2]) {
+            payload.extend_from_slice(&component.to_be_bytes());
+        }
+        // A trailing creature (#274) names the player it follows.
+        if let CreatureAi::Trailing { player, .. } = creature.ai {
+            payload.extend_from_slice(&player.to_be_bytes());
+        }
+        payload.push(encode_u8_count(
+            creature.threat.len(),
+            MAX_THREAT_ENTRIES,
+            "creature threat table exceeds its capacity",
+        )?);
+        for entry in &creature.threat {
+            encode_entity_ref(payload, Some(entry.entity));
+            payload.extend_from_slice(&entry.threat.to_be_bytes());
+        }
+        payload.extend_from_slice(&creature.swing_timer.to_be_bytes());
+        encode_creature_attack(payload, creature.attack);
+        payload.extend_from_slice(&creature.combat_timer.to_be_bytes());
+        payload.extend_from_slice(&creature.wary_ticks.to_be_bytes());
+        payload.push(u8::from(creature.tapped_by.is_some()));
+        payload.extend_from_slice(&creature.tapped_by.unwrap_or(0).to_be_bytes());
+        payload.push(u8::from(creature.loot.is_some()));
+        if let Some(rewards) = creature.loot {
+            crate::loot::encode_rewards(payload, rewards);
+        }
+        payload.push(encode_u8_count(
+            creature.loot_party.len(),
+            mmorpg_core::MAX_PARTY_MEMBERS,
+            "corpse loot party is too large",
+        )?);
+        for player in &creature.loot_party {
+            payload.extend_from_slice(&player.to_be_bytes());
+        }
+        let abilities = &creature.abilities;
+        payload.extend_from_slice(&abilities.ability_timer.to_be_bytes());
+        encode_cast(payload, abilities.cast);
+        encode_auras(payload, &abilities.auras)?;
+        payload.push(u8::from(creature.encounter.is_some()));
+        if let Some(encounter) = &creature.encounter {
+            for players in [&encounter.participants, &encounter.contributors] {
+                payload.push(encode_u8_count(
+                    players.len(),
+                    MAX_ENCOUNTER_PLAYERS,
+                    "boss encounter exceeds its capacity",
+                )?);
+                for player in players {
+                    payload.extend_from_slice(&player.to_be_bytes());
+                }
             }
         }
+        crate::raid::encode_member(payload, creature.raid);
+        Ok(())
     }
-    crate::raid::encode_member(payload, creature.raid);
-    Ok(())
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let creature_id = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
+        let generation = u64::from_be_bytes(take(payload, offset)?);
+        if generation == 0 {
+            return Err(ProtocolError::new("invalid creature life identity"));
+        }
+        let rng_state = u64::from_be_bytes(take(payload, offset)?);
+        let level = read_u8(payload, offset)?;
+        let health = u32::from_be_bytes(take(payload, offset)?);
+        let facing = u16::from_be_bytes(take(payload, offset)?);
+        let position = read_f32_vector(payload, offset)?;
+        let velocity = read_f32_vector(payload, offset)?;
+        let life_code = read_u8(payload, offset)?;
+        let died_at = u64::from_be_bytes(take(payload, offset)?);
+        let life = match (life_code, died_at) {
+            (ALIVE, 0) => CreatureLife::Alive,
+            (CORPSE, died_at) => CreatureLife::Corpse { died_at },
+            (DESPAWNED, died_at) => CreatureLife::Despawned { died_at },
+            _ => return Err(ProtocolError::new("malformed creature life cycle")),
+        };
+        let ai_code = read_u8(payload, offset)?;
+        let timer = u16::from_be_bytes(take(payload, offset)?);
+        let has_destination = read_bool(payload, offset)?;
+        let destination = [
+            i32::from_be_bytes(take(payload, offset)?),
+            i32::from_be_bytes(take(payload, offset)?),
+        ];
+        let destination = match (has_destination, destination) {
+            (true, destination) => Some(destination),
+            (false, [0, 0]) => None,
+            (false, _) => return Err(ProtocolError::new("malformed creature destination")),
+        };
+        let ai = match (ai_code, timer, destination) {
+            (IDLE, timer, destination) => CreatureAi::Idle { timer, destination },
+            (ENGAGED, 0, None) => CreatureAi::Engaged,
+            (EVADING, ticks, None) => CreatureAi::Evading { ticks },
+            (RALLYING, ticks, Some(point)) => CreatureAi::Rallying { ticks, point },
+            (TRAILING, ticks, None) => CreatureAi::Trailing {
+                player: u32::from_be_bytes(take(payload, offset)?),
+                ticks,
+            },
+            _ => return Err(ProtocolError::new("malformed creature AI state")),
+        };
+        let threat_count = decode_u8_count(
+            payload,
+            offset,
+            MAX_THREAT_ENTRIES,
+            "creature threat table exceeds its capacity",
+        )?;
+        let mut threat = Vec::with_capacity(threat_count);
+        for _ in 0..threat_count {
+            let entity: Option<EntityRef> = decode_entity_ref(payload, offset)?;
+            let entity = entity.ok_or_else(|| ProtocolError::new("threat entry needs a unit"))?;
+            threat.push(ThreatEntry {
+                entity,
+                threat: u32::from_be_bytes(take(payload, offset)?),
+            });
+        }
+        let swing_timer = u16::from_be_bytes(take(payload, offset)?);
+        let attack = decode_creature_attack(payload, offset)?;
+        let combat_timer = u16::from_be_bytes(take(payload, offset)?);
+        let wary_ticks = u16::from_be_bytes(take(payload, offset)?);
+        let tapped = read_bool(payload, offset)?;
+        let tapper = u32::from_be_bytes(take(payload, offset)?);
+        let tapped_by = match (tapped, tapper) {
+            (true, tapper) => Some(tapper),
+            (false, 0) => None,
+            (false, _) => return Err(ProtocolError::new("malformed creature tap")),
+        };
+        let loot = if read_bool(payload, offset)? {
+            Some(crate::loot::decode_rewards(payload, offset)?)
+        } else {
+            None
+        };
+        let loot_party_count = decode_u8_count(
+            payload,
+            offset,
+            mmorpg_core::MAX_PARTY_MEMBERS,
+            "corpse loot party is too large",
+        )?;
+        let mut loot_party = Vec::with_capacity(loot_party_count);
+        for _ in 0..loot_party_count {
+            loot_party.push(u32::from_be_bytes(take(payload, offset)?));
+        }
+        let abilities = CanonicalCreatureAbilities {
+            ability_timer: u16::from_be_bytes(take(payload, offset)?),
+            cast: decode_cast(payload, offset)?,
+            auras: decode_auras(payload, offset)?,
+        };
+        let encounter = if read_bool(payload, offset)? {
+            let mut lists = [Vec::new(), Vec::new()];
+            for players in &mut lists {
+                let count = decode_u8_count(
+                    payload,
+                    offset,
+                    MAX_ENCOUNTER_PLAYERS,
+                    "boss encounter exceeds its capacity",
+                )?;
+                for _ in 0..count {
+                    players.push(u32::from_be_bytes(take(payload, offset)?));
+                }
+            }
+            let [participants, contributors] = lists;
+            Some(mmorpg_core::BossEncounter {
+                participants,
+                contributors,
+            })
+        } else {
+            None
+        };
+        let raid = crate::raid::decode_member(payload, offset)?;
+        Ok(CanonicalCreatureSnapshot {
+            generation,
+            rng_state,
+            creature_id,
+            level,
+            health,
+            facing,
+            position,
+            velocity,
+            life,
+            ai,
+            threat,
+            swing_timer,
+            attack,
+            combat_timer,
+            wary_ticks,
+            tapped_by,
+            loot,
+            loot_party,
+            abilities,
+            encounter,
+            raid,
+        })
+    }
 }
 
 pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot, ProtocolError> {
@@ -743,7 +1309,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     )?;
     let mut players = Vec::with_capacity(player_count);
     for _ in 0..player_count {
-        players.push(decode_player(payload, &mut offset)?);
+        players.push(CanonicalPlayerSnapshot::decode(payload, &mut offset)?);
     }
     let creature_count = decode_u16_count(
         payload,
@@ -753,7 +1319,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     )?;
     let mut creatures = Vec::with_capacity(creature_count);
     for _ in 0..creature_count {
-        creatures.push(decode_creature(payload, &mut offset)?);
+        creatures.push(CanonicalCreatureSnapshot::decode(payload, &mut offset)?);
     }
     let doors = decode_canonical_doors(payload, &mut offset)?;
     let (next_projectile, projectiles) = decode_projectiles(payload, &mut offset)?;
@@ -1136,434 +1702,6 @@ fn decode_pieces(
         .collect()
 }
 
-fn decode_player(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<CanonicalPlayerSnapshot, ProtocolError> {
-    let player_id = u32::from_be_bytes(take(payload, offset)?);
-    let position = read_f32_vector(payload, offset)?;
-    let velocity = read_f32_vector(payload, offset)?;
-    let facing = u16::from_be_bytes(take(payload, offset)?);
-    let forward = i8::from_be_bytes(take(payload, offset)?);
-    let strafe = i8::from_be_bytes(take(payload, offset)?);
-    let jump_pending = match read_u8(payload, offset)? {
-        0 => false,
-        1 => true,
-        _ => return Err(ProtocolError::new("jump flag must be 0 or 1")),
-    };
-    let rise = i8::from_be_bytes(take(payload, offset)?);
-    let breath = mmorpg_core::Breath {
-        remaining: u16::from_be_bytes(take(payload, offset)?),
-        drowning: u16::from_be_bytes(take(payload, offset)?),
-    };
-    let last_sequence = u32::from_be_bytes(take(payload, offset)?);
-    let spawn_slot = u16::from_be_bytes(take(payload, offset)?);
-    let inventory_revision = u64::from_be_bytes(take(payload, offset)?);
-    let inventory = decode_inventory(payload, offset)?;
-    let equipment = decode_equipment(payload, offset)?;
-    let copper = u32::from_be_bytes(take(payload, offset)?);
-    let level = read_u8(payload, offset)?;
-    let experience = u32::from_be_bytes(take(payload, offset)?);
-    let health = u32::from_be_bytes(take(payload, offset)?);
-    let target = decode_entity_ref(payload, offset)?;
-    let swing_queued = read_bool(payload, offset)?;
-    let weapon_drawn = read_bool(payload, offset)?;
-    let swing_timer = u16::from_be_bytes(take(payload, offset)?);
-    let combat_timer = u16::from_be_bytes(take(payload, offset)?);
-    let calm_ticks = u16::from_be_bytes(take(payload, offset)?);
-    let intent_count = decode_u8_count(
-        payload,
-        offset,
-        MAX_PENDING_INTENTS,
-        "player has too many pending intents",
-    )?;
-    let mut intents = Vec::with_capacity(intent_count);
-    let mut lateness = Vec::with_capacity(intent_count);
-    for _ in 0..intent_count {
-        lateness.push(read_u8(payload, offset)?);
-        let code = read_u8(payload, offset)?;
-        if code == LOOT_INTENT {
-            intents.push(PlayerIntent::Loot(crate::loot::decode_claim(
-                payload, offset,
-            )?));
-            continue;
-        }
-        if code == SKIN_INTENT {
-            intents.push(PlayerIntent::Skin(mmorpg_core::CreatureId::new(
-                u32::from_be_bytes(take(payload, offset)?),
-            )));
-            continue;
-        }
-        if code == GATHER_INTENT {
-            intents.push(PlayerIntent::Gather(u32::from_be_bytes(take(
-                payload, offset,
-            )?)));
-            continue;
-        }
-        if code == USE_ABILITY_INTENT {
-            let ability = u32::from_be_bytes(take(payload, offset)?);
-            intents.push(PlayerIntent::UseAbility {
-                ability,
-                target: decode_entity_ref(payload, offset)?,
-                facing: decode_optional_yaw(payload, offset)?,
-            });
-            continue;
-        }
-        if code == DIRECTED_STRIKE_INTENT {
-            let ability = u32::from_be_bytes(take(payload, offset)?);
-            let [high, low, side, height] = take(payload, offset)?;
-            intents.push(PlayerIntent::DirectedStrike {
-                ability,
-                facing: u16::from_be_bytes([high, low]),
-                aim: crate::wire::decode_aim([side, height])?,
-            });
-            continue;
-        }
-        if code == SWING_INTENT {
-            intents.push(PlayerIntent::Swing {
-                facing: u16::from_be_bytes(take(payload, offset)?),
-            });
-            continue;
-        }
-        if code == GUARD_INTENT {
-            intents.push(PlayerIntent::Guard(crate::wire::decode_lane(read_u8(
-                payload, offset,
-            )?)?));
-            continue;
-        }
-        if code == SET_WEAPON_DRAWN_INTENT {
-            intents.push(PlayerIntent::SetWeaponDrawn(read_bool(payload, offset)?));
-            continue;
-        }
-        if code == USE_DOOR_INTENT {
-            let door = u32::from_be_bytes(take(payload, offset)?);
-            let open = read_u8(payload, offset)?;
-            intents.push(PlayerIntent::UseDoor {
-                door: mmorpg_core::DoorId::new(door),
-                open: match open {
-                    0 => false,
-                    1 => true,
-                    _ => return Err(ProtocolError::new("door state must be 0 or 1")),
-                },
-            });
-            continue;
-        }
-        if code == SIT_INTENT {
-            let seat = u32::from_be_bytes(take(payload, offset)?);
-            intents.push(PlayerIntent::Sit(
-                (seat != 0).then(|| mmorpg_core::SeatId::new(seat)),
-            ));
-            continue;
-        }
-        if code == REPAIR_INTENT {
-            let piece = u32::from_be_bytes(take(payload, offset)?);
-            intents.push(PlayerIntent::Repair(crate::wire::decode_piece(piece)));
-            continue;
-        }
-        if code == COMMAND_MINIONS_INTENT {
-            intents.push(PlayerIntent::CommandMinions(
-                crate::wire::decode_minion_order(payload, offset)?,
-            ));
-            continue;
-        }
-        if code == CHOOSE_CLASS_INTENT {
-            let [class, sex] = take(payload, offset)?;
-            intents.push(PlayerIntent::ChooseClass { class, sex });
-            continue;
-        }
-        if code == ACCEPT_QUEST_INTENT || code == COMPLETE_QUEST_INTENT {
-            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
-            let quest = u32::from_be_bytes(take(payload, offset)?);
-            intents.push(if code == ACCEPT_QUEST_INTENT {
-                PlayerIntent::AcceptQuest { npc, quest }
-            } else {
-                PlayerIntent::CompleteQuest {
-                    npc,
-                    quest,
-                    choice: read_u8(payload, offset)?,
-                }
-            });
-            continue;
-        }
-        if code == ABANDON_QUEST_INTENT {
-            intents.push(PlayerIntent::AbandonQuest {
-                quest: u32::from_be_bytes(take(payload, offset)?),
-            });
-            continue;
-        }
-        if code == USE_WAYSTONE_INTENT {
-            intents.push(PlayerIntent::UseWaystone(crate::wire::decode_waystone(
-                u32::from_be_bytes(take(payload, offset)?),
-            )?));
-            continue;
-        }
-        if code == RAID_AID_INTENT {
-            intents.push(PlayerIntent::RaidAid(u32::from_be_bytes(take(
-                payload, offset,
-            )?)));
-            continue;
-        }
-        if code == NOTICE_INTENT {
-            let wire = u16::from_be_bytes(take(payload, offset)?);
-            intents.push(PlayerIntent::Notice(crate::wire::decode_error_code(wire)?));
-            continue;
-        }
-        if code == ROLL_DEPTHS_DROP_INTENT {
-            let run = u64::from_be_bytes(take(payload, offset)?);
-            let drop = read_u8(payload, offset)?;
-            let choice = crate::depths::decode_choice(read_u8(payload, offset)?)?;
-            intents.push(PlayerIntent::RollDepthsDrop { run, drop, choice });
-            continue;
-        }
-        if code == CLAIM_DEPTHS_DROP_INTENT {
-            let run = u64::from_be_bytes(take(payload, offset)?);
-            let drop = read_u8(payload, offset)?;
-            intents.push(PlayerIntent::ClaimDepthsDrop { run, drop });
-            continue;
-        }
-        if code == RAID_PREPARE_INTENT {
-            intents.push(PlayerIntent::RaidPrepare(crate::raid::decode_prep(take(
-                payload, offset,
-            )?)?));
-            continue;
-        }
-        if code == CHAT_INTENT {
-            intents.push(PlayerIntent::Chat(crate::chat::decode_message(
-                payload, offset,
-            )?));
-            continue;
-        }
-        if code == BUY_ITEM_INTENT || code == SELL_ITEM_INTENT {
-            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
-            let index = u32::from_be_bytes(take(payload, offset)?);
-            let quantity = u16::from_be_bytes(take(payload, offset)?);
-            intents.push(if code == BUY_ITEM_INTENT {
-                PlayerIntent::BuyItem {
-                    npc,
-                    offer: index,
-                    quantity,
-                }
-            } else {
-                PlayerIntent::SellItem {
-                    npc,
-                    bag_slot: u8::try_from(index)
-                        .map_err(|_| ProtocolError::new("sell intent bag slot is out of range"))?,
-                    quantity,
-                }
-            });
-            continue;
-        }
-        if code == EQUIP_ITEM_INTENT {
-            let [bag_slot] = take(payload, offset)?;
-            intents.push(PlayerIntent::EquipItem { bag_slot });
-            continue;
-        }
-        if code == UNEQUIP_ITEM_INTENT {
-            let [equipment_slot] = take(payload, offset)?;
-            intents.push(PlayerIntent::UnequipItem { equipment_slot });
-            continue;
-        }
-        if code == MOVE_ITEM_INTENT {
-            let [source, destination, high, low, reserved] = take(payload, offset)?;
-            if reserved != 0 {
-                return Err(ProtocolError::new("malformed pending inventory intent"));
-            }
-            intents.push(PlayerIntent::MoveItem {
-                source,
-                destination,
-                quantity: u16::from_be_bytes([high, low]),
-            });
-            continue;
-        }
-        let target = decode_entity_ref(payload, offset)?;
-        intents.push(match (code, target) {
-            (SELECT_TARGET_INTENT, target) => PlayerIntent::SelectTarget(target),
-            (RELEASE_SPIRIT_INTENT, None) => PlayerIntent::ReleaseSpirit,
-            (CANCEL_CAST_INTENT, None) => PlayerIntent::CancelCast,
-            _ => return Err(ProtocolError::new("malformed pending intent")),
-        });
-    }
-    let intents = intents
-        .into_iter()
-        .zip(lateness)
-        .map(|(intent, late)| mmorpg_core::QueuedIntent { intent, late })
-        .collect();
-    let intents_dropped = read_bool(payload, offset)?;
-    let last_observed = u64::from_be_bytes(take(payload, offset)?);
-    let event_count = decode_u8_count(
-        payload,
-        offset,
-        MAX_EVENTS_PER_PLAYER,
-        "player has too many events",
-    )?;
-    let mut events = Vec::with_capacity(event_count);
-    for _ in 0..event_count {
-        events.push(decode_event(payload, offset)?);
-    }
-    let class_code = read_u8(payload, offset)?;
-    let class = ClassChoice::from_appearance(u32::from(class_code));
-    if class_code != 0 && class.is_none() {
-        return Err(ProtocolError::new("unknown class choice"));
-    }
-    let resource = u16::from_be_bytes(take(payload, offset)?);
-    let resource_ticks = u16::from_be_bytes(take(payload, offset)?);
-    let mana_delay = u16::from_be_bytes(take(payload, offset)?);
-    let global_cooldown = u16::from_be_bytes(take(payload, offset)?);
-    let global_cooldown_total = u16::from_be_bytes(take(payload, offset)?);
-    let cooldown_count = decode_u8_count(
-        payload,
-        offset,
-        MAX_COOLDOWNS,
-        "player has too many cooldowns",
-    )?;
-    let mut cooldowns = Vec::with_capacity(cooldown_count);
-    for _ in 0..cooldown_count {
-        let ability = AbilityId::new(u32::from_be_bytes(take(payload, offset)?));
-        cooldowns.push(Cooldown {
-            ability,
-            remaining: u16::from_be_bytes(take(payload, offset)?),
-        });
-    }
-    let abilities = CanonicalPlayerAbilities {
-        class,
-        resource,
-        resource_ticks,
-        mana_delay,
-        global_cooldown,
-        global_cooldown_total,
-        cooldowns,
-        cast: decode_cast(payload, offset)?,
-        auras: decode_auras(payload, offset)?,
-        guard: mmorpg_core::GuardState {
-            raised: crate::wire::decode_lane(read_u8(payload, offset)?)?,
-            broken: u16::from_be_bytes(take(payload, offset)?),
-        },
-        reckoning: {
-            let count = decode_u8_count(
-                payload,
-                offset,
-                mmorpg_core::MAX_RECKONING_POOLS,
-                "player has too many reckoning pools",
-            )?;
-            let mut pools = Vec::with_capacity(count);
-            for _ in 0..count {
-                pools.push(mmorpg_core::Harm {
-                    creature: CreatureId::new(u32::from_be_bytes(take(payload, offset)?)),
-                    amount: u16::from_be_bytes(take(payload, offset)?),
-                });
-            }
-            pools
-        },
-    };
-    let landing = mmorpg_core::LandingState {
-        airborne: read_bool(payload, offset)?,
-        recovery: u16::from_be_bytes(take(payload, offset)?),
-        attacked_airborne: read_bool(payload, offset)?,
-    };
-    let traversal = decode_traversal(payload, offset)?;
-    let sitting = match (
-        read_u8(payload, offset)?,
-        u32::from_be_bytes(take(payload, offset)?),
-    ) {
-        (0, 0) => mmorpg_core::Sitting::No,
-        (1, 0) => mmorpg_core::Sitting::Ground,
-        (2, seat) if seat != 0 => mmorpg_core::Sitting::On(mmorpg_core::SeatId::new(seat)),
-        _ => return Err(ProtocolError::new("player sit code is out of range")),
-    };
-    let roll = decode_roll(payload, offset)?;
-    let strike_recovery = u16::from_be_bytes(take(payload, offset)?);
-    let repairing = crate::wire::decode_piece(u32::from_be_bytes(take(payload, offset)?));
-    let combo_target = decode_entity_ref(payload, offset)?;
-    let combo_elapsed = u16::from_be_bytes(take(payload, offset)?);
-    let combo_hits = read_u8(payload, offset)?;
-    let combo = if let Some(target) = combo_target {
-        Some(mmorpg_core::ComboOpening {
-            target,
-            elapsed: combo_elapsed,
-            hits: combo_hits,
-        })
-    } else if combo_elapsed != 0 || combo_hits != 0 {
-        return Err(ProtocolError::new("absent combo has nonzero fields"));
-    } else {
-        None
-    };
-    let swing = decode_swing(payload, offset)?;
-    let melee = decode_melee(payload, offset)?;
-    let chat_ready_at = u64::from_be_bytes(take(payload, offset)?);
-    let chat_count = decode_u8_count(
-        payload,
-        offset,
-        MAX_CHAT_PER_TICK,
-        "player heard too many chat lines",
-    )?;
-    let mut chat = Vec::with_capacity(chat_count);
-    for _ in 0..chat_count {
-        chat.push(crate::chat::decode_line(payload, offset)?);
-    }
-    let quests = crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word)?;
-    let waystones = crate::wire::decode_waystones(payload, offset)?;
-    let discoveries = crate::wire::decode_discoveries(payload, offset)?;
-    let caches = crate::wire::decode_caches(payload, offset)?;
-    let mastery = crate::wire::decode_mastery(payload, offset)?;
-    let practice = crate::wire::decode_practice(payload, offset)?;
-    let character = crate::character::decode_optional_character(payload, offset)?;
-    let depths = crate::character::decode_depths_record(payload, offset)?;
-    let physique = crate::character::decode_physique(payload, offset)?;
-    Ok(CanonicalPlayerSnapshot {
-        quests,
-        waystones,
-        discoveries,
-        caches,
-        mastery,
-        practice,
-        character,
-        depths,
-        physique,
-        chat_ready_at,
-        chat,
-        player_id,
-        position,
-        velocity,
-        facing,
-        forward,
-        strafe,
-        jump_pending,
-        rise,
-        breath,
-        last_sequence,
-        spawn_slot,
-        inventory,
-        copper,
-        inventory_revision,
-        equipment,
-        combat: CanonicalPlayerCombat {
-            level,
-            experience,
-            health,
-            target,
-            swing_queued,
-            swing_timer,
-            combat_timer,
-            weapon_drawn,
-            calm_ticks,
-            intents,
-            intents_dropped,
-            last_observed,
-            events,
-            abilities,
-            landing,
-            traversal,
-            sitting,
-            roll,
-            combo,
-            strike_recovery,
-            swing,
-            melee,
-            repairing,
-        },
-    })
-}
-
 /// A running timed swing (#679): a presence byte, then ability (`u32`), `u16` facing, aim, `u16`
 /// elapsed, `u16` startup and active ticks, the units it struck (#909) and `u16` rewind.
 fn encode_swing(payload: &mut Vec<u8>, swing: Option<mmorpg_core::Swing>) {
@@ -1670,145 +1808,6 @@ fn decode_melee(
         return Err(invalid());
     }
     Ok(melee)
-}
-
-fn decode_creature(
-    payload: &[u8],
-    offset: &mut usize,
-) -> Result<CanonicalCreatureSnapshot, ProtocolError> {
-    let creature_id = CreatureId::new(u32::from_be_bytes(take(payload, offset)?));
-    let generation = u64::from_be_bytes(take(payload, offset)?);
-    if generation == 0 {
-        return Err(ProtocolError::new("invalid creature life identity"));
-    }
-    let rng_state = u64::from_be_bytes(take(payload, offset)?);
-    let level = read_u8(payload, offset)?;
-    let health = u32::from_be_bytes(take(payload, offset)?);
-    let facing = u16::from_be_bytes(take(payload, offset)?);
-    let position = read_f32_vector(payload, offset)?;
-    let velocity = read_f32_vector(payload, offset)?;
-    let life_code = read_u8(payload, offset)?;
-    let died_at = u64::from_be_bytes(take(payload, offset)?);
-    let life = match (life_code, died_at) {
-        (ALIVE, 0) => CreatureLife::Alive,
-        (CORPSE, died_at) => CreatureLife::Corpse { died_at },
-        (DESPAWNED, died_at) => CreatureLife::Despawned { died_at },
-        _ => return Err(ProtocolError::new("malformed creature life cycle")),
-    };
-    let ai_code = read_u8(payload, offset)?;
-    let timer = u16::from_be_bytes(take(payload, offset)?);
-    let has_destination = read_bool(payload, offset)?;
-    let destination = [
-        i32::from_be_bytes(take(payload, offset)?),
-        i32::from_be_bytes(take(payload, offset)?),
-    ];
-    let destination = match (has_destination, destination) {
-        (true, destination) => Some(destination),
-        (false, [0, 0]) => None,
-        (false, _) => return Err(ProtocolError::new("malformed creature destination")),
-    };
-    let ai = match (ai_code, timer, destination) {
-        (IDLE, timer, destination) => CreatureAi::Idle { timer, destination },
-        (ENGAGED, 0, None) => CreatureAi::Engaged,
-        (EVADING, ticks, None) => CreatureAi::Evading { ticks },
-        (RALLYING, ticks, Some(point)) => CreatureAi::Rallying { ticks, point },
-        (TRAILING, ticks, None) => CreatureAi::Trailing {
-            player: u32::from_be_bytes(take(payload, offset)?),
-            ticks,
-        },
-        _ => return Err(ProtocolError::new("malformed creature AI state")),
-    };
-    let threat_count = decode_u8_count(
-        payload,
-        offset,
-        MAX_THREAT_ENTRIES,
-        "creature threat table exceeds its capacity",
-    )?;
-    let mut threat = Vec::with_capacity(threat_count);
-    for _ in 0..threat_count {
-        let entity: Option<EntityRef> = decode_entity_ref(payload, offset)?;
-        let entity = entity.ok_or_else(|| ProtocolError::new("threat entry needs a unit"))?;
-        threat.push(ThreatEntry {
-            entity,
-            threat: u32::from_be_bytes(take(payload, offset)?),
-        });
-    }
-    let swing_timer = u16::from_be_bytes(take(payload, offset)?);
-    let attack = decode_creature_attack(payload, offset)?;
-    let combat_timer = u16::from_be_bytes(take(payload, offset)?);
-    let wary_ticks = u16::from_be_bytes(take(payload, offset)?);
-    let tapped = read_bool(payload, offset)?;
-    let tapper = u32::from_be_bytes(take(payload, offset)?);
-    let tapped_by = match (tapped, tapper) {
-        (true, tapper) => Some(tapper),
-        (false, 0) => None,
-        (false, _) => return Err(ProtocolError::new("malformed creature tap")),
-    };
-    let loot = if read_bool(payload, offset)? {
-        Some(crate::loot::decode_rewards(payload, offset)?)
-    } else {
-        None
-    };
-    let loot_party_count = decode_u8_count(
-        payload,
-        offset,
-        mmorpg_core::MAX_PARTY_MEMBERS,
-        "corpse loot party is too large",
-    )?;
-    let mut loot_party = Vec::with_capacity(loot_party_count);
-    for _ in 0..loot_party_count {
-        loot_party.push(u32::from_be_bytes(take(payload, offset)?));
-    }
-    let abilities = CanonicalCreatureAbilities {
-        ability_timer: u16::from_be_bytes(take(payload, offset)?),
-        cast: decode_cast(payload, offset)?,
-        auras: decode_auras(payload, offset)?,
-    };
-    let encounter = if read_bool(payload, offset)? {
-        let mut lists = [Vec::new(), Vec::new()];
-        for players in &mut lists {
-            let count = decode_u8_count(
-                payload,
-                offset,
-                MAX_ENCOUNTER_PLAYERS,
-                "boss encounter exceeds its capacity",
-            )?;
-            for _ in 0..count {
-                players.push(u32::from_be_bytes(take(payload, offset)?));
-            }
-        }
-        let [participants, contributors] = lists;
-        Some(mmorpg_core::BossEncounter {
-            participants,
-            contributors,
-        })
-    } else {
-        None
-    };
-    let raid = crate::raid::decode_member(payload, offset)?;
-    Ok(CanonicalCreatureSnapshot {
-        generation,
-        rng_state,
-        creature_id,
-        level,
-        health,
-        facing,
-        position,
-        velocity,
-        life,
-        ai,
-        threat,
-        swing_timer,
-        attack,
-        combat_timer,
-        wary_ticks,
-        tapped_by,
-        loot,
-        loot_party,
-        abilities,
-        encounter,
-        raid,
-    })
 }
 
 /// A beast's pending bite (#889): `0` for none, else `1 +` its attack code, the unit it began on
@@ -3259,6 +3258,45 @@ pub(crate) mod tests {
                 decoded.players[0].combat.combo,
                 state.players[0].combat.combo
             );
+        }
+    }
+
+    /// A finite `f32` from anywhere in its range.
+    fn finite(rng: &mut crate::codec::generate::Gen) -> f32 {
+        loop {
+            let value = f32::from_bits(rng.int());
+            if value.is_finite() {
+                return value;
+            }
+        }
+    }
+
+    /// The golden snapshot's players and creatures, each with its free physics state and
+    /// identity drawn at random, round-trip record by record.
+    #[test]
+    fn canonical_players_and_creatures_round_trip() {
+        use crate::codec::generate::{CASES, Gen, round_trip};
+        let sample = snapshot();
+        assert!(!sample.players.is_empty() && !sample.creatures.is_empty());
+        let mut rng = Gen::new(9);
+        for _ in 0..CASES / 8 {
+            for player in &sample.players {
+                let mut player = player.clone();
+                player.position = [finite(&mut rng), finite(&mut rng), finite(&mut rng)];
+                player.velocity = [finite(&mut rng), finite(&mut rng), finite(&mut rng)];
+                player.facing = rng.int();
+                player.last_sequence = rng.int();
+                round_trip(&player, None);
+            }
+            for creature in &sample.creatures {
+                let mut creature = creature.clone();
+                creature.position = [finite(&mut rng), finite(&mut rng), finite(&mut rng)];
+                creature.velocity = [finite(&mut rng), finite(&mut rng), finite(&mut rng)];
+                creature.facing = rng.int();
+                creature.generation = rng.int::<u64>().max(1);
+                creature.rng_state = rng.int();
+                round_trip(&creature, None);
+            }
         }
     }
 }
