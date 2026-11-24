@@ -3211,6 +3211,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmorpg-local-host"
+version = "0.1.0"
+dependencies = [
+ "battle-royale-core",
+ "game-server",
+ "mmorpg-characters",
+ "mmorpg-control-plane",
+ "mmorpg-core",
+ "mmorpg-game-server",
+ "mmorpg-protocol",
+ "serde",
+ "serde_json",
+ "strum",
+]
+
+[[package]]
 name = "mmorpg-postgres"
 version = "0.1.0"
 dependencies = [
@@ -3276,6 +3292,7 @@ dependencies = [
  "mmorpg-client-model",
  "mmorpg-core",
  "mmorpg-game-server",
+ "mmorpg-local-host",
  "mmorpg-presentation",
  "mmorpg-protocol",
  "mmorpg-scenery",

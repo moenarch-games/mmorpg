@@ -14,6 +14,7 @@ members = [
   "crates/mmorpg-scenery",
   "crates/mmorpg-presentation",
   "crates/mmorpg-client-model",
+  "crates/mmorpg-local-host",
   "crates/mmorpg-wasm",
   "crates/mmorpg-world-studio",
 ]
@@ -42,6 +43,7 @@ mmorpg-game-server = { path = "crates/mmorpg-game-server" }
 mmorpg-scenery = { path = "crates/mmorpg-scenery" }
 mmorpg-presentation = { path = "crates/mmorpg-presentation" }
 mmorpg-client-model = { path = "crates/mmorpg-client-model" }
+mmorpg-local-host = { path = "crates/mmorpg-local-host" }
 # The Battle Royale fortress (#552): its one shared arena content, read by the browser's practice
 # zone and arena presentation. It names mmorpg-core by git; the patch below points it here.
 battle-royale-core = { git = "https://github.com/moenarch-games/battle-royale.git", branch = "main" }

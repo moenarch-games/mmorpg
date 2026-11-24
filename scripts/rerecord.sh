@@ -21,7 +21,7 @@ run -p mmorpg-core --test zone presentation_gameplay::
 # Bot and control-plane scenario outputs.
 run -p mmorpg-scenarios
 # Scenery stable hash, export fingerprint and the generated Action Lab baseline.
-run -p mmorpg-scenery -p mmorpg-wasm
+run -p mmorpg-scenery -p mmorpg-wasm -p mmorpg-local-host
 
 git status --short -- fixtures crates
 git diff --stat -- fixtures crates

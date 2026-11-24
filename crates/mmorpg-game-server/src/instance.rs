@@ -8,13 +8,15 @@
 //! trusted host input, so replay sees it in order with commands. Level-triggered reconciliation
 //! means a restarted host simply rebinds its runs from the directory.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use game_server::{ControlContext, LiveMatchHost, MatchId, SimulationError};
 use mmorpg_control_plane::ZoneLease;
-use mmorpg_control_plane::instance::{EntryCandidate, InstanceAuthority};
+use mmorpg_control_plane::instance::{
+    EntryCandidate, InstanceAuthority, SlotReport, ThresholdAnswer, entry_candidates,
+};
 use mmorpg_core::redbrand_depths::is_depths_zone;
 use mmorpg_core::{
     BossReport, CharacterId, CharacterLocation, DepthsRunStart, ErrorCode, PlayerId,
@@ -39,7 +41,7 @@ const CONFIRM_BOSS: u8 = 13;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ThresholdEntry {
     pub player: PlayerId,
-    pub candidates: Vec<(CharacterId, bool)>,
+    pub candidates: Vec<EntryCandidate>,
 }
 
 /// A run's reported progress: run ID, cleared chambers, checkpoint.
@@ -181,7 +183,7 @@ impl ZoneGameServerAdapter {
             [1, REFUSE, hi, lo] => {
                 let code = error_code_from_wire(u16::from_be_bytes([*hi, *lo]))
                     .map_err(crate::map_protocol_error)?;
-                self.threshold_held.insert(player);
+                self.threshold_held.hold(player);
                 self.zone
                     .queue_notice(player, code)
                     .map_err(crate::map_zone_error)?;
@@ -196,13 +198,9 @@ impl ZoneGameServerAdapter {
         let Some(channel) = self.instances.clone() else {
             return;
         };
-        let requests = self.zone.threshold_requests();
-        let standing: BTreeSet<_> = requests.iter().map(|request| request.player).collect();
-        self.threshold_held
-            .retain(|player| standing.contains(player));
+        let requests = self.threshold_held.pending(self.zone.threshold_requests());
         let entries: Vec<_> = requests
             .into_iter()
-            .filter(|request| !self.threshold_held.contains(&request.player))
             .filter_map(|request| self.resolve_entry(request))
             .collect();
         let occupied = self
@@ -225,11 +223,8 @@ impl ZoneGameServerAdapter {
     }
 
     fn resolve_entry(&self, request: ThresholdRequest) -> Option<ThresholdEntry> {
-        let candidates = request
-            .candidates
-            .iter()
-            .map(|(player, qualified)| Some((self.characters.get(player)?.clone(), *qualified)))
-            .collect::<Option<Vec<_>>>()?;
+        let candidates =
+            entry_candidates(&request, |player| self.characters.get(&player).cloned())?;
         Some(ThresholdEntry {
             player: request.player,
             candidates,
@@ -332,27 +327,11 @@ impl InstanceService {
         zone: &InstanceZone,
         character: &CharacterId,
     ) -> Result<Option<DepthsRunStart>, String> {
-        let mut run = None;
+        let mut run = Ok(None);
         self.transact(zone, &mut |directory, _| {
-            run = directory.run_of(character).cloned();
+            run = directory.arrival_run(zone.zone, character, decode_boss_outcome);
         })?;
-        run.filter(|run| run.slot == zone.zone)
-            .map(|run| {
-                let outcome = run
-                    .outcome
-                    .as_ref()
-                    .map(|recorded| decode_boss_outcome(&recorded.bytes))
-                    .transpose()
-                    .map_err(|error| error.to_string())?;
-                Ok::<_, String>(DepthsRunStart {
-                    run_id: run.id,
-                    roster: run.roster,
-                    cleared: run.cleared,
-                    checkpoint: run.checkpoint,
-                    outcome,
-                })
-            })
-            .transpose()
+        run.map_err(|error| error.to_string())
     }
 
     /// Before an arrival activates: checks the character is on the run this slot holds and binds
@@ -407,33 +386,28 @@ impl InstanceService {
 
     fn reconcile_slot(&self, id: &MatchId, zone: &InstanceZone) -> Result<(), String> {
         let (occupied, progress) = zone.channel.presence();
-        let report = zone.channel.boss_report();
-        let encoded = report
-            .as_ref()
-            .map(|report| encode_boss_outcome(&report.outcome))
+        let outcome = zone
+            .channel
+            .boss_report()
+            .map(|report| {
+                let bytes = encode_boss_outcome(&report.outcome)?;
+                Ok((report, bytes))
+            })
             .transpose()
-            .map_err(|error| error.to_string())?;
+            .map_err(|error: mmorpg_protocol::ProtocolError| error.to_string())?;
+        let report = SlotReport {
+            occupied,
+            progress,
+            outcome,
+        };
         let slot = zone.zone;
         self.transact(zone, &mut |directory, now| {
-            directory.sync_slot(slot, occupied, now);
-            if let Some((run, cleared, checkpoint)) = &progress {
-                directory.report(slot, *run, cleared, *checkpoint);
-            }
-            if let (Some(report), Some(bytes)) = (&report, &encoded) {
-                directory.report_outcome(
-                    slot,
-                    report.run_id,
-                    report.outcome.version,
-                    bytes.clone(),
-                    report.outstanding.clone(),
-                );
-            }
+            directory.record_slot(slot, &report, now);
         })?;
         // Only after the directory committed: the zone delivers rewards up to this version.
-        let Some(report) = report else {
+        let Some(current) = report.confirmation() else {
             return Ok(());
         };
-        let current = (report.run_id, report.outcome.version);
         let mut confirmed = self
             .confirmed
             .lock()
@@ -461,21 +435,13 @@ impl InstanceService {
             let Some(epoch) = self.epoch(id, request.player) else {
                 continue; // The session has not spoken over control yet.
             };
-            let candidates: Vec<_> = request
-                .candidates
-                .iter()
-                .map(|(character, qualified)| EntryCandidate {
-                    character: character.clone(),
-                    qualified: *qualified,
-                })
-                .collect();
-            let mut outcome = None;
+            let mut answer = None;
             self.transact(zone, &mut |directory, now| {
-                outcome = Some(directory.enter(&candidates, now));
+                answer = Some(directory.answer_threshold(&request.candidates, now));
             })?;
-            let input = match outcome.ok_or("the directory gave no answer")? {
-                Ok(entry) => enter_depths_input(mmorpg_core::depths_arrival(entry.run.slot)),
-                Err(code) => refuse_input(code),
+            let input = match answer.ok_or("the directory gave no answer")? {
+                ThresholdAnswer::Enter(destination) => enter_depths_input(destination),
+                ThresholdAnswer::Refuse(code) => refuse_input(code),
             };
             self.submit(id, request.player, epoch, &input)?;
         }

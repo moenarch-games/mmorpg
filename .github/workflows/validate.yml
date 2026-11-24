@@ -188,7 +188,7 @@ jobs:
                       selected = not negative
               return selected
 
-          specs = {'studio-frontend': {'paths': ['crates/mmorpg-world-studio/frontend/**', '.github/workflows/validate.yml']}, 'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-scenery/**', 'crates/sim-foundation/**', 'crates/sim-movement/**', 'crates/sim-combat/**', 'crates/mmorpg-presentation/**', 'crates/mmorpg-client-model/**', 'crates/mmorpg-characters/**','Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
+          specs = {'studio-frontend': {'paths': ['crates/mmorpg-world-studio/frontend/**', '.github/workflows/validate.yml']}, 'pages-validation': {'types': ['opened', 'synchronize', 'reopened', 'labeled', 'unlabeled'], 'paths': ['web/**', 'content/**', 'fixtures/protocol/session-frames-v3.hex', 'fixtures/scenery/**', 'crates/mmorpg-core/**', 'crates/mmorpg-protocol/**', 'crates/mmorpg-wasm/**', 'crates/mmorpg-local-host/**', 'crates/mmorpg-control-plane/**', 'crates/mmorpg-scenery/**', 'crates/sim-foundation/**', 'crates/sim-movement/**', 'crates/sim-combat/**', 'crates/mmorpg-presentation/**', 'crates/mmorpg-client-model/**', 'crates/mmorpg-characters/**','Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/smoke-browser.py', '.github/workflows/pages.yml']}}
           pr = os.environ["GITHUB_EVENT_NAME"] in ("pull_request", "merge_group")
           event = json.loads(os.environ.get("PR_EVENT", "{}"))
           paths = []

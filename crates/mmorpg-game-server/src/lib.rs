@@ -114,7 +114,7 @@ pub struct ZoneGameServerAdapter {
     parties: Option<party::PartyChannel>,
     instances: Option<instance::InstanceChannel>,
     /// Players refused at a threshold: no new request until they leave its strip (#404).
-    threshold_held: std::collections::BTreeSet<game_server::PlayerId>,
+    threshold_held: mmorpg_control_plane::instance::ThresholdHolds,
     /// Sessions still waiting to claim a character, with the tick they expire at
     /// (#1141). Only kept while claims are required; never canonical state.
     claim_deadlines: claim_waits::ClaimWaits,
@@ -182,7 +182,7 @@ impl ZoneGameServerAdapter {
         self.claim_deadlines.remove(&player_id);
         self.characters.remove(&player_id);
         self.held_back.remove(&player_id);
-        self.threshold_held.remove(&player_id);
+        self.threshold_held.release(player_id);
         self.sheet_acks.remove(&player_id);
         self.sheet_encodings_mut().remove(&player_id);
         self.departing.remove(&player_id).is_some()

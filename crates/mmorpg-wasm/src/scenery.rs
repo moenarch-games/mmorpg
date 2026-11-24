@@ -26,7 +26,7 @@
 //!
 //! [`relief_at`] answers from the same `Scenery::height_at`, so browser and
 //! native units stand on the same ground. None of this is gameplay: the
-//! local zone host ([`crate::host`]) never reads it, and network hosts never
+//! local zone host (`mmorpg-local-host`, re-exported as [`crate::host`]) never links it, and network hosts never
 //! link `mmorpg-scenery`.
 
 use std::sync::{
@@ -843,17 +843,5 @@ mod tests {
         );
         assert!(value["roads"][0]["points"].as_array().map_or(0, Vec::len) > 8);
         assert_eq!(value["structures"][0]["colliderId"], 100);
-    }
-
-    /// The local zone host is gameplay; scenery must never feed back into it.
-    #[test]
-    fn the_local_zone_host_never_reads_presentation_scenery() {
-        let host = include_str!("host.rs");
-        assert!(
-            !host.contains("mmorpg_scenery")
-                && !host.contains("crate::scenery")
-                && !host.contains("mmorpg_presentation")
-                && !host.contains("crate::static_scene")
-        );
     }
 }

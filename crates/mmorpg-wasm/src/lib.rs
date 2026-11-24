@@ -24,19 +24,16 @@
 //! [ADR 0002]: https://github.com/moenarch-games/mmorpg/blob/main/docs/adr/0002-browser-embeds-zone-simulation.md
 #![forbid(unsafe_code)]
 
-pub mod action_lab;
+pub use mmorpg_local_host::{
+    action_lab, host, lab_diagnostics, lab_experiment, lab_promotion, scenario,
+};
 pub mod arena_presentation;
 pub mod camera;
 pub mod catalog;
 pub mod client_model;
 pub mod front_end;
-pub mod host;
-pub mod lab_diagnostics;
-pub mod lab_experiment;
-pub mod lab_promotion;
 pub mod party;
 pub mod projections;
-pub mod scenario;
 pub mod scenery;
 pub mod shared_presentation;
 pub mod static_scene;

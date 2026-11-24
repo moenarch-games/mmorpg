@@ -54,10 +54,12 @@ spot is clear.
 
 ## Boundaries
 
-The studio is development tooling: no game crate reads it and it reads none. One program
-serves the app and offers the same capture and import as `capture` and `import` commands. It
-asks each checkout for its terrain through `mmorpg-scenery`'s `export-world-layers` example,
-so a branch's worktree answers with that branch's paint. It starts programs and creates
+The studio is development tooling: no game crate links it and it links none
+(`mmorpg-game-server/tests/dependency_boundary.rs` checks the resolved graph). It does run game
+code, as a separate program rather than a link: it asks each checkout for its terrain by running
+`cargo run -p mmorpg-scenery --example export-world-layers` there (`src/grid.rs`), so a
+branch's worktree answers with that branch's paint. One program serves the app and offers the
+same capture and import as `capture` and `import` commands. It starts programs and creates
 branches, so it listens only on the loopback address and refuses requests whose `Host` or
 `Origin` is anywhere else; do not put it behind a proxy.
 

@@ -14,7 +14,7 @@ use mmorpg_core::{
 };
 use mmorpg_game_server::ZoneGameServerAdapter;
 use mmorpg_game_server::instance::{
-    InstanceChannel, ThresholdEntry, bind_run_input, enter_depths_input, refuse_input,
+    InstanceChannel, bind_run_input, enter_depths_input, refuse_input,
 };
 
 const GREYHAVEN: ZoneId = ZoneId::new(1);
@@ -65,17 +65,6 @@ fn public_zone(players: &[(u32, &str, bool)]) -> (ZoneGameServerAdapter, Instanc
 
 fn tick(adapter: &mut ZoneGameServerAdapter) {
     adapter.advance_tick().unwrap();
-}
-
-fn candidates(entry: &ThresholdEntry) -> Vec<EntryCandidate> {
-    entry
-        .candidates
-        .iter()
-        .map(|(character, qualified)| EntryCandidate {
-            character: character.clone(),
-            qualified: *qualified,
-        })
-        .collect()
 }
 
 fn directory() -> InstanceDirectory {
@@ -176,7 +165,7 @@ fn a_qualified_solo_player_enters_their_own_run_and_an_unqualified_one_is_refuse
 
     // The unqualified character is refused with a notice and not asked again from the strip.
     let refused = directory
-        .enter(&candidates(&requests[1]), 0)
+        .enter(&requests[1].candidates, 0)
         .expect_err("rook has not ended Garrick");
     assert_eq!(refused, ErrorCode::DepthsLocked);
     public.apply_host_input(2, &refuse_input(refused)).unwrap();
@@ -195,7 +184,7 @@ fn a_qualified_solo_player_enters_their_own_run_and_an_unqualified_one_is_refuse
     );
 
     // The qualified one gets a run and departs toward its slot.
-    let entered = directory.enter(&candidates(&requests[0]), 0).unwrap();
+    let entered = directory.enter(&requests[0].candidates, 0).unwrap();
     assert!(entered.created);
     public
         .apply_host_input(1, &enter_depths_input(depths_arrival(entered.run.slot)))
@@ -227,7 +216,7 @@ fn a_party_of_five_gets_a_larger_different_run_than_a_solo_player() {
     assert_eq!(leader.candidates.len(), 5);
 
     let mut directory = directory();
-    let entered = directory.enter(&candidates(leader), 0).unwrap();
+    let entered = directory.enter(&leader.candidates, 0).unwrap();
     assert_eq!(entered.run.roster.len(), 5);
     let start = DepthsRunStart {
         run_id: entered.run.id,
@@ -268,7 +257,7 @@ fn the_roster_and_difficulty_stay_frozen_and_no_one_joins_late() {
     tick(&mut public);
     let requests = channel.take_requests();
     let mut directory = directory();
-    let entered = directory.enter(&candidates(&requests[0]), 0).unwrap();
+    let entered = directory.enter(&requests[0].candidates, 0).unwrap();
     let start = DepthsRunStart {
         run_id: entered.run.id,
         roster: entered.run.roster.clone(),
@@ -313,7 +302,7 @@ fn a_disconnected_member_resumes_the_same_run_and_an_expired_run_retires() {
     tick(&mut public);
     let requests = channel.take_requests();
     let mut directory = directory();
-    let entered = directory.enter(&candidates(&requests[0]), 0).unwrap();
+    let entered = directory.enter(&requests[0].candidates, 0).unwrap();
     let start = DepthsRunStart {
         run_id: entered.run.id,
         roster: entered.run.roster.clone(),
@@ -349,9 +338,7 @@ fn a_disconnected_member_resumes_the_same_run_and_an_expired_run_retires() {
     assert_eq!(directory.sweep(2_000 + 900_000, 900_000), 1);
     assert_eq!(directory.run_count(), 0);
     assert!(directory.run_of(&character("aria")).is_none());
-    let fresh = directory
-        .enter(&candidates(&requests[0]), 3_000_000)
-        .unwrap();
+    let fresh = directory.enter(&requests[0].candidates, 3_000_000).unwrap();
     assert_ne!(fresh.run.id, entered.run.id);
 }
 
@@ -361,7 +348,7 @@ fn progress_reaches_the_directory_and_can_rebind_the_run_after_a_restart() {
     tick(&mut public);
     let requests = channel.take_requests();
     let mut directory = directory();
-    let entered = directory.enter(&candidates(&requests[0]), 0).unwrap();
+    let entered = directory.enter(&requests[0].candidates, 0).unwrap();
 
     // The directory's copy of the progress stands in for a report from the slot.
     directory.report(

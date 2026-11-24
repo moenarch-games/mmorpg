@@ -145,6 +145,14 @@
         "owners": ["moenarch-games/mmorpg"]
       },
       {
+        "id": "native-local-host",
+        "paths": ["crates/mmorpg-local-host/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/SCENARIOS.md", "docs/adr/0002-browser-embeds-zone-simulation.md", "docs/adr/0009-private-depths-instances.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"]
+      },
+      {
         "id": "native-wasm",
         "paths": ["crates/mmorpg-wasm/**"],
         "instructions": ["docs/PROTOCOL.md", "docs/adr/0002-browser-embeds-zone-simulation.md"],

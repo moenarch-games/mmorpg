@@ -12,11 +12,20 @@
 //!
 //! Empty-run retention uses host time (`now`, milliseconds), not simulation ticks: it is a
 //! lifecycle setting and never enters deterministic gameplay.
+//!
+//! Both zone hosts run the same instance flow over the directory: [`ThresholdHolds`],
+//! [`entry_candidates`] and [`InstanceDirectory::answer_threshold`] at the threshold,
+//! [`InstanceDirectory::arrival_run`] before an arrival activates, and
+//! [`InstanceDirectory::record_slot`] for a depths zone's reports. The network host carries the
+//! answers out as fenced host inputs and transfers, the browser's local host directly (#1160).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use mmorpg_core::{CharacterId, ErrorCode, MAX_PARTY_MEMBERS, ZoneId};
+use mmorpg_core::{
+    BossOutcome, BossReport, CharacterId, CharacterLocation, DepthsRunStart, ErrorCode,
+    MAX_PARTY_MEMBERS, PlayerId, ThresholdRequest, ZoneId,
+};
 
 use crate::ZoneLease;
 
@@ -499,6 +508,144 @@ impl InstanceAuthority for LocalInstances {
         let now = self.started.elapsed().as_millis();
         body(&mut self.directory, u64::try_from(now).unwrap_or(u64::MAX));
         Ok(())
+    }
+}
+
+// The instance flow both zone hosts run (#1160): the network host's instance service and
+// adapter (`mmorpg-game-server`) and the browser's local host (`mmorpg-local-host`) answer the
+// threshold, bind an arriving character's run and record a run's progress through these, and
+// differ only in how they move a character and reach the directory.
+
+/// Players refused at a threshold: not offered again until they leave its strip.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ThresholdHolds(BTreeSet<PlayerId>);
+
+impl ThresholdHolds {
+    /// The requests to resolve this pass: every standing request whose player is not held. A
+    /// held player who left the strip is released.
+    pub fn pending(&mut self, requests: Vec<ThresholdRequest>) -> Vec<ThresholdRequest> {
+        let standing: BTreeSet<_> = requests.iter().map(|request| request.player).collect();
+        self.0.retain(|player| standing.contains(player));
+        requests
+            .into_iter()
+            .filter(|request| !self.0.contains(&request.player))
+            .collect()
+    }
+
+    /// Holds a refused player.
+    pub fn hold(&mut self, player: PlayerId) {
+        self.0.insert(player);
+    }
+
+    /// Forgets a player who left the zone.
+    pub fn release(&mut self, player: PlayerId) {
+        self.0.remove(&player);
+    }
+}
+
+/// A threshold request's candidates as the directory sees them: each player's character, the
+/// requesting player first. `None` while one of them has no character bound yet.
+pub fn entry_candidates(
+    request: &ThresholdRequest,
+    mut character_of: impl FnMut(PlayerId) -> Option<CharacterId>,
+) -> Option<Vec<EntryCandidate>> {
+    request
+        .candidates
+        .iter()
+        .map(|(player, qualified)| {
+            Some(EntryCandidate {
+                character: character_of(*player)?,
+                qualified: *qualified,
+            })
+        })
+        .collect()
+}
+
+/// The directory's answer to a threshold request, as the zone carries it out.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ThresholdAnswer {
+    /// Send the requesting player on to its run's depths zone.
+    Enter(CharacterLocation),
+    /// Refuse the requesting player with this notice (and hold it).
+    Refuse(ErrorCode),
+}
+
+/// What a depths zone reports of its run each pass.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SlotReport {
+    /// Whether a character is in the zone.
+    pub occupied: bool,
+    /// The bound run's ID, cleared chambers and checkpoint.
+    pub progress: Option<(u64, BTreeSet<u32>, bool)>,
+    /// The boss outcome, once the boss fell, with its encoded bytes.
+    pub outcome: Option<(BossReport, Vec<u8>)>,
+}
+
+impl SlotReport {
+    /// The confirmation to send the zone once the directory recorded this report: the run and
+    /// outcome version it holds.
+    #[must_use]
+    pub fn confirmation(&self) -> Option<(u64, u32)> {
+        self.outcome
+            .as_ref()
+            .map(|(report, _)| (report.run_id, report.outcome.version))
+    }
+}
+
+impl InstanceDirectory {
+    /// Answers a character touching the threshold (see [`Self::enter`]).
+    pub fn answer_threshold(
+        &mut self,
+        candidates: &[EntryCandidate],
+        now_ms: u64,
+    ) -> ThresholdAnswer {
+        match self.enter(candidates, now_ms) {
+            Ok(entry) => ThresholdAnswer::Enter(mmorpg_core::depths_arrival(entry.run.slot)),
+            Err(code) => ThresholdAnswer::Refuse(code),
+        }
+    }
+
+    /// The run `character` holds on `slot`, bound as the depths zone does before it activates
+    /// the character's arrival; `None` when the directory does not place it there. `decode`
+    /// reads a recorded outcome's bytes.
+    pub fn arrival_run<E>(
+        &self,
+        slot: ZoneId,
+        character: &CharacterId,
+        decode: impl FnOnce(&[u8]) -> Result<BossOutcome, E>,
+    ) -> Result<Option<DepthsRunStart>, E> {
+        let Some(run) = self.run_of(character).filter(|run| run.slot == slot) else {
+            return Ok(None);
+        };
+        let outcome = run
+            .outcome
+            .as_ref()
+            .map(|recorded| decode(&recorded.bytes))
+            .transpose()?;
+        Ok(Some(DepthsRunStart {
+            run_id: run.id,
+            roster: run.roster.clone(),
+            cleared: run.cleared.clone(),
+            checkpoint: run.checkpoint,
+            outcome,
+        }))
+    }
+
+    /// Records a depths zone's report: its occupancy, its run's progress and its boss outcome.
+    pub fn record_slot(&mut self, slot: ZoneId, report: &SlotReport, now_ms: u64) {
+        self.sync_slot(slot, report.occupied, now_ms);
+        if let Some((run, cleared, checkpoint)) = &report.progress {
+            self.report(slot, *run, cleared, *checkpoint);
+        }
+        if let Some((outcome, bytes)) = &report.outcome {
+            self.report_outcome(
+                slot,
+                outcome.run_id,
+                outcome.outcome.version,
+                bytes.clone(),
+                outcome.outstanding.clone(),
+            );
+        }
     }
 }
 

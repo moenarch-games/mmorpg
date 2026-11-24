@@ -14,15 +14,17 @@ use std::sync::Arc;
 use crate::action_lab::LabSetup;
 use crate::scenario::Scenario;
 use mmorpg_characters::{CharacterLease, CharacterStore, EntryBackend, LeaseHolder, StoreError};
+use mmorpg_control_plane::instance::{
+    InstanceDirectory, SlotReport, ThresholdAnswer, ThresholdHolds, entry_candidates,
+};
 use mmorpg_core::redbrand_depths::{self, is_depths_zone};
 use mmorpg_core::{
-    CharacterId, ClassChoice, DepthsRunStart, EphemeralCharacterBuild, ErrorCode, Physique,
-    PlayerId, TransferId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation,
-    greyhaven_vale,
+    CharacterId, CharacterLocation, ClassChoice, EphemeralCharacterBuild, Physique, PlayerId,
+    TransferId, ZoneContent, ZoneDefinition, ZoneError, ZoneId, ZoneSimulation, greyhaven_vale,
 };
 use mmorpg_protocol::{
-    ProtocolError, decode_canonical_snapshot, decode_observed_command, encode_canonical_snapshot,
-    pack_snapshot,
+    ProtocolError, decode_boss_outcome, decode_canonical_snapshot, decode_observed_command,
+    encode_boss_outcome, encode_canonical_snapshot, pack_snapshot,
 };
 
 /// The zone the local host simulates. It matches `mmorpg-zone-host`'s default
@@ -179,6 +181,41 @@ pub enum SubmitOutcome {
     IgnoredStale,
 }
 
+/// Host time for this host's run directory. It never sweeps: a run lives as long as this host,
+/// so retention has no clock here.
+const LOCAL_RUN_CLOCK_MS: u64 = 0;
+
+/// The health the boss review brings a standing Thorn down to.
+const REVIEW_BOSS_HEALTH: u32 = 60;
+
+/// This host's run directory: the one depths slot this host plays.
+fn local_directory() -> InstanceDirectory {
+    let mut directory = InstanceDirectory::new();
+    directory.bind_slots([ZoneId::new(redbrand_depths::ZONE_IDS.start)]);
+    directory
+}
+
+/// The review scenarios' changes to a depths run (#404), applied only through named entry
+/// points: the directory's progress report and the zone's review-only boss health.
+#[derive(Clone, Debug, Default)]
+struct DepthsReview {
+    /// Chambers every run starts with cleared.
+    cleared: BTreeSet<u32>,
+    /// Whether Thorn is brought down to [`REVIEW_BOSS_HEALTH`] once he stands.
+    weaken_boss: bool,
+}
+
+impl DepthsReview {
+    /// The boss review (`redbrand-thorn`): the chambers cleared and Thorn weakened, so his adds
+    /// and loot prompt can be reviewed in a short fight.
+    fn boss() -> Self {
+        Self {
+            cleared: BTreeSet::from([0, 1, 2]),
+            weaken_boss: true,
+        }
+    }
+}
+
 pub struct LocalZoneHost {
     zone: ZoneSimulation,
     next_player_id: PlayerId,
@@ -189,16 +226,14 @@ pub struct LocalZoneHost {
     /// the depths (keeping its run) while none is (#404).
     away: Option<ZoneSimulation>,
     /// Refused at the threshold; not offered again until they leave its strip.
-    threshold_held: BTreeSet<PlayerId>,
-    /// The local run id and transfer ids; both only need to be unique within this host.
+    threshold_held: ThresholdHolds,
+    /// Transfer ids; they only need to be unique within this host.
     next_transfer: u64,
-    /// The current local run id (#404): the next run after this one is complete uses a new one.
-    next_run: u64,
-    /// Whether a run this host starts has its chambers cleared already (the boss review).
-    depths_cleared: BTreeSet<u32>,
-    /// The boss review weakens Thorn once he stands, so his adds and loot prompt can be reviewed
-    /// in a short fight (#404).
-    weaken_thorn: bool,
+    /// This host's run directory (#1160): the same admission, run identity and roster rules as a
+    /// network host's, over the one depths slot this host plays.
+    directory: InstanceDirectory,
+    /// The boss review's presets (`redbrand-thorn`, #404); none in any other world.
+    review: DepthsReview,
     /// The netcode trial's sparring partner (#680), whom the page drives like any player.
     sparring_partner: Option<PlayerId>,
     /// The world's seed (#1111), which the depths it opens share; its saved world keeps it.
@@ -222,11 +257,10 @@ impl LocalZoneHost {
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
             away: None,
-            threshold_held: BTreeSet::new(),
+            threshold_held: ThresholdHolds::default(),
             next_transfer: 1,
-            next_run: 1,
-            depths_cleared: BTreeSet::new(),
-            weaken_thorn: false,
+            directory: local_directory(),
+            review: DepthsReview::default(),
             sparring_partner: None,
             world_seed,
         })
@@ -285,12 +319,9 @@ impl LocalZoneHost {
         let content = scenario.content(seed);
         let record = scenario.record(&content)?;
         let (mut host, player) = Self::with_ephemeral(content, &record)?;
-        host.weaken_thorn = matches!(scenario, Scenario::RedbrandThorn);
-        host.depths_cleared = if host.weaken_thorn {
-            BTreeSet::from([0, 1, 2])
-        } else {
-            BTreeSet::new()
-        };
+        if matches!(scenario, Scenario::RedbrandThorn) {
+            host.review = DepthsReview::boss();
+        }
         Ok((host, player))
     }
 
@@ -308,7 +339,7 @@ impl LocalZoneHost {
     pub fn practice_arena(
         build: &EphemeralCharacterBuild,
     ) -> Result<(Self, PlayerId), LocalZoneError> {
-        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena_presentation::content())?;
+        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena::content())?;
         let player_id = host.next_player_id;
         host.zone
             .admit_ephemeral(player_id, build)
@@ -325,10 +356,7 @@ impl LocalZoneHost {
         build: &EphemeralCharacterBuild,
         rewind: bool,
     ) -> Result<(Self, PlayerId), LocalZoneError> {
-        let mut host = Self::empty(
-            ARENA_ZONE_ID,
-            crate::arena_presentation::trial_content(rewind),
-        )?;
+        let mut host = Self::empty(ARENA_ZONE_ID, crate::arena::trial_content(rewind))?;
         let partner = EphemeralCharacterBuild::standard(mmorpg_core::ClassChoice {
             class: mmorpg_core::PlayerClass::Warden,
             sex: mmorpg_core::Sex::Male,
@@ -362,11 +390,10 @@ impl LocalZoneHost {
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
             away: None,
-            threshold_held: BTreeSet::new(),
+            threshold_held: ThresholdHolds::default(),
             next_transfer: 1,
-            next_run: 1,
-            depths_cleared: BTreeSet::new(),
-            weaken_thorn: false,
+            directory: local_directory(),
+            review: DepthsReview::default(),
             sparring_partner: None,
             world_seed: 0,
         })
@@ -422,11 +449,10 @@ impl LocalZoneHost {
             last_sequences: BTreeMap::new(),
             characters: BTreeMap::new(),
             away: None,
-            threshold_held: BTreeSet::new(),
+            threshold_held: ThresholdHolds::default(),
             next_transfer: 1,
-            next_run: 1,
-            depths_cleared: BTreeSet::new(),
-            weaken_thorn: false,
+            directory: local_directory(),
+            review: DepthsReview::default(),
             sparring_partner: None,
             world_seed,
         })
@@ -453,7 +479,7 @@ impl LocalZoneHost {
     pub fn leave(&mut self, player_id: PlayerId) -> bool {
         self.last_sequences.remove(&player_id);
         self.characters.remove(&player_id);
-        self.threshold_held.remove(&player_id);
+        self.threshold_held.release(player_id);
         let removed = self.zone.remove_player(player_id);
         // A new entry starts at home even when the character left from the depths (#404).
         if is_depths_zone(self.zone.zone_id())
@@ -606,40 +632,58 @@ impl LocalZoneHost {
 
     /// Advances one fixed [`TICK_HZ`](mmorpg_core::TICK_HZ) tick and returns the new tick. A
     /// character reaching the threshold or the depths' exit changes zones here (#404): the
-    /// same freeze, stage and activate as a network host, with no second authority to fence.
+    /// directory answers the threshold and binds the run as it does for a network host
+    /// (`mmorpg_control_plane::instance`), and the character moves by the same freeze, stage and
+    /// activate, with no second authority to fence.
     pub fn tick(&mut self) -> Result<u64, LocalZoneError> {
         self.zone.advance_tick().map_err(LocalZoneError::Zone)?;
+        self.record_depths().map_err(LocalZoneError::Zone)?;
         self.settle_depths().map_err(LocalZoneError::Zone)?;
-        // This host's directory is this host: every boss outcome is recorded at once.
-        if let Some(report) = self.zone.boss_report() {
-            self.zone
-                .confirm_boss_outcome(report.run_id, report.outcome.version);
-        }
-        self.weaken_thorn_for_review()
-            .map_err(LocalZoneError::Zone)?;
+        self.weaken_boss_for_review();
         Ok(self.zone.current_tick())
     }
 
-    /// The boss review (`redbrand-thorn`, #404) brings a standing Thorn down to 60 health once,
-    /// as a host-side edit of the canonical state, so the review fight stays short.
-    fn weaken_thorn_for_review(&mut self) -> Result<(), ZoneError> {
-        if !self.weaken_thorn || !is_depths_zone(self.zone.zone_id()) {
+    /// Records the depths run's report in this host's directory, then confirms its boss outcome
+    /// to the zone: this host's directory commits at once.
+    fn record_depths(&mut self) -> Result<(), ZoneError> {
+        let slot = self.zone.zone_id();
+        if !is_depths_zone(slot) {
             return Ok(());
         }
-        let mut state = self.zone.snapshot()?;
-        let Some(thorn) = state.creatures.iter_mut().find(|creature| {
-            creature.creature_id == redbrand_depths::THORN
-                && creature.life == mmorpg_core::CreatureLife::Alive
-        }) else {
-            return Ok(());
+        let outcome = self
+            .zone
+            .boss_report()
+            .map(|report| {
+                let bytes = encode_boss_outcome(&report.outcome)?;
+                Ok((report, bytes))
+            })
+            .transpose()
+            .map_err(|error: ProtocolError| ZoneError::new(error.to_string()))?;
+        let report = SlotReport {
+            occupied: self.zone.player_count() > 0,
+            progress: self
+                .zone
+                .depths_run()
+                .map(|run| (run.run_id, run.cleared.clone(), run.checkpoint)),
+            outcome,
         };
-        thorn.health = 60;
-        let content = Arc::clone(self.zone.content());
-        let mut fresh = ZoneSimulation::from_snapshot(state, content)?;
-        fresh.adopt_transfers(&mut self.zone);
-        self.zone = fresh;
-        self.weaken_thorn = false;
+        self.directory
+            .record_slot(slot, &report, LOCAL_RUN_CLOCK_MS);
+        if let Some((run, version)) = report.confirmation() {
+            self.zone.confirm_boss_outcome(run, version);
+        }
         Ok(())
+    }
+
+    /// The boss review (`redbrand-thorn`, #404) brings a standing Thorn down once, through the
+    /// zone's review-only entry point, so the review fight stays short.
+    fn weaken_boss_for_review(&mut self) {
+        if self.review.weaken_boss
+            && is_depths_zone(self.zone.zone_id())
+            && self.zone.weaken_boss_for_review(REVIEW_BOSS_HEALTH)
+        {
+            self.review.weaken_boss = false;
+        }
     }
 
     fn fresh_transfer(&mut self) -> Result<TransferId, ZoneError> {
@@ -657,25 +701,25 @@ impl LocalZoneHost {
 
     /// Moves a character at the threshold into the Redbrand Depths, or one at the exit home.
     fn settle_depths(&mut self) -> Result<(), ZoneError> {
-        let standing: Vec<_> = self.zone.threshold_requests();
-        let held = std::mem::take(&mut self.threshold_held);
-        self.threshold_held = standing
-            .iter()
-            .map(|request| request.player)
-            .filter(|player| held.contains(player))
-            .collect();
-        for request in standing {
-            if self.threshold_held.contains(&request.player) {
+        for request in self.threshold_held.pending(self.zone.threshold_requests()) {
+            let Some(candidates) =
+                entry_candidates(&request, |player| self.character_of(player).ok())
+            else {
                 continue;
+            };
+            match self
+                .directory
+                .answer_threshold(&candidates, LOCAL_RUN_CLOCK_MS)
+            {
+                ThresholdAnswer::Refuse(code) => {
+                    self.threshold_held.hold(request.player);
+                    self.zone.queue_notice(request.player, code)?;
+                }
+                ThresholdAnswer::Enter(destination) => {
+                    self.enter_depths(request.player, destination)?;
+                    return Ok(()); // The zone changed; the rest wait for the next tick.
+                }
             }
-            if !request.candidates.iter().any(|(_, qualified)| *qualified) {
-                self.threshold_held.insert(request.player);
-                self.zone
-                    .queue_notice(request.player, ErrorCode::DepthsLocked)?;
-                continue;
-            }
-            self.enter_depths(request.player)?;
-            return Ok(()); // The zone changed; the rest wait for the next tick.
         }
         if is_depths_zone(self.zone.zone_id())
             && let Some(leaving) = self.zone.departures().into_iter().next()
@@ -700,48 +744,55 @@ impl LocalZoneHost {
         Ok(())
     }
 
-    fn enter_depths(&mut self, player: PlayerId) -> Result<(), ZoneError> {
+    /// Sends `player` on to `destination`, the depths zone of the run the directory placed its
+    /// character on, binding that run first as a network depths zone does before an arrival.
+    fn enter_depths(
+        &mut self,
+        player: PlayerId,
+        destination: CharacterLocation,
+    ) -> Result<(), ZoneError> {
         let character = self.character_of(player)?;
-        let slot = ZoneId::new(redbrand_depths::ZONE_IDS.start);
+        let slot = destination.zone_id;
+        self.apply_review_presets(slot);
+        let start = self
+            .directory
+            .arrival_run(slot, &character, decode_boss_outcome)
+            .map_err(|error| ZoneError::new(error.to_string()))?
+            .ok_or_else(|| ZoneError::new("this character holds no run in these depths"))?;
         let mut depths = match self.away.take() {
             Some(zone) if zone.zone_id() == slot => zone,
             _ => {
                 ZoneSimulation::with_world_seed(slot, redbrand_depths::content(), self.world_seed)?
             }
         };
-        // The local run belongs to this one character for as long as this host lives; it is
-        // not a multiplayer run and nothing else can join it.
+        // A zone still holding another roster's run starts over; one holding this character's
+        // finished run is rebound to the directory's next run, which clears its residue.
         if !depths.depths_admits(&character) {
             depths =
                 ZoneSimulation::with_world_seed(slot, redbrand_depths::content(), self.world_seed)?;
         }
-        // A run stays the character's until Thorn falls; then re-entering starts a fresh one at
-        // once, with a new identity for its rewards (Atlas 5.1.31).
-        if depths
-            .depths_run()
-            .is_some_and(mmorpg_core::DepthsRun::completed)
-        {
-            self.next_run += 1;
-        }
-        depths.begin_depths_run(DepthsRunStart {
-            run_id: self.next_run,
-            roster: vec![character.clone()],
-            cleared: self.depths_cleared.clone(),
-            checkpoint: false,
-            outcome: None,
-        })?;
+        depths.begin_depths_run(start)?;
         let transfer = self.fresh_transfer()?;
-        let frozen = self.zone.freeze_for_transfer(
-            player,
-            character,
-            transfer,
-            mmorpg_core::depths_arrival(slot),
-        )?;
+        let frozen = self
+            .zone
+            .freeze_for_transfer(player, character, transfer, destination)?;
         depths.stage_transfer(frozen)?;
         depths.activate_transfer(transfer, player)?;
         self.zone.retire_transfer(transfer);
         self.away = Some(std::mem::replace(&mut self.zone, depths));
         Ok(())
+    }
+
+    /// The boss review's chambers count as cleared in the run on `slot`, reported to the
+    /// directory as the run's own progress would be, so a review run starts at Thorn's door.
+    fn apply_review_presets(&mut self, slot: ZoneId) {
+        if self.review.cleared.is_empty() {
+            return;
+        }
+        if let Some(run) = self.directory.run_in_slot(slot).map(|run| run.id) {
+            self.directory
+                .report(slot, run, &self.review.cleared, false);
+        }
     }
 
     /// The encoded player-scoped projection addressed to `player_id`, the same
@@ -797,7 +848,7 @@ mod tests {
     use game_server::{
         CommandOutcome, MatchRuntime, RECONNECT_TOKEN_BYTES, ReconnectToken, RuntimeError,
     };
-    use mmorpg_core::{EntityKind, ZoneCommand, trig::YAW_QUARTER_TURN};
+    use mmorpg_core::{EntityKind, ErrorCode, ZoneCommand, trig::YAW_QUARTER_TURN};
     use mmorpg_game_server::build_zone_matches;
     use mmorpg_protocol::{decode_snapshot, encode_command};
 
@@ -1119,6 +1170,7 @@ mod tests {
         );
         let run = host.zone().depths_run().unwrap();
         assert_eq!(run.profile(), 1);
+        let run_id = run.run_id;
         assert!(
             decode_snapshot(&host.projection(player).unwrap())
                 .unwrap()
@@ -1141,6 +1193,44 @@ mod tests {
         assert_eq!(host.zone_id(), LOCAL_ZONE_ID);
         let snapshot = host.zone().snapshot().unwrap();
         assert!(snapshot.players[0].position[0] > 6_000.0);
+
+        // The directory holds the run while it is unfinished: walking back in resumes it.
+        let floor = (mmorpg_core::greyhaven_vale::cave::GREYFANG.floor_y + 90) as f32;
+        teleport(&mut host, player, [7_890.0, floor, -13_620.0]);
+        host.tick().unwrap();
+        assert!(is_depths_zone(host.zone_id()));
+        assert_eq!(host.zone().depths_run().unwrap().run_id, run_id);
+    }
+
+    #[test]
+    fn the_boss_review_starts_at_thorns_door_and_weakens_him_once() {
+        let (mut host, _player) = LocalZoneHost::scenario(Scenario::RedbrandThorn, 0).unwrap();
+        host.tick().unwrap();
+        assert!(is_depths_zone(host.zone_id()));
+        assert_eq!(
+            host.zone().depths_run().unwrap().cleared,
+            BTreeSet::from([0, 1, 2])
+        );
+        let thorn = |host: &LocalZoneHost| {
+            host.zone()
+                .snapshot()
+                .unwrap()
+                .creatures
+                .into_iter()
+                .find(|creature| {
+                    creature.creature_id == redbrand_depths::THORN
+                        && creature.life == mmorpg_core::CreatureLife::Alive
+                })
+                .map(|creature| creature.health)
+        };
+        for _ in 0..200 {
+            if thorn(&host).is_some() {
+                break;
+            }
+            host.tick().unwrap();
+        }
+        assert_eq!(thorn(&host), Some(REVIEW_BOSS_HEALTH));
+        assert!(!host.review.weaken_boss, "weakened once");
     }
 
     #[test]
