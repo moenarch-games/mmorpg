@@ -84,38 +84,75 @@ export function triangles(geometry: THREE.BufferGeometry): number {
 
 /**
  * Whether `geometry`'s surface is closed (each edge, with vertices welded by position, shared by two triangles that
- * wind it opposite ways), so drawing only its front faces casts the same shadow as drawing both.
+ * wind it opposite ways), so drawing only its front faces casts the same shadow as drawing both. Runs as a unit is
+ * built, so in typed arrays (#1122): vertices weld, and directed edges are counted, through numeric hash tables.
  */
 export function closedSurface(geometry: THREE.BufferGeometry): boolean {
   const index = geometry.index;
   if (!index || index.count === 0) { return false; }
-  const position = geometry.getAttribute("position");
-  const weld = new Map<string, number>();
-  const id = new Uint32Array(position.count);
-  for (let i = 0; i < position.count; i++) {
-    const key = `${Math.round(position.getX(i) * 1e4)},${Math.round(position.getY(i) * 1e4)},${Math.round(position.getZ(i) * 1e4)}`;
-    let welded = weld.get(key);
-    if (welded === undefined) { weld.set(key, welded = weld.size); }
-    id[i] = welded;
+  const positions = packedPositions(geometry);
+  const count = positions.length / 3;
+  // Positions rounded to a tenth of a millimetre: equal ones weld into one id.
+  const rounded = new Float64Array(positions.length);
+  for (let i = 0; i < positions.length; i++) { rounded[i] = Math.round(positions[i]! * 1e4); }
+  const size = 2 ** Math.ceil(Math.log2(Math.max(2, count * 2)));
+  const slots = new Int32Array(size).fill(-1);
+  const id = new Uint32Array(count);
+  let welded = 0;
+  for (let i = 0; i < count; i++) {
+    const x = rounded[i * 3]!;
+    const y = rounded[i * 3 + 1]!;
+    const z = rounded[i * 3 + 2]!;
+    let slot = (Math.imul(x | 0, 0x9e3779b1) ^ Math.imul(y | 0, 0x85ebca6b) ^ Math.imul(z | 0, 0xc2b2ae35)) & (size - 1);
+    for (;;) {
+      const at = slots[slot]!;
+      if (at === -1) {
+        slots[slot] = i;
+        id[i] = welded++;
+        break;
+      }
+      if (rounded[at * 3] === x && rounded[at * 3 + 1] === y && rounded[at * 3 + 2] === z) {
+        id[i] = id[at]!;
+        break;
+      }
+      slot = (slot + 1) & (size - 1);
+    }
   }
-  const edges = new Map<number, number>();
-  const n = weld.size;
+  const order = index.array;
+  const edges = new Float64Array(index.count);
+  let edgeCount = 0;
   const add = (a: number, b: number) => {
-    if (a === b) { return; }
-    edges.set(a * n + b, (edges.get(a * n + b) ?? 0) + 1);
+    if (a !== b) { edges[edgeCount++] = a * welded + b; }
   };
   for (let t = 0; t + 2 < index.count; t += 3) {
-    const a = id[index.getX(t)]!;
-    const b = id[index.getX(t + 1)]!;
-    const c = id[index.getX(t + 2)]!;
+    const a = id[order[t]!]!;
+    const b = id[order[t + 1]!]!;
+    const c = id[order[t + 2]!]!;
     add(a, b);
     add(b, c);
     add(c, a);
   }
-  for (const [edge, count] of edges) {
-    const a = Math.floor(edge / n);
-    const b = edge % n;
-    if ((edges.get(b * n + a) ?? 0) !== count) { return false; }
+  // Directed edges counted in a second hash table; closed when each count equals its reverse's.
+  const edgeSize = 2 ** Math.ceil(Math.log2(Math.max(2, edgeCount * 2)));
+  const keys = new Float64Array(edgeSize).fill(-1);
+  const counts = new Int32Array(edgeSize);
+  const slotOf = (edge: number): number => {
+    let slot = (Math.imul(edge % 0x7fffffff, 0x9e3779b1) ^ Math.imul(Math.floor(edge / 0x7fffffff), 0x85ebca6b)) & (edgeSize - 1);
+    while (keys[slot] !== -1 && keys[slot] !== edge) { slot = (slot + 1) & (edgeSize - 1); }
+    return slot;
+  };
+  for (let e = 0; e < edgeCount; e++) {
+    const edge = edges[e]!;
+    const slot = slotOf(edge);
+    keys[slot] = edge;
+    counts[slot]! += 1;
+  }
+  for (let slot = 0; slot < edgeSize; slot++) {
+    const edge = keys[slot]!;
+    if (edge === -1) { continue; }
+    const a = Math.floor(edge / welded);
+    const reverse = slotOf((edge - a * welded) * welded + a);
+    if (keys[reverse] === -1 || counts[reverse] !== counts[slot]) { return false; }
   }
   return true;
 }
