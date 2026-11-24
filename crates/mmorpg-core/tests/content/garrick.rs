@@ -96,6 +96,7 @@ fn content(whirl: bool) -> Arc<ZoneContent> {
                     count: 1,
                 }],
                 rewards: QuestRewards::default(),
+                supplies: Vec::new(),
             }])
             .unwrap(),
     )

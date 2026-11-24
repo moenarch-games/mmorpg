@@ -74,7 +74,7 @@ import { LootPanel, type LootElements } from "./units/loot-panel";
 import { WaystonePanel, type WaystoneElements } from "./units/waystone-panel";
 import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
-import { evidenceInReach } from "./units/quest-state";
+import { evidenceInReach, questActionAt } from "./units/quest-state";
 import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { DepthsLootPanel, type DepthsLootElements } from "./units/depths-loot-panel";
@@ -1814,7 +1814,8 @@ export class WorldView {
   }
 
   /**
-   * Interact (E / gamepad Start): inspect quest evidence in reach (#1019); talk to a selected NPC;
+   * Interact (E / gamepad Start): inspect quest evidence in reach (#1019); at a selected NPC, perform
+   * its open quest action (#1019) or talk to it;
    * without one, swing the door in reach
    * (#158), repair a damaged structure piece in reach (#305, free; moving stops it), or help a
    * lost night raid's aftermath in reach (#531);
@@ -1837,6 +1838,14 @@ export class WorldView {
     const spot = at ? evidenceInReach(this.#quests.state.sheet, at) : null;
     if (spot !== null) {
       this.queueIntent(() => ({ kind: "inspect", spot }));
+      return;
+    }
+    // At a selected NPC an active quest acts on (#1019): give it the quest item, ask it for an
+    // interview or start escorting it, instead of talking.
+    const npcTarget = projection?.viewer.target;
+    if (npcTarget?.kind === "npc" && questActionAt(this.#quests.state.sheet, npcTarget.id) !== null) {
+      const npcId = npcTarget.id;
+      this.queueIntent(() => ({ kind: "quest-action", npcId }));
       return;
     }
     const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;

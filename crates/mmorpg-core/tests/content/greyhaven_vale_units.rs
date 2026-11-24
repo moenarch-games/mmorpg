@@ -379,6 +379,19 @@ fn templates_follow_the_design_contract() {
                 3000,
                 60000
             ),
+            // The east gate's courier (#1019): a level 4 bandit's body, standing only when unmasked.
+            (
+                "Redbrand Courier",
+                Redbrand,
+                Aggressive,
+                [4, 4],
+                false,
+                75,
+                16,
+                [4, 7],
+                2200,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -398,6 +411,8 @@ fn spawns_populate_their_subzones() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            || content.is_confrontation_foe(spawn.id)
         {
             continue;
         }
@@ -607,6 +622,8 @@ fn creatures_stay_out_of_sight_of_the_spawn_plaza() {
             // the cart's robbers (#992) only during an ambush, in the Millbrook Climb's cutting.
             || content.is_raider(spawn.id)
             || content.is_cart_bandit(spawn.id)
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            || content.is_confrontation_foe(spawn.id)
         {
             continue;
         }
@@ -661,7 +678,8 @@ fn npcs_stand_at_their_posts() {
             ("Davin Moss", NpcRole::Resident, outpost),
             ("Baker Anwen", NpcRole::Resident, outpost),
             ("Miller Tomas", NpcRole::Resident, outpost),
-            ("Herbalist Nessa", NpcRole::Resident, outpost),
+            // The herbalist gives *The Miller's Medicine* (#1019).
+            ("Herbalist Nessa", NpcRole::QuestGiver, outpost),
             ("Peddler Rowan", NpcRole::Resident, outpost),
             ("Fisher Ada", NpcRole::Resident, outpost),
             ("Porter Ben", NpcRole::Resident, outpost),
@@ -671,7 +689,16 @@ fn npcs_stand_at_their_posts() {
         .into_iter()
         .chain(region_residents())
         // The smith (#917), the newest NPC.
-        .chain([("Smith Wulfric Hale", NpcRole::Vendor, outpost)])
+        .chain([
+            ("Smith Wulfric Hale", NpcRole::Vendor, outpost),
+            // The wounded watchman on the Wolfrun terrace and the courier by the east gate (#1019).
+            (
+                "Guardsman Tam Hollis",
+                NpcRole::Guard,
+                Some(greyhaven_vale::vale::WOLFRUN_WOODS)
+            ),
+            ("Courier Wat Ferrow", NpcRole::Resident, outpost),
+        ])
         .collect::<Vec<_>>()
     );
     let graveyard = content.graveyard();
@@ -701,6 +728,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            || content.is_confrontation_foe(spawn.id)
         {
             assert!(matches!(
                 creature.life,
@@ -809,6 +838,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            || content.is_confrontation_foe(spawn.id)
             || content
                 .dens()
                 .iter()

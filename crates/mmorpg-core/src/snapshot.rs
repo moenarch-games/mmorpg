@@ -111,6 +111,8 @@ pub enum PlayerIntent {
     Gather(u32),
     /// Inspecting quest evidence (#1019): its ID.
     Inspect(u32),
+    /// A quest action at an NPC (#1019): using an item on it, an interview or an escort.
+    QuestAction(crate::NpcId),
     /// Skinning a beast corpse (#917).
     Skin(crate::CreatureId),
     /// A Need/Greed/Pass answer to a boss drop (#404).
@@ -417,6 +419,8 @@ pub struct CanonicalZoneSnapshot {
     pub gathering: crate::GatheringState,
     /// Private-home residents a knock woke, in NPC-ID order (#158).
     pub wakes: Vec<crate::NpcWake>,
+    /// Running quest escorts (#1019), in NPC order.
+    pub escorts: Vec<crate::EscortState>,
     /// The private run bound to a depths zone (#404).
     pub depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks of a match with hit rewind (#680), oldest
@@ -705,6 +709,7 @@ impl ZoneSimulation {
             raid: self.raid.clone(),
             gathering: (*self.gathering).clone(),
             wakes: self.canonical_wakes(),
+            escorts: self.canonical_escorts(),
             depths: self.depths.clone(),
             rewind_history: self.canonical_rewind_history(),
         })
@@ -811,6 +816,7 @@ impl ZoneSimulation {
         // The snapshot tick's routine placements and platforms (#56); doors are already as that
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
+        zone.restore_escorts(&snapshot.escorts, snapshot.tick)?;
         // One unit per seat, and nobody on a seat its routine NPC holds at this tick (#619).
         let mut held = BTreeSet::new();
         for (&id, player) in &zone.players {

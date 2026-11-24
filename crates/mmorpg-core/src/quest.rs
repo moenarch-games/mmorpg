@@ -82,6 +82,32 @@ pub enum QuestObjective {
     /// Inspect authored evidence `spot` (#1019) with [`crate::ZoneCommand::Inspect`]; the log
     /// stores the progress.
     Inspect { spot: crate::EvidenceId },
+    /// Use one `item` from the bag on `npc` (#1019) with [`crate::ZoneCommand::QuestAction`]:
+    /// bandage a wounded guard, dose a farmhand or show a courier the evidence. The action
+    /// consumes the item; the log stores the progress.
+    UseItem { item: ItemId, npc: NpcId },
+    /// Lead `npc` into `area` (#1019): [`crate::ZoneCommand::QuestAction`] at the NPC starts
+    /// the escort once the quest's earlier objectives are done, and the NPC follows the player's
+    /// trail ([`crate::EscortState`]). Straying too far or dying fails it; the log stores the
+    /// arrival.
+    Escort { npc: NpcId, area: AreaId },
+    /// Be heard by `npc` (#1019) with [`crate::ZoneCommand::QuestAction`]; an NPC with an
+    /// [`crate::NpcAttitude`] may refuse the player.
+    Interview { npc: NpcId },
+    /// Kill `count` creatures of `template` as their tapper while wielding the quest's loaned
+    /// weapon (#1019, one of its [`Quest::supplies`] that is a main-hand weapon).
+    DefeatWithLoan {
+        template: CreatureTemplateId,
+        count: u8,
+    },
+    /// Hit `count` creatures of `template` with a boulder the player set rolling (#1019): the
+    /// environment's damage, each impact once (a roll hits a victim once), not a kill.
+    Crush {
+        template: CreatureTemplateId,
+        count: u8,
+    },
+    /// Destroy structure piece `piece` (#1019) with the player's own blast or shot.
+    Demolish { piece: crate::PieceId },
 }
 
 impl QuestObjective {
@@ -89,17 +115,25 @@ impl QuestObjective {
     #[must_use]
     pub const fn required(self) -> u8 {
         match self {
-            Self::Kill { count, .. } | Self::Collect { count, .. } => count,
+            Self::Kill { count, .. }
+            | Self::Collect { count, .. }
+            | Self::DefeatWithLoan { count, .. }
+            | Self::Crush { count, .. } => count,
             Self::Talk { .. }
             | Self::Explore { .. }
             | Self::Retrieve { .. }
             | Self::DefeatThorn
-            | Self::Inspect { .. } => 1,
+            | Self::Inspect { .. }
+            | Self::UseItem { .. }
+            | Self::Escort { .. }
+            | Self::Interview { .. }
+            | Self::Demolish { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
-    /// 7 inspect.
+    /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
+    /// 13 demolish.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -110,6 +144,24 @@ impl QuestObjective {
             Self::Retrieve { .. } => 5,
             Self::DefeatThorn => 6,
             Self::Inspect { .. } => 7,
+            Self::UseItem { .. } => 8,
+            Self::Escort { .. } => 9,
+            Self::Interview { .. } => 10,
+            Self::DefeatWithLoan { .. } => 11,
+            Self::Crush { .. } => 12,
+            Self::Demolish { .. } => 13,
+        }
+    }
+
+    /// The NPC a [`crate::ZoneCommand::QuestAction`] performs this objective at (#1019), if it
+    /// is such an objective.
+    #[must_use]
+    pub const fn action_npc(self) -> Option<NpcId> {
+        match self {
+            Self::UseItem { npc, .. } | Self::Escort { npc, .. } | Self::Interview { npc } => {
+                Some(npc)
+            }
+            _ => None,
         }
     }
 
@@ -152,6 +204,36 @@ pub struct Quest {
     pub prerequisite: Option<QuestId>,
     pub objectives: Vec<QuestObjective>,
     pub rewards: QuestRewards,
+    /// What the giver hands over on accepting (#1019), at most [`MAX_QUEST_SUPPLIES`].
+    pub supplies: Vec<QuestSupply>,
+}
+
+/// A quest gives at most this many kinds of supplies.
+pub const MAX_QUEST_SUPPLIES: usize = 4;
+
+/// One item a quest's giver hands over on accepting (#1019), to a character of one of
+/// `classes` (every class when empty): a bandage, a draught, a forged pass or a loaned weapon.
+/// The bag gets one unless it already holds one, so a retaken quest never multiplies it.
+/// Abandoning the quest takes the item back. A plain bag item left at the turn-in is taken
+/// back too; equipment is a **loan**: the turn-in requires it, from the bag or the hands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuestSupply {
+    pub item: ItemId,
+    pub classes: Vec<crate::PlayerClass>,
+}
+
+impl QuestSupply {
+    /// Whether a character of `class` receives it.
+    #[must_use]
+    pub fn for_class(&self, class: Option<crate::PlayerClass>) -> bool {
+        self.classes.is_empty() || class.is_some_and(|class| self.classes.contains(&class))
+    }
+
+    /// Whether it is a loan, returned at the turn-in.
+    #[must_use]
+    pub fn loaned(&self) -> bool {
+        item_template(self.item).is_some_and(|template| template.slot.is_some())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -270,6 +352,45 @@ pub(crate) fn validate_quests(
                     content.evidence_spot(spot).is_some()
                         && !quest.objectives[..index].contains(objective)
                 }
+                // The NPC actions (#1019), each at most once per quest: actions at one NPC come in
+                // the quest's order (bandage, then escort). A used item is a plain bag item.
+                QuestObjective::UseItem { item, npc } => {
+                    content.npc(npc).is_some()
+                        && item_template(item).is_some_and(|template| template.slot.is_none())
+                        && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Escort { npc, area } => {
+                    content.npc(npc).is_some()
+                        && content
+                            .areas()
+                            .areas()
+                            .iter()
+                            .any(|candidate| candidate.id() == area)
+                        && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Interview { npc } => {
+                    content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                // The trial needs a weapon to lend.
+                QuestObjective::DefeatWithLoan { template, count } => {
+                    count > 0
+                        && content.creature_template(template).is_some()
+                        && quest.supplies.iter().any(|supply| {
+                            item_template(supply.item).is_some_and(|template| {
+                                template.slot == Some(crate::EquipmentSlot::MainHand)
+                            })
+                        })
+                }
+                QuestObjective::Crush { template, count } => {
+                    count > 0 && content.creature_template(template).is_some()
+                }
+                QuestObjective::Demolish { piece } => {
+                    content
+                        .pieces()
+                        .iter()
+                        .any(|candidate| candidate.id == piece)
+                        && !quest.objectives[..index].contains(objective)
+                }
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -284,6 +405,28 @@ pub(crate) fn validate_quests(
             || !distinct
             || choices.iter().any(|item| item_template(*item).is_none())
             || quest.rewards.experience > MAX_QUEST_EXPERIENCE
+        {
+            return Err(QuestContentError::InvalidRewards);
+        }
+        // Supplies (#1019): known distinct items, each weapon wielded by every class it goes to.
+        let supplies = &quest.supplies;
+        let valid_supply = |supply: &QuestSupply| {
+            item_template(supply.item).is_some_and(|template| {
+                template.weapon.is_none_or(|family| {
+                    !supply.classes.is_empty()
+                        && supply
+                            .classes
+                            .iter()
+                            .all(|class| family.wielded_by(Some(*class)))
+                })
+            })
+        };
+        if supplies.len() > MAX_QUEST_SUPPLIES
+            || supplies
+                .iter()
+                .enumerate()
+                .any(|(index, supply)| supplies[..index].iter().any(|s| s.item == supply.item))
+            || !supplies.iter().all(valid_supply)
         {
             return Err(QuestContentError::InvalidRewards);
         }
@@ -371,7 +514,7 @@ pub struct QuestSheet {
 }
 
 /// Current progress of every objective of `quest` for `entry`.
-fn progress(
+pub(crate) fn progress(
     quest: &Quest,
     entry: &QuestEntry,
     bag: &Inventory,
@@ -601,6 +744,42 @@ pub(crate) fn drops_quest_item(
     })
 }
 
+/// Takes `quest`'s supplies (#1019) out of `bag` and `hands`: every one still held, from the
+/// bag first. With `loans_due` (a turn-in, by a character of that class) each loan meant for the class
+/// must come back, so a missing one leaves both untouched and answers `false`.
+fn reclaim_supplies(
+    quest: &Quest,
+    bag: &mut Inventory,
+    hands: &mut crate::Equipment,
+    loans_due: Option<Option<crate::PlayerClass>>,
+) -> bool {
+    let (mut staged_bag, mut slots) = (bag.clone(), *hands.slots());
+    for supply in &quest.supplies {
+        let carried = staged_bag.count(supply.item);
+        let wielded = slots.iter().position(|slot| *slot == Some(supply.item));
+        if carried == 0 && wielded.is_none() {
+            // Only a loan whose borrower could have had it is due: a class-bound loan given to
+            // another class never existed.
+            if loans_due.is_some_and(|class| supply.loaned() && supply.for_class(class)) {
+                return false;
+            }
+            continue;
+        }
+        if carried > 0 {
+            let _ = staged_bag.remove_item(supply.item, u16::try_from(carried).unwrap_or(u16::MAX));
+        }
+        if let Some(index) = wielded {
+            slots[index] = None;
+        }
+    }
+    let Ok(staged_hands) = crate::Equipment::from_slots(slots) else {
+        return false;
+    };
+    *bag = staged_bag;
+    *hands = staged_hands;
+    true
+}
+
 /// A quest request at an NPC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum QuestRequest {
@@ -634,6 +813,19 @@ impl ZoneSimulation {
                 if player.quests.entries.len() == before {
                     return Ok(Some((ErrorCode::InvalidQuest, None)));
                 }
+                // The giver takes its supplies back (#1019); an escort the quest ran ends.
+                if let Some(definition) = self.content.quest(QuestId::new(quest)) {
+                    let mut bag = player.inventory.clone();
+                    let mut hands = *player.equipment;
+                    reclaim_supplies(definition, &mut bag, &mut hands, None);
+                    if (bag != player.inventory || hands != *player.equipment)
+                        && let Some(revision) = player.inventory_revision.checked_add(1)
+                    {
+                        player.inventory = bag;
+                        *player.equipment = hands;
+                        player.inventory_revision = revision;
+                    }
+                }
                 Ok(None)
             }
             QuestRequest::Accept { npc, quest } => self.accept_quest(player_id, npc, quest),
@@ -644,8 +836,13 @@ impl ZoneSimulation {
     }
 
     /// Whether the player's feet are within quest reach of `npc`'s.
-    fn within_quest_reach(&self, player_id: PlayerId, npc: NpcId) -> Result<bool, ZoneError> {
-        let Some(feet) = self.npc_feet(npc) else {
+    pub(crate) fn within_quest_reach(
+        &self,
+        player_id: PlayerId,
+        npc: NpcId,
+    ) -> Result<bool, ZoneError> {
+        // A confronted NPC (#1019) is out of the world while its foe stands.
+        let Some(feet) = self.npc_feet(npc).filter(|_| !self.npc_hidden(npc)) else {
             return Ok(false);
         };
         let from = self.player_position(player_id)?;
@@ -694,6 +891,23 @@ impl ZoneSimulation {
             .ok_or_else(|| ZoneError::new("quest player is absent"))?;
         if player.quests.entries.len() >= MAX_QUEST_LOG {
             return Ok(Some((ErrorCode::QuestLogFull, target)));
+        }
+        // The giver's supplies (#1019): one of each meant for the class, unless already held.
+        let class = player.class.map(|choice| choice.class);
+        let mut bag = player.inventory.clone();
+        for supply in &definition.supplies {
+            let held =
+                bag.count(supply.item) > 0 || player.equipment.slots().contains(&Some(supply.item));
+            if supply.for_class(class) && !held && bag.insert(supply.item, 1).is_err() {
+                return Ok(Some((ErrorCode::InventoryFull, target)));
+            }
+        }
+        if bag != player.inventory {
+            let Some(revision) = player.inventory_revision.checked_add(1) else {
+                return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
+            };
+            player.inventory = bag;
+            player.inventory_revision = revision;
         }
         let at = player
             .quests
@@ -769,6 +983,12 @@ impl ZoneSimulation {
                 return Ok(Some((ErrorCode::QuestIncomplete, target)));
             }
         }
+        // Loans come back and leftover supplies go (#1019), before the reward takes their room.
+        let mut hands = *player.equipment;
+        let class = player.class.map(|choice| choice.class);
+        if !reclaim_supplies(definition, &mut bag, &mut hands, Some(class)) {
+            return Ok(Some((ErrorCode::QuestIncomplete, target)));
+        }
         if let Some(item) = reward {
             match bag.insert(item, 1) {
                 Ok(()) => {}
@@ -781,7 +1001,7 @@ impl ZoneSimulation {
         let Some(copper) = player.copper.checked_add(definition.rewards.copper) else {
             return Ok(Some((ErrorCode::MoneyOverflow, target)));
         };
-        let revision = if bag == player.inventory {
+        let revision = if bag == player.inventory && hands == *player.equipment {
             None
         } else {
             match player.inventory_revision.checked_add(1) {
@@ -790,6 +1010,9 @@ impl ZoneSimulation {
             }
         };
         player.inventory = bag;
+        if hands != *player.equipment {
+            *player.equipment = hands;
+        }
         player.copper = copper;
         if let Some(revision) = revision {
             player.inventory_revision = revision;
@@ -823,16 +1046,28 @@ impl ZoneSimulation {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
+        // A trial's kill counts only with its loaned weapon in hand (#1019).
+        let wielded = player.equipment.item(crate::EquipmentSlot::MainHand);
         let mut due = Vec::new();
         for entry in &player.quests.entries {
             let Some(quest) = content.quest(entry.quest) else {
                 continue;
             };
+            let loaned = wielded.is_some_and(|item| {
+                quest
+                    .supplies
+                    .iter()
+                    .any(|supply| supply.item == item && supply.loaned())
+            });
             for (index, objective) in quest.objectives.iter().enumerate() {
-                if let QuestObjective::Kill {
-                    template: wanted,
-                    count,
-                } = *objective
+                let wanted = match *objective {
+                    QuestObjective::Kill { template, count } => Some((template, count)),
+                    QuestObjective::DefeatWithLoan { template, count } if loaned => {
+                        Some((template, count))
+                    }
+                    _ => None,
+                };
+                if let Some((wanted, count)) = wanted
                     && wanted == template
                     && entry.progress[index] < count
                 {
@@ -855,6 +1090,29 @@ impl ZoneSimulation {
         Ok(())
     }
 
+    /// A boulder `player_id` set rolling hit living `creature` (#1019): every open crush
+    /// objective of its template advances by one. One roll hits a victim once (the impact's
+    /// forced-move immunity), so each impact counts once, on every host alike.
+    pub(crate) fn credit_crush(
+        &mut self,
+        player_id: PlayerId,
+        creature: crate::CreatureId,
+    ) -> Result<(), ZoneError> {
+        let content = std::sync::Arc::clone(&self.content);
+        if !self
+            .creatures
+            .get(&creature)
+            .is_some_and(crate::creature::CreatureState::is_alive)
+        {
+            return Ok(());
+        }
+        let template = Self::creature_content(&content, creature)?.1.id;
+        self.complete_objectives(player_id, |objective| {
+            matches!(objective, QuestObjective::Crush { template: wanted, .. } if wanted == template)
+        });
+        Ok(())
+    }
+
     /// Advances one open kill objective by one (#1112: also a deferred kill credit's
     /// payout); `false` when the quest left the log or the objective is already complete.
     pub(crate) fn advance_kill_objective(
@@ -865,9 +1123,11 @@ impl ZoneSimulation {
     ) -> bool {
         let content = std::sync::Arc::clone(&self.content);
         let index = usize::from(objective);
-        let Some(QuestObjective::Kill { count, .. }) = content
-            .quest(quest)
-            .and_then(|definition| definition.objectives.get(index).copied())
+        // Kill credits pay kills and trial kills (#1019) alike.
+        let Some(QuestObjective::Kill { count, .. } | QuestObjective::DefeatWithLoan { count, .. }) =
+            content
+                .quest(quest)
+                .and_then(|definition| definition.objectives.get(index).copied())
         else {
             return false;
         };
@@ -1009,7 +1269,13 @@ impl ZoneSimulation {
                         | QuestObjective::Collect { .. }
                         | QuestObjective::Retrieve { .. }
                         | QuestObjective::DefeatThorn
-                        | QuestObjective::Inspect { .. } => false,
+                        | QuestObjective::Inspect { .. }
+                        | QuestObjective::UseItem { .. }
+                        | QuestObjective::Escort { .. }
+                        | QuestObjective::Interview { .. }
+                        | QuestObjective::DefeatWithLoan { .. }
+                        | QuestObjective::Crush { .. }
+                        | QuestObjective::Demolish { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

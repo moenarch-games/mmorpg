@@ -7,8 +7,10 @@
 mod support;
 
 mod cave_bat;
+mod core_vale_actions;
 mod creature_streams;
 mod discovery_caches;
+mod environment_credit;
 mod evidence_quests;
 mod farmland;
 mod forest_lynx;

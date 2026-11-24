@@ -633,7 +633,15 @@ impl ZoneSimulation {
                 projectile.bounces += 1;
                 self.projectiles.insert(id, projectile);
                 if let Some(piece) = self.piece_of_body(hit.body) {
-                    self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
+                    self.damage_piece(
+                        piece,
+                        crate::PROJECTILE_PIECE_DAMAGE,
+                        now,
+                        match projectile.owner {
+                            crate::EntityRef::Player(player) => Some(player),
+                            _ => None,
+                        },
+                    )?;
                 }
                 if let Some(obstacle) = self.summoned_of_body(hit.body) {
                     self.damage_summoned(obstacle, crate::PROJECTILE_SUMMONED_DAMAGE);
@@ -684,7 +692,15 @@ impl ZoneSimulation {
                 self.projectile_strikes(projectile, unit, 100, now)?;
             } else if let Some(piece) = self.piece_of_body(hit.body) {
                 // A shot into a destructible piece chips it (#305).
-                self.damage_piece(piece, crate::PROJECTILE_PIECE_DAMAGE, now)?;
+                self.damage_piece(
+                    piece,
+                    crate::PROJECTILE_PIECE_DAMAGE,
+                    now,
+                    match projectile.owner {
+                        crate::EntityRef::Player(player) => Some(player),
+                        _ => None,
+                    },
+                )?;
             } else if let Some(obstacle) = self.summoned_of_body(hit.body) {
                 // A shot into summoned terrain (#293) chips it.
                 self.damage_summoned(obstacle, crate::PROJECTILE_SUMMONED_DAMAGE);

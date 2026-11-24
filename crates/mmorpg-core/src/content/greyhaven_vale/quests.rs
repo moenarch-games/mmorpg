@@ -31,9 +31,11 @@
 use serde::Deserialize;
 
 use crate::{
-    AreaId, CreatureTemplateId, EvidenceId, EvidenceSpot, ItemId, NpcId, Quest, QuestId,
-    QuestObjective, QuestRewards,
+    AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot, ItemId,
+    NpcAttitude, NpcId, PieceId, PlayerClass, Quest, QuestId, QuestObjective, QuestRewards,
+    QuestSupply,
 };
+use strum::VariantArray;
 
 pub const MARSHAL: NpcId = NpcId::new(1);
 pub const TANNER: NpcId = NpcId::new(2);
@@ -113,6 +115,50 @@ pub const COURIERS_CACHE: EvidenceId = EvidenceId::new(6);
 pub const HILDAS_LEDGER: EvidenceId = EvidenceId::new(7);
 pub const DELIVERY_TALLY: EvidenceId = EvidenceId::new(8);
 
+/// The Core Vale's tactical and social quests (#1019, slice 2): a wounded watchman's rescue, the
+/// smith's loaned trial arms, the Hollow's boulder trap and watch post, a distrustful resident's
+/// interview, the courier who turns on whoever shows him his pass, and a farmhand's medicine.
+pub const A_GUARDS_LAST_WATCH: QuestId = QuestId::new(35);
+pub const THE_SMITHS_TRIAL: QuestId = QuestId::new(37);
+pub const STONE_ON_THE_ROAD: QuestId = QuestId::new(38);
+pub const BREAKING_THE_WATCH_POST: QuestId = QuestId::new(39);
+pub const A_QUIET_INTRODUCTION: QuestId = QuestId::new(40);
+pub const THE_MAN_AT_THE_GATE: QuestId = QuestId::new(41);
+pub const THE_MILLERS_MEDICINE: QuestId = QuestId::new(42);
+
+/// Their people: the wounded watchman on the Wolfrun terrace, the courier outside the east gate,
+/// the distrustful resident, the herbalist, the farmhand and the smith.
+pub const TAM_HOLLIS: NpcId = NpcId::new(44);
+pub const COURIER: NpcId = NpcId::new(45);
+pub const DAVIN_MOSS: NpcId = NpcId::new(13);
+pub const HERBALIST: NpcId = NpcId::new(16);
+pub const FARMHAND_JORY: NpcId = NpcId::new(41);
+pub const SMITH: NpcId = NpcId::new(43);
+
+/// Their supplies: the smith's three trial arms, the bandage, the draught and the toll pass.
+pub const TRIAL_BLADE: ItemId = ItemId::new(36);
+pub const TRIAL_STAFF: ItemId = ItemId::new(37);
+pub const TRIAL_MACE: ItemId = ItemId::new(38);
+pub const CLEAN_BANDAGE: ItemId = ItemId::new(39);
+pub const FEVER_DRAUGHT: ItemId = ItemId::new(40);
+pub const FORGED_TOLL_PASS: ItemId = ItemId::new(41);
+
+/// The courier once unmasked: a reserved spawn a metre south of him, standing only while he is
+/// hostile (#1019).
+pub const COURIER_FOE: CreatureId = CreatureId::new(2_930);
+
+/// The confrontation foes' spawns (#1019): reserved off the world until their NPC turns.
+pub(super) fn spawns() -> Vec<crate::content::CreatureSpawn> {
+    vec![crate::content::CreatureSpawn {
+        id: COURIER_FOE,
+        template: super::units::templates::REDBRAND_COURIER,
+        position: [3_650, 2_200],
+        facing: 49_152,
+        wander_radius: 0,
+        levels: None,
+    }]
+}
+
 /// The region's quest givers (#820): Barrowdown's alewife, Fenford's innkeeper, Westmere
 /// Lodge's fisher, the hunters' huntsman and Greyfang Watch's watchman; and Old Maud, whom a
 /// quest sends players to talk to.
@@ -150,6 +196,53 @@ struct Source {
     /// The evidence the quests' inspect objectives name (#1019).
     #[serde(default)]
     evidence: Vec<EvidenceSource>,
+    /// How NPCs regard interviewers (#1019).
+    #[serde(default)]
+    attitudes: Vec<AttitudeSource>,
+    /// NPCs who turn hostile when shown evidence (#1019).
+    #[serde(default)]
+    confrontations: Vec<ConfrontationSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttitudeSource {
+    npc: u32,
+    /// Class names, as in `warden`.
+    distrusts: Vec<String>,
+    sponsor: bool,
+    #[serde(default)]
+    recommendation: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfrontationSource {
+    npc: u32,
+    evidence: u32,
+    foe: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SupplySource {
+    item: u32,
+    /// Class names; every class when absent.
+    #[serde(default)]
+    classes: Vec<String>,
+}
+
+fn classes(names: Vec<String>) -> Result<Vec<PlayerClass>, String> {
+    names
+        .into_iter()
+        .map(|name| {
+            PlayerClass::VARIANTS
+                .iter()
+                .copied()
+                .find(|class| class.name() == name)
+                .ok_or_else(|| format!("unknown class {name}"))
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -164,6 +257,9 @@ struct QuestSource {
     prerequisite: Option<u32>,
     objectives: Vec<ObjectiveSource>,
     rewards: RewardsSource,
+    /// What the giver hands over on accepting (#1019).
+    #[serde(default)]
+    supplies: Vec<SupplySource>,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +272,12 @@ enum ObjectiveSource {
     Retrieve { item: u32, area: u32 },
     DefeatThorn,
     Inspect { spot: u32 },
+    UseItem { item: u32, npc: u32 },
+    Escort { npc: u32, area: u32 },
+    Interview { npc: u32 },
+    DefeatWithLoan { template: u32, count: u8 },
+    Crush { template: u32, count: u8 },
+    Demolish { piece: u32 },
 }
 
 #[derive(Deserialize)]
@@ -225,11 +327,41 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::Inspect { spot } => Self::Inspect {
                 spot: EvidenceId::new(spot),
             },
+            ObjectiveSource::UseItem { item, npc } => Self::UseItem {
+                item: ItemId::new(item),
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Escort { npc, area } => Self::Escort {
+                npc: NpcId::new(npc),
+                area: AreaId::new(area),
+            },
+            ObjectiveSource::Interview { npc } => Self::Interview {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::DefeatWithLoan { template, count } => Self::DefeatWithLoan {
+                template: CreatureTemplateId::new(template),
+                count,
+            },
+            ObjectiveSource::Crush { template, count } => Self::Crush {
+                template: CreatureTemplateId::new(template),
+                count,
+            },
+            ObjectiveSource::Demolish { piece } => Self::Demolish {
+                piece: PieceId::new(piece),
+            },
         }
     }
 }
 
-fn parse(source: &str) -> Result<(Vec<Quest>, Vec<EvidenceSpot>), String> {
+/// Everything `content/greyhaven/quests.json` defines.
+struct Parsed {
+    quests: Vec<Quest>,
+    evidence: Vec<EvidenceSpot>,
+    attitudes: Vec<NpcAttitude>,
+    confrontations: Vec<Confrontation>,
+}
+
+fn parse(source: &str) -> Result<Parsed, String> {
     let source: Source = serde_json::from_str(source).map_err(|error| error.to_string())?;
     if source.version != 1 {
         return Err(format!("unknown quests version {}", source.version));
@@ -237,19 +369,52 @@ fn parse(source: &str) -> Result<(Vec<Quest>, Vec<EvidenceSpot>), String> {
     let quests = source
         .quests
         .into_iter()
-        .map(|quest| Quest {
-            id: QuestId::new(quest.id),
-            name: quest.name,
-            text: quest.text,
-            giver: NpcId::new(quest.giver),
-            ender: NpcId::new(quest.ender),
-            prerequisite: quest.prerequisite.map(QuestId::new),
-            objectives: quest.objectives.into_iter().map(Into::into).collect(),
-            rewards: QuestRewards {
-                experience: quest.rewards.experience,
-                copper: quest.rewards.copper,
-                choices: quest.rewards.choices.into_iter().map(ItemId::new).collect(),
-            },
+        .map(|quest| {
+            Ok(Quest {
+                id: QuestId::new(quest.id),
+                name: quest.name,
+                text: quest.text,
+                giver: NpcId::new(quest.giver),
+                ender: NpcId::new(quest.ender),
+                prerequisite: quest.prerequisite.map(QuestId::new),
+                objectives: quest.objectives.into_iter().map(Into::into).collect(),
+                rewards: QuestRewards {
+                    experience: quest.rewards.experience,
+                    copper: quest.rewards.copper,
+                    choices: quest.rewards.choices.into_iter().map(ItemId::new).collect(),
+                },
+                supplies: quest
+                    .supplies
+                    .into_iter()
+                    .map(|supply| {
+                        Ok(QuestSupply {
+                            item: ItemId::new(supply.item),
+                            classes: classes(supply.classes)?,
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let attitudes = source
+        .attitudes
+        .into_iter()
+        .map(|attitude| {
+            Ok(NpcAttitude {
+                npc: NpcId::new(attitude.npc),
+                distrusts: classes(attitude.distrusts)?,
+                sponsor: attitude.sponsor,
+                recommendation: attitude.recommendation.map(QuestId::new),
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let confrontations = source
+        .confrontations
+        .into_iter()
+        .map(|confrontation| Confrontation {
+            npc: NpcId::new(confrontation.npc),
+            evidence: ItemId::new(confrontation.evidence),
+            foe: CreatureId::new(confrontation.foe),
         })
         .collect();
     let evidence = source
@@ -262,10 +427,15 @@ fn parse(source: &str) -> Result<(Vec<Quest>, Vec<EvidenceSpot>), String> {
             reach: spot.reach,
         })
         .collect();
-    Ok((quests, evidence))
+    Ok(Parsed {
+        quests,
+        evidence,
+        attitudes,
+        confrontations,
+    })
 }
 
-fn source() -> (Vec<Quest>, Vec<EvidenceSpot>) {
+fn source() -> Parsed {
     parse(SOURCE).unwrap_or_else(|error| panic!("content/greyhaven/quests.json: {error}"))
 }
 
@@ -276,7 +446,7 @@ fn source() -> (Vec<Quest>, Vec<EvidenceSpot>) {
 /// When the committed quest file does not parse.
 #[must_use]
 pub fn quests() -> Vec<Quest> {
-    source().0
+    source().quests
 }
 
 /// The evidence the quests' inspect objectives name (#1019), as `content/greyhaven/quests.json`
@@ -287,5 +457,26 @@ pub fn quests() -> Vec<Quest> {
 /// When the committed quest file does not parse.
 #[must_use]
 pub fn evidence() -> Vec<EvidenceSpot> {
-    source().1
+    source().evidence
+}
+
+/// How the quests' NPCs regard interviewers (#1019), as `content/greyhaven/quests.json` lists it.
+///
+/// # Panics
+///
+/// When the committed quest file does not parse.
+#[must_use]
+pub fn attitudes() -> Vec<NpcAttitude> {
+    source().attitudes
+}
+
+/// The NPCs who turn hostile when shown evidence (#1019), as `content/greyhaven/quests.json`
+/// lists them.
+///
+/// # Panics
+///
+/// When the committed quest file does not parse.
+#[must_use]
+pub fn confrontations() -> Vec<Confrontation> {
+    source().confrontations
 }

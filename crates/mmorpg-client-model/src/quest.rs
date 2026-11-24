@@ -107,7 +107,52 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .evidence_spot(spot)
                 .map_or("the evidence", |spot| spot.name.as_str())
         ),
+        // The quest actions and credits of #1019.
+        QuestObjective::UseItem { item: id, npc } => {
+            format!("Give {} to {}", item(id), objective_npc(content, npc))
+        }
+        QuestObjective::Escort { npc, area } => format!(
+            "Escort {} to {}",
+            objective_npc(content, npc),
+            area_name(content, area)
+        ),
+        QuestObjective::Interview { npc } => format!("Be heard by {}", objective_npc(content, npc)),
+        QuestObjective::DefeatWithLoan { template, .. } => format!(
+            "{} slain with the loaned weapon",
+            content
+                .creature_template(template)
+                .map_or("Creature", |template| template.name.as_str())
+        ),
+        QuestObjective::Crush { template, .. } => format!(
+            "{} crushed by a boulder",
+            content
+                .creature_template(template)
+                .map_or("Creature", |template| template.name.as_str())
+        ),
+        QuestObjective::Demolish { piece } => format!(
+            "Bring down {}",
+            content
+                .pieces()
+                .iter()
+                .find(|candidate| candidate.id == piece)
+                .map(|piece| piece.name.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or("the structure")
+        ),
     }
+}
+
+fn objective_npc(content: &ZoneContent, npc: NpcId) -> &str {
+    content.npc(npc).map_or("someone", |npc| npc.name.as_str())
+}
+
+fn area_name(content: &ZoneContent, area: mmorpg_core::AreaId) -> &str {
+    content
+        .areas()
+        .areas()
+        .iter()
+        .find(|candidate| candidate.id() == area)
+        .map_or("the area", |area| area.name())
 }
 
 /// One objective with its received progress.
@@ -135,13 +180,19 @@ pub fn objective_view(
     let text = match objective {
         QuestObjective::Kill { .. }
         | QuestObjective::Collect { .. }
-        | QuestObjective::Retrieve { .. } => {
+        | QuestObjective::Retrieve { .. }
+        | QuestObjective::DefeatWithLoan { .. }
+        | QuestObjective::Crush { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
         QuestObjective::Talk { .. }
         | QuestObjective::Explore { .. }
         | QuestObjective::DefeatThorn
         | QuestObjective::Inspect { .. }
+        | QuestObjective::UseItem { .. }
+        | QuestObjective::Escort { .. }
+        | QuestObjective::Interview { .. }
+        | QuestObjective::Demolish { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -149,7 +200,11 @@ pub fn objective_view(
         QuestObjective::Talk { .. }
         | QuestObjective::Explore { .. }
         | QuestObjective::DefeatThorn
-        | QuestObjective::Inspect { .. } => label.clone(),
+        | QuestObjective::Inspect { .. }
+        | QuestObjective::UseItem { .. }
+        | QuestObjective::Escort { .. }
+        | QuestObjective::Interview { .. }
+        | QuestObjective::Demolish { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -398,6 +453,34 @@ pub fn evidence_in_reach(
         .map(|spot| spot.id)
 }
 
+/// The quest action (#1019) Interact performs at `npc` for a player with the active quests
+/// `entries`: the first open use-item, escort or interview objective at that NPC, in log order,
+/// whose quest's earlier objectives are all done, as the zone picks it. `None` leaves Interact
+/// to talk. The zone checks reach, the bag, the NPC's trust and everything else again.
+#[must_use]
+pub fn quest_action_at(
+    content: &ZoneContent,
+    entries: &[QuestEntry],
+    npc: NpcId,
+) -> Option<QuestObjective> {
+    entries.iter().find_map(|entry| {
+        let quest = content.quest(entry.quest)?;
+        quest
+            .objectives
+            .iter()
+            .enumerate()
+            .find(|(index, objective)| {
+                objective.action_npc() == Some(npc)
+                    && entry.progress[*index] < objective.required()
+                    && quest.objectives[..*index]
+                        .iter()
+                        .zip(entry.progress)
+                        .all(|(earlier, count)| count >= earlier.required())
+            })
+            .map(|(_, objective)| *objective)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,13 +524,19 @@ mod tests {
                 match objective {
                     QuestObjective::Kill { .. }
                     | QuestObjective::Collect { .. }
-                    | QuestObjective::Retrieve { .. } => {
+                    | QuestObjective::Retrieve { .. }
+                    | QuestObjective::DefeatWithLoan { .. }
+                    | QuestObjective::Crush { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
                     QuestObjective::Talk { .. }
                     | QuestObjective::Explore { .. }
                     | QuestObjective::DefeatThorn
-                    | QuestObjective::Inspect { .. } => {
+                    | QuestObjective::Inspect { .. }
+                    | QuestObjective::UseItem { .. }
+                    | QuestObjective::Escort { .. }
+                    | QuestObjective::Interview { .. }
+                    | QuestObjective::Demolish { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

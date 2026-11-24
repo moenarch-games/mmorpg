@@ -79,10 +79,17 @@ export type AbilityRecord = {
  * `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk),
  * an area (explore), an item (retrieve, granted by swimming into area `source`, #274) or nothing
  * (victory: Captain Thorn beaten in the Redbrand Depths, target 0) or a quest evidence spot (inspect, #1019).
+ * The quest actions and credits of #1019: an item given to NPC `source` (use_item), an NPC led into area
+ * `source` (escort), an NPC heard (interview), a creature template slain with the quest's loan
+ * (defeat_with_loan) or hit by a boulder (crush), and a structure piece (demolish).
  */
 export type QuestObjectiveRecord =
-  | { kind: "kill" | "talk" | "explore" | "victory" | "inspect"; target: number; count: number }
-  | { kind: "collect" | "retrieve"; target: number; source: number; count: number };
+  | {
+      kind: "kill" | "talk" | "explore" | "victory" | "inspect" | "interview" | "defeat_with_loan" | "crush" | "demolish";
+      target: number;
+      count: number;
+    }
+  | { kind: "collect" | "retrieve" | "use_item" | "escort"; target: number; source: number; count: number };
 
 export type QuestRecord = {
   id: number;
@@ -116,7 +123,21 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "victory", "inspect"] as const;
+const OBJECTIVE_KINDS = [
+  "kill",
+  "collect",
+  "talk",
+  "explore",
+  "retrieve",
+  "victory",
+  "inspect",
+  "use_item",
+  "escort",
+  "interview",
+  "defeat_with_loan",
+  "crush",
+  "demolish",
+] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
@@ -365,8 +386,23 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { kind, target, source: area, count };
       }
+      // The NPC actions of #1019: an item given to an NPC, an NPC led into an area.
+      if (kind === "use_item") {
+        const npc = int(objective.source, `${label} npc`, 0, 0xffff_ffff);
+        if (!itemsById.has(target) || !npcsById.has(npc)) {
+          fail(`${label} names an unknown item or NPC`);
+        }
+        return { kind, target, source: npc, count };
+      }
+      if (kind === "escort") {
+        const area = int(objective.source, `${label} area`, 0, 0xffff);
+        if (!npcsById.has(target) || !areas.some((candidate) => candidate.id === area)) {
+          fail(`${label} names an unknown NPC or area`);
+        }
+        return { kind, target, source: area, count };
+      }
       if (objective.source !== null) {
-        fail(`${label} has a source only when it collects or retrieves`);
+        fail(`${label} has a source only when it collects, retrieves, gives an item or escorts`);
       }
       return { kind, target, count };
     });

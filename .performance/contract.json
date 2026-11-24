@@ -256,6 +256,56 @@
       ]
     },
     {
+      "id": "escort-step",
+      "description": "Advance the quest escorts one tick (#1019): each running escort is visited once and its NPC follows a step's worth of its player's trail (at most 64 points kept), fails on the leash or arrives; then the content's confrontations are checked for a foe out of its fight. Nothing iterates the zone's other NPCs or players. Measured by mmorpg-core's escort_step_work example and escort_step test.",
+      "dimensions": {
+        "escorts": { "description": "players each leading their own NPC, 20 m ahead of it so it limps after them for the whole measurement" },
+        "idle": { "description": "bystander NPCs nobody escorts" }
+      },
+      "scalePoints": [
+        { "escorts": 4, "idle": 16 },
+        { "escorts": 16, "idle": 16 },
+        { "escorts": 64, "idle": 16 },
+        { "escorts": 16, "idle": 64 },
+        { "escorts": 16, "idle": 160 }
+      ],
+      "metrics": [
+        {
+          "name": "escorts_advanced",
+          "unit": "escorts",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::escorts_advanced in the largest measured tick: one visit per running escort, following or resting.",
+          "budget": { "max": 64 },
+          "growth": [
+            { "dimension": "escorts", "bound": "linear" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "escort_trail_points",
+          "unit": "points",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::escort_trail_points in the largest measured tick: trail points the followers examined, one per walking follower here (a 1.8 m/s step is shorter than the 1 m point spacing).",
+          "budget": { "max": 128 },
+          "growth": [
+            { "dimension": "escorts", "bound": "linear" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "confrontations_checked",
+          "unit": "confrontations",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::confrontations_checked: the content's confrontations (one here), every tick.",
+          "budget": { "max": 1 },
+          "growth": [
+            { "dimension": "escorts", "bound": "constant" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "grounded-reads",
       "description": "Answer every moving body's grounded read each tick (#1148): a read is answered by the body's last move's own support test, cached by static-geometry revision, position and open floor, and casts physics-engine's support test only when nothing current is cached (placed, added or restored since its move, or the static geometry changed after it). Measured by sim-foundation's grounded_work example and test.",
       "dimensions": {

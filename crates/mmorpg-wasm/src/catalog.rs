@@ -63,7 +63,12 @@ pub struct QuestExport {
 /// is an NPC), `explore` (`target` is an area), `retrieve` (`target` is an
 /// item granted by swimming into area `source`, #274), `victory` (Captain
 /// Thorn beaten in the Redbrand Depths, `target` is 0, 5.1.37) or `inspect` (`target` is an
-/// evidence spot, #1019; `evidenceInReach` finds the one in reach).
+/// evidence spot, #1019; `evidenceInReach` finds the one in reach), or one of the quest actions
+/// and credits of #1019: `use_item` (`target` is an item given to NPC `source`), `escort`
+/// (`target` is an NPC led into area `source`), `interview` (`target` is an NPC),
+/// `defeat_with_loan` and `crush` (`target` is a creature template, slain with the quest's loan
+/// or hit by a boulder) or `demolish` (`target` is a structure piece). `questActionAt` picks the
+/// action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
     pub kind: &'static str,
@@ -82,6 +87,14 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Retrieve { item, area } => ("retrieve", item.get(), Some(area.get())),
         QuestObjective::DefeatThorn => ("victory", 0, None),
         QuestObjective::Inspect { spot } => ("inspect", spot.get(), None),
+        QuestObjective::UseItem { item, npc } => ("use_item", item.get(), Some(npc.get())),
+        QuestObjective::Escort { npc, area } => ("escort", npc.get(), Some(area.get())),
+        QuestObjective::Interview { npc } => ("interview", npc.get(), None),
+        QuestObjective::DefeatWithLoan { template, .. } => {
+            ("defeat_with_loan", template.get(), None)
+        }
+        QuestObjective::Crush { template, .. } => ("crush", template.get(), None),
+        QuestObjective::Demolish { piece } => ("demolish", piece.get(), None),
     };
     ObjectiveExport {
         kind,
@@ -480,6 +493,28 @@ mod tests {
                     json!("mainHand"),
                     stats(2, 5, 0, 0)
                 ),
+                // The smith's trial arms and the Core Vale's quest supplies (#1019).
+                item(
+                    36,
+                    "Wulfric's Trial Blade",
+                    json!("mainHand"),
+                    stats(1, 2, 1, 0)
+                ),
+                item(
+                    37,
+                    "Wulfric's Trial Staff",
+                    json!("mainHand"),
+                    stats(1, 0, 0, 3)
+                ),
+                item(
+                    38,
+                    "Wulfric's Trial Mace",
+                    json!("mainHand"),
+                    stats(1, 1, 0, 2)
+                ),
+                item(39, "Clean Bandage", Value::Null, stats(0, 0, 0, 0)),
+                item(40, "Fever Draught", Value::Null, stats(0, 0, 0, 0)),
+                item(41, "Forged Toll Pass", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

@@ -672,6 +672,22 @@ impl App {
                 } else if let Some(EntityRef::Npc(npc)) =
                     self.presentation.latest().and_then(|s| s.viewer.target)
                 {
+                    // At an NPC an active quest acts on (#1019), Interact gives it the quest
+                    // item, asks it for an interview or starts escorting it.
+                    if let Some(objective) = self.npc_context.quests.as_ref().and_then(|sheet| {
+                        mmorpg_client_model::quest::quest_action_at(
+                            self.presentation.content(),
+                            &sheet.entries,
+                            npc,
+                        )
+                    }) {
+                        self.npc_context.feedback = mmorpg_client_model::quest::objective_label(
+                            objective,
+                            self.presentation.content(),
+                        );
+                        self.send_interaction(mmorpg_core::ZoneCommand::QuestAction { npc });
+                        return true;
+                    }
                     self.npc_context.open(npc);
                     self.world_controls.set_interaction(true);
                     // A context owns the number keys until closed.

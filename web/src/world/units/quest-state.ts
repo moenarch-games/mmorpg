@@ -85,6 +85,15 @@ export function evidenceInReach(sheet: QuestSheet | null, at: readonly number[])
   return spot === 0 ? null : spot;
 }
 
+/**
+ * What Interact does at NPC `npc` (#1019): the label of the quest action it performs there for the active
+ * quests of `sheet` ("Give Clean Bandage to Guardsman Tam Hollis"), or null when it talks (the shared client
+ * model's rule; the zone checks reach, the bag, the NPC's trust and the rest again).
+ */
+export function questActionAt(sheet: QuestSheet | null, npc: number): string | null {
+  return sheet ? (wasm.questActionAt(sheet, npc) ?? null) : null;
+}
+
 /** The HUD tracker's rows: each active quest followed by its objectives. */
 export function trackerRows(sheet: QuestSheet): TrackerRow[] {
   return wasm.trackerRows(sheet);

@@ -94,6 +94,38 @@ describe("content catalog", () => {
     expect(decoded.quests.get(40)?.prerequisite).toBe(39);
     expect(decoded.quests.get(33)?.objectives).toEqual([{ kind: "inspect", target: 33, count: 1 }]);
   });
+
+  test("decodes the NPC actions and environmental credits of #1019 and checks what they name", () => {
+    const json = catalogJson();
+    const quests = json.quests as Record<string, unknown>[];
+    quests[0]!.objectives = [
+      { kind: "use_item", target: 10, source: 6, count: 1 },
+      { kind: "escort", target: 6, source: 1, count: 1 },
+      { kind: "crush", target: 1, source: null, count: 2 },
+    ];
+    quests[1]!.objectives = [
+      { kind: "interview", target: 5, source: null, count: 1 },
+      { kind: "defeat_with_loan", target: 1, source: null, count: 2 },
+      { kind: "demolish", target: 1, source: null, count: 1 },
+    ];
+    const decoded = decodeCatalog(JSON.stringify(json));
+    expect(decoded.quests.get(1)?.objectives).toEqual([
+      { kind: "use_item", target: 10, source: 6, count: 1 },
+      { kind: "escort", target: 6, source: 1, count: 1 },
+      { kind: "crush", target: 1, count: 2 },
+    ]);
+    expect(decoded.quests.get(2)?.objectives.map((objective) => objective.kind)).toEqual([
+      "interview", "defeat_with_loan", "demolish",
+    ]);
+    const broken = (objective: Record<string, unknown>) => {
+      const copy = catalogJson();
+      (copy.quests as Record<string, unknown>[])[0]!.objectives = [objective];
+      return () => decodeCatalog(JSON.stringify(copy));
+    };
+    expect(broken({ kind: "use_item", target: 10, source: 99, count: 1 })).toThrow("unknown item or NPC");
+    expect(broken({ kind: "escort", target: 6, source: 9, count: 1 })).toThrow("unknown NPC or area");
+    expect(broken({ kind: "interview", target: 5, source: 1, count: 1 })).toThrow("has a source only");
+  });
 });
 
 describe("ability input and HUD text", () => {

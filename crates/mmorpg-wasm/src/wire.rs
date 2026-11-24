@@ -283,6 +283,10 @@ mirror!(
         WeaponDrawn,
         MissingMaterials,
         RewardsBusy,
+        Distrusted,
+        NpcBusy,
+        EscortLost,
+        NotSellable,
     }
 );
 mirror!(
@@ -2335,6 +2339,11 @@ pub enum WorldCommand {
     Inspect {
         spot: u32,
     },
+    /// Performs the next open quest action at NPC `npc_id` (#1019, see `questActionAt()`): gives
+    /// it a quest item, asks it for an interview or starts escorting it.
+    QuestAction {
+        npc_id: u32,
+    },
     /// Skins a beast corpse the player may loot (#917): once per death.
     Skin {
         creature_id: u32,
@@ -2489,6 +2498,9 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             C::RaidAid { task } => Self::RaidAid { task },
             C::Gather { node } => Self::Gather { node },
             C::Inspect { spot } => Self::Inspect { spot },
+            C::QuestAction { npc_id } => Self::QuestAction {
+                npc: core::NpcId::new(npc_id),
+            },
             C::Skin { creature_id } => Self::Skin {
                 creature: core::CreatureId::new(creature_id),
             },

@@ -873,6 +873,19 @@ pub fn evidence_in_reach(sheet: Ts<QuestSheet>, x: i32, y: i32, z: i32) -> Resul
     )
 }
 
+/// What Interact does at NPC `npc` for the active quests of `sheet` (#1019): the label of the
+/// quest action it performs there ("Give Clean Bandage to Guardsman Tam Hollis"), or null when
+/// Interact talks (`mmorpg-client-model`'s rule; the zone checks everything again).
+#[wasm_bindgen(js_name = questActionAt)]
+pub fn quest_action_at(sheet: Ts<QuestSheet>, npc: u32) -> Result<Option<String>, JsError> {
+    let sheet = core::QuestSheet::from(&sheet.to_rust()?);
+    let content = hosted_content();
+    Ok(
+        quest::quest_action_at(&content, &sheet.entries, core::NpcId::new(npc))
+            .map(|objective| quest::objective_label(objective, &content)),
+    )
+}
+
 /// One quest-tracker row: a quest heading (`objective` null) or one of its objectives.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[tsify(missing_as_null)]

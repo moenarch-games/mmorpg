@@ -323,7 +323,26 @@ pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String 
                     .evidence_spot(spot)
                     .map_or("the evidence", |spot| spot.name.as_str())
             ),
+            // The quest actions and credits of #1019, as the quest log labels them.
+            objective => format!(
+                "{}. ",
+                mmorpg_client_model::quest::objective_label(objective, content)
+            ),
         });
+    }
+    // What the giver hands over (#1019); a loan comes back at the turn-in.
+    for supply in &quest.supplies {
+        let classes: Vec<_> = supply.classes.iter().map(|class| class.name()).collect();
+        let loan = if supply.loaned() { " (a loan)" } else { "" };
+        if classes.is_empty() {
+            text.push_str(&format!("You receive {}{loan}. ", item_name(supply.item)));
+        } else {
+            text.push_str(&format!(
+                "A {} receives {}{loan}. ",
+                classes.join(" or "),
+                item_name(supply.item)
+            ));
+        }
     }
     text
 }

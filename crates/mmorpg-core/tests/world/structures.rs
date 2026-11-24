@@ -33,6 +33,7 @@ fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
         half_extents: [20, 125, 150],
         health: 10,
         supports: Vec::new(),
+        name: String::new(),
         rubble,
     };
     let pieces = vec![
@@ -46,6 +47,7 @@ fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
             half_extents: [320, 15, 160],
             health: 10,
             supports: vec![PieceId::new(1), PieceId::new(2)],
+            name: String::new(),
             rubble: None,
         },
     ];

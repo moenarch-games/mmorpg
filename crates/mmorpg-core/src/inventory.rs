@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 35] = [
+pub const ITEM_CATALOG: [ItemTemplate; 41] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -413,7 +413,71 @@ pub const ITEM_CATALOG: [ItemTemplate; 35] = [
     great_weapon(GreatWeapon::GreatHammer, "Smith's Great Hammer"),
     great_weapon(GreatWeapon::GreatAxe, "Woodsman's Great Axe"),
     great_weapon(GreatWeapon::Greatsword, "Outpost Greatsword"),
+    // The smith's trial arms (#1019), lent for *The Smith's Trial*: one per hand the classes
+    // wield, a starter weapon's strength, returned at the turn-in.
+    trial_weapon(36, "Wulfric's Trial Blade", WeaponFamily::Sword),
+    trial_weapon(37, "Wulfric's Trial Staff", WeaponFamily::Staff),
+    trial_weapon(38, "Wulfric's Trial Mace", WeaponFamily::Mace),
+    // The Core Vale's quest supplies (#1019): a bandage for a wounded guard, a farmhand's fever
+    // draught and the toll pass a courier dropped.
+    ItemTemplate {
+        id: ItemId::new(39),
+        name: "Clean Bandage",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(40),
+        name: "Fever Draught",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(41),
+        name: "Forged Toll Pass",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
 ];
+
+/// A trial weapon's catalog row (#1019): a main-hand weapon of `family` with the strength of
+/// the level 3 Militia Shortsword, in the stat its wielders use.
+const fn trial_weapon(id: u32, name: &'static str, family: WeaponFamily) -> ItemTemplate {
+    let stats = match family {
+        WeaponFamily::Staff => ItemStats {
+            stamina: 1,
+            strength: 0,
+            agility: 0,
+            intellect: 3,
+        },
+        WeaponFamily::Mace => ItemStats {
+            stamina: 1,
+            strength: 1,
+            agility: 0,
+            intellect: 2,
+        },
+        _ => ItemStats {
+            stamina: 1,
+            strength: 2,
+            agility: 1,
+            intellect: 0,
+        },
+    };
+    ItemTemplate {
+        id: ItemId::new(id),
+        name,
+        max_stack: 1,
+        slot: Some(EquipmentSlot::MainHand),
+        weapon: Some(family),
+        stats,
+    }
+}
 
 /// A great weapon's catalog row (#1073): a two-handed main-hand weapon, the strength of the
 /// level 6 Brute-Breaker Mace.

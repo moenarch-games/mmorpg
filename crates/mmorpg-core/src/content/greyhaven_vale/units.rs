@@ -55,6 +55,8 @@ pub mod templates {
     pub const RIVER_CRAYFISH: CreatureTemplateId = CreatureTemplateId::new(25);
     /// The Southwood stag (#997): neutral but territorial; it charges a player who comes close.
     pub const SOUTHWOOD_STAG: CreatureTemplateId = CreatureTemplateId::new(26);
+    /// The courier at the east gate once he drops his act (#1019).
+    pub const REDBRAND_COURIER: CreatureTemplateId = CreatureTemplateId::new(27);
 }
 
 /// Default respawn time: 60 s.
@@ -130,7 +132,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 25] = {
+const TEMPLATES: [TemplateRow; 26] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
@@ -176,6 +178,8 @@ const TEMPLATES: [TemplateRow; 25] = {
         (RIVER_CRAYFISH, "River Crayfish", Crayfish, Aggressive, [3, 4], false, 70, 14, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, CRAYFISH),
         // The Southwood stag (#997): Southwood's upper level, a strong body and a slow, warned charge.
         (SOUTHWOOD_STAG, "Southwood Stag", Stag, Neutral, [3, 4], false, 80, 16, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, STAG),
+        // The east gate's courier (#1019): a level 4 bandit's body; he stands only when unmasked.
+        (REDBRAND_COURIER, "Redbrand Courier", Redbrand, Aggressive, [4, 4], false, 75, 16, [4, 7], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
     ]
 };
 
@@ -354,7 +358,7 @@ const GUARD: &str = "Greyhaven Guard";
 type NpcRow = (u32, &'static str, NpcRole, u8, [i32; 2], u16);
 
 #[rustfmt::skip]
-const NPCS: [NpcRow; 22] = [
+const NPCS: [NpcRow; 24] = [
     (1, "Marshal Elden Greywatch", NpcRole::QuestGiver, 10, [-2_200, 900], 0),
     (2, "Tanner Hilda Brook", NpcRole::QuestGiver, 5, [-2_400, 3_150], 32_768),
     // Inside the inn, behind its bar, facing the room (#158).
@@ -375,7 +379,8 @@ const NPCS: [NpcRow; 22] = [
     // Small conversations and stall customers at the edges of the clear spawn square.
     (14,"Baker Anwen",NpcRole::Resident,3,[1900,2800],16384),
     (15,"Miller Tomas",NpcRole::Resident,3,[2050,2850],49152),
-    (16,"Herbalist Nessa",NpcRole::Resident,3,[1750,2450],16384),
+    // The herbalist gives *The Miller's Medicine* (#1019).
+    (16,"Herbalist Nessa",NpcRole::QuestGiver,3,[1750,2450],16384),
     (17,"Peddler Rowan",NpcRole::Resident,3,[1850,2350],49152),
     (18,"Fisher Ada",NpcRole::Resident,2,[-1750,2400],49152),
     (19,"Porter Ben",NpcRole::Resident,2,[-1900,2500],16384),
@@ -384,6 +389,10 @@ const NPCS: [NpcRow; 22] = [
     (21,"Apprentice Finn",NpcRole::Resident,2,[2410,2520],0),
     // In the smithy's back yard by his bench, facing the alley from the square (#917).
     (43, "Smith Wulfric Hale", NpcRole::Vendor, 6, [2_300, -250], 0),
+    // Core Vale B (#1019): the wounded watchman on the Wolfrun terrace at the top of the climb,
+    // and the courier loitering outside the east gate, facing it.
+    (44, "Guardsman Tam Hollis", NpcRole::Guard, 6, [-5_600, 1_450], 32_768),
+    (45, "Courier Wat Ferrow", NpcRole::Resident, 4, [3_650, 2_300], 49_152),
 ];
 
 pub(crate) fn creature_templates() -> Vec<CreatureTemplate> {
@@ -509,6 +518,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::crayfish::spawns())
         // The Southwood stags (#997).
         .chain(super::stag::spawns())
+        // The Core Vale's confrontation foes (#1019).
+        .chain(super::quests::spawns())
         .collect()
 }
 

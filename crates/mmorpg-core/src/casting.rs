@@ -1145,7 +1145,7 @@ impl ZoneSimulation {
             )?;
         }
         // Destructible pieces (#305) take the blast's top roll, after the units it reached.
-        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now)?;
+        self.blast_pieces(centre, radius, u32::from(damage[1]) + bonus, now, attacker)?;
         // Summoned terrain (#293) takes the same blast.
         self.blast_summoned(centre, radius, u32::from(damage[1]) + bonus)
     }

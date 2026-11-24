@@ -516,6 +516,7 @@ impl ZoneSimulation {
                 self.creature_position(creature_id, creature)?
                     .map(|[x, _, z]| [x, z])
             }
+            EntityRef::Npc(npc_id) if self.npc_hidden(npc_id) => None,
             EntityRef::Npc(npc_id) => Some(
                 self.npc_feet(npc_id)
                     .ok_or_else(|| ZoneError::new("unknown npc"))?,
@@ -688,6 +689,8 @@ impl ZoneSimulation {
                     },
                 }
             }
+            // A confronted NPC (#1019) is out of the world while its foe stands.
+            EntityRef::Npc(npc_id) if self.npc_hidden(npc_id) => return Ok(None),
             EntityRef::Npc(npc_id) => {
                 let npc = self
                     .content

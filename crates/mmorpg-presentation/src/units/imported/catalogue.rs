@@ -699,7 +699,9 @@ impl Resident {
     pub fn of_name(name: &str) -> Option<Self> {
         match name {
             "Marshal Elden Greywatch" => Some(Self::Marshal),
-            "Greyhaven Guard" | "Watchman Garth" | "Watchman Pell" => Some(Self::Guard),
+            "Greyhaven Guard" | "Watchman Garth" | "Watchman Pell" | "Guardsman Tam Hollis" => {
+                Some(Self::Guard)
+            }
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
@@ -727,7 +729,8 @@ impl Resident {
             | "Ploughman Garr"
             | "Old Bertil"
             | "Farmhand Jory"
-            | "Smith Wulfric Hale" => Some(Self::Villager),
+            | "Smith Wulfric Hale"
+            | "Courier Wat Ferrow" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -737,7 +740,7 @@ impl Resident {
     pub fn of_creature(name: &str) -> Option<Self> {
         match name {
             "Field Marauder" => Some(Self::Marauder),
-            "Redbrand Bandit" => Some(Self::RedbrandBandit),
+            "Redbrand Bandit" | "Redbrand Courier" => Some(Self::RedbrandBandit),
             "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
             "Redbrand Brute" => Some(Self::RedbrandBrute),
             "Garrick Redbrand" => Some(Self::Garrick),
@@ -1015,6 +1018,9 @@ mod tests {
                 Some("resident.tanner"),
                 // Smith Wulfric Hale (#917).
                 Some("resident.farmer"),
+                // Guardsman Tam Hollis and Courier Wat Ferrow (#1019).
+                Some("resident.guard"),
+                Some("resident.farmer"),
             ])
             .collect::<Vec<_>>()
         );
@@ -1053,6 +1059,8 @@ mod tests {
                 "enemy.redbrand.garrick",
                 "enemy.redbrand.crossbowman",
                 "enemy.redbrand.brute",
+                // The Redbrand Courier (#1019) wears the bandit's kit.
+                "enemy.redbrand.bandit",
             ]
         );
         // Each is authored in the shared presets both clients draw.

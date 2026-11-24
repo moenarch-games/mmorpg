@@ -503,3 +503,36 @@ fn a_recovered_player_at_the_coordinate_limit_is_out_of_reach_without_overflow()
     );
     assert_eq!(zone.snapshot().unwrap().players[0].copper, 30);
 }
+
+/// A quest's lent arms and supplies (#1019) are worth nothing to a vendor: the sale is refused
+/// with its reason and changes nothing, so accepting, selling and abandoning a quest that hands
+/// them out again never mints copper.
+#[test]
+fn a_vendor_refuses_lent_trial_arms_and_quest_supplies() {
+    const TRIAL_BLADE: ItemId = ItemId::new(36);
+    const CLEAN_BANDAGE: ItemId = ItemId::new(39);
+    let mut bag = [None; INVENTORY_SLOTS];
+    bag[0] = stack(TRIAL_BLADE, 1);
+    bag[1] = stack(CLEAN_BANDAGE, 1);
+    bag[2] = stack(FUR, 1);
+    let mut zone = near(bag, 30);
+    let before = zone.snapshot().unwrap().players.remove(0);
+    for (sequence, slot) in [(1, 0), (2, 1)] {
+        assert_eq!(
+            step(&mut zone, sequence, sell(slot, 1)),
+            vec![ZoneEvent::Error {
+                code: ErrorCode::NotSellable,
+                target: Some(EntityRef::Npc(VENDOR)),
+            }],
+            "bag slot {slot}"
+        );
+    }
+    let player = zone.snapshot().unwrap().players.remove(0);
+    assert_eq!(player.inventory, before.inventory);
+    assert_eq!(player.copper, 30);
+    assert_eq!(player.inventory_revision, before.inventory_revision);
+    // Plain loot beside them still sells.
+    assert!(step(&mut zone, 3, sell(2, 1)).is_empty());
+    let player = zone.snapshot().unwrap().players.remove(0);
+    assert_eq!(player.copper, 30 + sell_price(FUR));
+}

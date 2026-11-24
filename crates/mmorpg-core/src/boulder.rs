@@ -325,6 +325,8 @@ impl ZoneSimulation {
                 }
                 EntityRef::Creature(creature) => {
                     if let Some(pusher) = state.pusher {
+                        // The boulder's own damage is what a crush objective counts (#1019).
+                        self.credit_crush(pusher, creature)?;
                         self.player_damages_creature(pusher, creature, amount, false, now)?;
                     }
                 }

@@ -64,6 +64,8 @@ const GATHER_TAG: u8 = 38;
 const SKIN_TAG: u8 = 39;
 /// Inspect quest evidence (#1019): version, tag, spot ID (u32).
 const INSPECT_TAG: u8 = 40;
+/// A quest action at an NPC (#1019): version, tag, NPC (u32).
+const QUEST_ACTION_TAG: u8 = 41;
 /// Version, tag, ability (u32), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -112,6 +114,7 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::Skin { creature } => word_command(SKIN_TAG, creature.get()),
         ZoneCommand::Gather { node } => word_command(GATHER_TAG, node),
         ZoneCommand::Inspect { spot } => word_command(INSPECT_TAG, spot),
+        ZoneCommand::QuestAction { npc } => word_command(QUEST_ACTION_TAG, npc.get()),
         ZoneCommand::Jump => vec![PROTOCOL_BYTE, JUMP_TAG],
         ZoneCommand::Roll => vec![PROTOCOL_BYTE, ROLL_TAG],
         ZoneCommand::Rise(rise) => vec![PROTOCOL_BYTE, RISE_TAG, rise.to_be_bytes()[0]],
@@ -396,6 +399,9 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         }),
         GATHER_TAG => Ok(ZoneCommand::Gather {
             node: decode_word_command(payload, "gather")?,
+        }),
+        QUEST_ACTION_TAG => Ok(ZoneCommand::QuestAction {
+            npc: NpcId::new(decode_word_command(payload, "quest_action")?),
         }),
         INSPECT_TAG => Ok(ZoneCommand::Inspect {
             spot: decode_word_command(payload, "inspect")?,
@@ -1053,6 +1059,9 @@ pub(crate) mod tests {
             ZoneCommand::RaidAid { task: 4 },
             ZoneCommand::Gather { node: 2 },
             ZoneCommand::Inspect { spot: 7 },
+            ZoneCommand::QuestAction {
+                npc: NpcId::new(44),
+            },
             ZoneCommand::Skin {
                 creature: CreatureId::new(120),
             },
@@ -1235,6 +1244,7 @@ pub(crate) mod tests {
                 ZoneCommand::RaidAid { task } => format!("raid_aid {task}"),
                 ZoneCommand::Gather { node } => format!("gather {node}"),
                 ZoneCommand::Inspect { spot } => format!("inspect {spot}"),
+                ZoneCommand::QuestAction { npc } => format!("quest_action {}", npc.get()),
                 ZoneCommand::Skin { creature } => format!("skin {}", creature.get()),
                 ZoneCommand::RollDepthsDrop { run, drop, choice } => {
                     format!("roll_depths_drop {run} {drop} {choice:?}")

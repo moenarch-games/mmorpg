@@ -133,7 +133,9 @@ describe("the shared unit presenter in the browser", () => {
       { kind: "blocked", source: wolf, target: me, lane: "high", amount: 0 },
     ];
     const decoder = new ProjectionDecoder();
-    const struck = decoder.decode(encodeSnapshot({ ...projection, tick: projection.tick + 1n, events }));
+    // The strict test encoder refuses what a host's packing would leave for a later tick: the
+    // events need the room of the farther units, so the struck projection keeps only the viewer.
+    const struck = decoder.decode(encodeSnapshot({ ...projection, tick: projection.tick + 1n, events, entities: projection.entities.slice(0, 1) }));
     units.push(ingestedProjection(struck)!, 0);
     expect(units.takeImpacts()).toEqual([{ family: "puff", target: wolf }, { family: "ring", target: me }]);
     expect(units.takeImpacts()).toEqual([]);

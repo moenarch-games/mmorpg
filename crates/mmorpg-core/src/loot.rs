@@ -215,7 +215,7 @@ impl Error for LootTableError {}
 /// (#160), then the beasts of #889; the hybrid finds of #918; Old Scarback, the hunter's cache's
 /// elite bear (#913); the Forest Lynx (#989); the Marsh Adder (#990); the Cave Bat (#995); the
 /// River Crayfish (#996); the Southwood Stag (#997).
-static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 19]> = LazyLock::new(|| {
+static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 20]> = LazyLock::new(|| {
     use crate::greyhaven_vale::units::templates::*;
     let fur = |weight, quantity| LootOutcome::Item {
         weight,
@@ -259,6 +259,8 @@ static CATALOG: LazyLock<[(CreatureTemplateId, LootTable); 19]> = LazyLock::new(
         (RIVER_CRAYFISH, table([2, 6], &[nothing(1)])),
         // A stag gives up its hide most times, and a little coin.
         (SOUTHWOOD_STAG, table([1, 4], &[fur(3, [1, 2]), nothing(1)])),
+        // The east gate's courier (#1019) carries coin, not gear.
+        (REDBRAND_COURIER, table([4, 9], &[nothing(1)])),
         (
             FIELD_MARAUDER,
             table(

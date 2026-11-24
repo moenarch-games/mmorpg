@@ -578,11 +578,12 @@ describe("WASM local zone combat intents", () => {
       "Boar Tusk", "Stolen Grain Sack", "Lurker Scale", "Redbrand Orders", "Militia Spear",
       "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear", "Supply Sack",
       "Ironbound Maul", "Smith's Great Hammer", "Woodsman's Great Axe", "Outpost Greatsword",
+      "Wulfric's Trial Blade", "Wulfric's Trial Staff", "Wulfric's Trial Mace", "Clean Bandage", "Fever Draught", "Forged Toll Pass",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",
       "Redbrand Crossbowman", "Crate", "Barrel", "Blasting Powder Barrel", "Fence", "Hill Ogre", "Heavy Crate", "Redbrand Brute", "Loose Boulder",
-      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Marsh Adder", "Cave Bat", "River Crayfish", "Southwood Stag", "Captain Ulric Thorn",
+      "Brown Bear", "Cave Spider", "Marsh Lurker", "Old Scarback", "Forest Lynx", "Marsh Adder", "Cave Bat", "River Crayfish", "Southwood Stag", "Redbrand Courier", "Captain Ulric Thorn",
     ]);
     expect(catalog.creatureTemplates.get(11)?.prop).toBe("explosive_barrel");
     expect(catalog.creatureTemplates.get(13)?.family).toBe("ogre");

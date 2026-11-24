@@ -69,6 +69,11 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "missing-materials": "You lack the materials for that.",
   "wrong-form": "You cannot do that in this form.",
   "rewards-busy": "The realm cannot record that reward right now. Try again in a moment.",
+  // NPC quest actions (#1019).
+  distrusted: "They will not hear you. Bring a party member they trust to stand beside you, or earn a recommendation first.",
+  "npc-busy": "Someone else is already escorting them.",
+  "escort-lost": "The escort is lost: you went too far ahead or fell. Find them at their post and try again.",
+  "not-sellable": "Vendors will not buy quest supplies or lent arms. Finish or abandon the quest to hand them back.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

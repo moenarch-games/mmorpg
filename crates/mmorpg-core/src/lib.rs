@@ -61,6 +61,7 @@ mod minion;
 mod mobility;
 mod movable;
 mod nav;
+mod npc_quest;
 mod party;
 mod patrol;
 #[cfg(feature = "physics-ab")]
@@ -222,6 +223,11 @@ pub use minion::{
     minion_half_extents,
 };
 pub use nav::NAV_CELL_UNITS;
+pub use npc_quest::{
+    Admission, Confrontation, ESCORT_GAP_UNITS, ESCORT_LEASH_TICKS, ESCORT_LEASH_UNITS,
+    ESCORT_REST_TICKS, ESCORT_TRAIL_SPACING_UNITS, ESCORT_UNITS_PER_TICK, EscortState,
+    MAX_ESCORT_TRAIL, NpcAttitude,
+};
 pub use party::{
     MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,
     PartyState, valid_name as valid_party_name,
@@ -251,9 +257,9 @@ pub use projection::{
 };
 pub use quest::{
     MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES,
-    MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcMarker, QUEST_REACH_UNITS, Quest,
-    QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective, QuestRewards,
-    QuestSheet,
+    MAX_QUEST_SUPPLIES, MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcMarker, QUEST_REACH_UNITS,
+    Quest, QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective,
+    QuestRewards, QuestSheet, QuestSupply,
 };
 pub use raid::{
     AidKind, AidTask, RaidApproach, RaidIncident, RaidLeg, RaidMember, RaidNotice, RaidOutcome,
@@ -496,6 +502,9 @@ pub enum ZoneCommand {
     /// Inspects quest evidence `spot` (#1019, an [`EvidenceId`]): the zone checks reach and
     /// that an active quest still needs it in the tick, then completes those objectives.
     Inspect { spot: u32 },
+    /// Performs the next open quest action at `npc` (#1019): uses a quest item on it, asks it for
+    /// an interview or starts escorting it, checked in the tick.
+    QuestAction { npc: NpcId },
     /// Skins beast corpse `creature` (#917), which the player may loot: once per death, checked
     /// in the tick.
     Skin { creature: CreatureId },
