@@ -7,7 +7,7 @@ use mmorpg_core::physics::to_units;
 use mmorpg_core::{CreatureSpawn, INTEREST_RADIUS_UNITS, ZoneId, ZoneSimulation};
 
 /// `MAX_WIRE_ENTITIES` in `mmorpg-protocol`: the entity records one projection can carry.
-const WIRE_ENTITIES: usize = 33;
+const WIRE_ENTITIES: usize = 32;
 /// Records the garrison must leave free at the stronghold for the viewer and other players.
 const PLAYER_ROOM: usize = 15;
 

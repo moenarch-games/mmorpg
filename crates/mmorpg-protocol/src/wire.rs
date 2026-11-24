@@ -8,6 +8,7 @@ use mmorpg_core::{
     StrikeHeight, StrikeSide, ZoneEvent, ZoneId, ability_by_id,
 };
 
+use crate::codec::{Codec, Field, record};
 use crate::{PROTOCOL_ID, ProtocolError};
 
 pub(crate) const CANONICAL_SNAPSHOT_SCOPE: u8 = 1;
@@ -16,8 +17,51 @@ pub(crate) const PLAYER_SNAPSHOT_SCOPE: u8 = 2;
 pub(crate) const REDIRECT_SCOPE: u8 = 3;
 /// Protocol ID (3 bytes), scope, zone ID and tick start every snapshot.
 pub(crate) const COMMON_HEADER_BYTES: usize = 16;
+record! {
+    /// An entity reference: kind code then `u32` ID; kind 0 (with ID 0) means none.
+    pub(crate) struct EntityRefRecord {
+        kind: u8,
+        id: u32,
+    }
+}
+
 /// Kind code then `u32` ID; kind 0 (with ID 0) means none.
-pub(crate) const ENTITY_REF_BYTES: usize = 5;
+pub(crate) const ENTITY_REF_BYTES: usize = EntityRefRecord::BYTES;
+
+impl EntityRefRecord {
+    pub(crate) fn of(entity: Option<EntityRef>) -> Self {
+        entity.map_or(Self::default(), |entity| Self {
+            kind: entity_kind_code(entity.kind()),
+            id: entity.id(),
+        })
+    }
+
+    pub(crate) fn entity(self) -> Result<Option<EntityRef>, ProtocolError> {
+        match self {
+            Self {
+                kind: NO_ENTITY,
+                id: 0,
+            } => Ok(None),
+            Self {
+                kind: NO_ENTITY, ..
+            } => Err(ProtocolError::new("an absent entity must have ID 0")),
+            Self { kind, id } => Ok(Some(EntityRef::new(decode_entity_kind(kind)?, id))),
+        }
+    }
+}
+
+/// Every reference has a wire form; decoding fails closed on an unknown kind or an absent
+/// reference with an ID.
+impl Codec for Option<EntityRef> {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        EntityRefRecord::of(*self).put(payload);
+        Ok(())
+    }
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        EntityRefRecord::read(payload, offset)?.entity()
+    }
+}
 
 const NO_ENTITY: u8 = 0;
 const PLAYER_KIND: u8 = 1;
@@ -76,13 +120,7 @@ pub(crate) fn decode_entity_kind(code: u8) -> Result<EntityKind, ProtocolError> 
 }
 
 pub(crate) fn encode_entity_ref(payload: &mut Vec<u8>, entity: Option<EntityRef>) {
-    match entity {
-        Some(entity) => {
-            payload.push(entity_kind_code(entity.kind()));
-            payload.extend_from_slice(&entity.id().to_be_bytes());
-        }
-        None => payload.extend_from_slice(&[NO_ENTITY, 0, 0, 0, 0]),
-    }
+    EntityRefRecord::of(entity).put(payload);
 }
 
 /// An optional yaw (#884): a presence flag, then the yaw (`u16`), zero when absent.
@@ -108,16 +146,7 @@ pub(crate) fn decode_entity_ref(
     payload: &[u8],
     offset: &mut usize,
 ) -> Result<Option<EntityRef>, ProtocolError> {
-    let code = read_u8(payload, offset)?;
-    let id = u32::from_be_bytes(take(payload, offset)?);
-    if code == NO_ENTITY {
-        return if id == 0 {
-            Ok(None)
-        } else {
-            Err(ProtocolError::new("an absent entity must have ID 0"))
-        };
-    }
-    Ok(Some(EntityRef::new(decode_entity_kind(code)?, id)))
+    Option::<EntityRef>::decode(payload, offset)
 }
 
 pub const fn error_code(code: ErrorCode) -> u16 {
@@ -505,13 +534,34 @@ pub(crate) fn decode_ability(code: u32) -> Result<AbilityId, ProtocolError> {
     }
 }
 
-/// 17 bytes: kind, `u32` flags (or the ability ID of ability events, the quest ID of
-/// quest events or the trap ID of trap hits, #882), source reference, target reference, `u16`
-/// amount (a quest progress event packs the objective index high and the
-/// count low; a strike sweep packs the aim's side code high and its height
-/// code low). Guard events carry the lane's height code as flags, and the
-/// blocked amount or the break's recovery ticks.
-pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
+record! {
+    /// An event record ([`EventRecord::BYTES`], 17): kind, `u32` flags (or the ability ID of
+    /// ability events, the quest ID of quest events or the trap ID of trap hits, #882), source
+    /// reference, target reference, `u16` amount (a quest progress event packs the objective
+    /// index high and the count low; a strike sweep packs the aim's side code high and its
+    /// height code low). Guard events carry the lane's height code as flags, and the blocked
+    /// amount or the break's recovery ticks.
+    pub(crate) struct EventRecord {
+        kind: u8,
+        flags: u32,
+        source: EntityRefRecord,
+        target: EntityRefRecord,
+        amount: u16,
+    }
+}
+
+impl Codec for ZoneEvent {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        encode_event(payload, self);
+        Ok(())
+    }
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        decode_event(payload, offset)
+    }
+}
+
+fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
     let (kind, flags, source, target, amount) = match *event {
         ZoneEvent::DamageDealt {
             source,
@@ -728,34 +778,44 @@ pub(crate) fn encode_event(payload: &mut Vec<u8>, event: &ZoneEvent) {
             0,
         ),
     };
-    payload.push(kind);
-    payload.extend_from_slice(&flags.to_be_bytes());
-    encode_entity_ref(payload, source);
-    if let ZoneEvent::SwingBegan { facing, .. } = event {
-        // This event has no target: reserve that slot for its accepted heading, with a
-        // strict zero prefix. The event stays the same size in both snapshot scopes.
-        payload.extend_from_slice(&[0, 0, 0]);
-        payload.extend_from_slice(&facing.to_be_bytes());
+    let target = if let ZoneEvent::SwingBegan { facing, .. } = event {
+        // This event has no target: reserve that slot for its accepted heading, as an absent
+        // reference's ID below 2^16. The event stays the same size in both snapshot scopes.
+        EntityRefRecord {
+            kind: NO_ENTITY,
+            id: u32::from(*facing),
+        }
     } else {
-        encode_entity_ref(payload, target);
+        EntityRefRecord::of(target)
+    };
+    EventRecord {
+        kind,
+        flags,
+        source: EntityRefRecord::of(source),
+        target,
+        amount,
     }
-    payload.extend_from_slice(&amount.to_be_bytes());
+    .put(payload);
 }
 
-pub(crate) fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEvent, ProtocolError> {
-    let kind = read_u8(payload, offset)?;
-    let flags = u32::from_be_bytes(take(payload, offset)?);
+fn decode_event(payload: &[u8], offset: &mut usize) -> Result<ZoneEvent, ProtocolError> {
+    let EventRecord {
+        kind,
+        flags,
+        source,
+        target,
+        amount,
+    } = EventRecord::read(payload, offset)?;
     let code = || u8::try_from(flags).map_err(|_| ProtocolError::new("event flags are invalid"));
-    let source = decode_entity_ref(payload, offset)?;
+    let source = source.entity()?;
     let (target, swing_facing) = if kind == SWING_BEGAN {
-        if take::<3>(payload, offset)? != [0, 0, 0] {
-            return Err(ProtocolError::new("malformed swing heading"));
+        match (target.kind, u16::try_from(target.id)) {
+            (NO_ENTITY, Ok(facing)) => (None, facing),
+            _ => return Err(ProtocolError::new("malformed swing heading")),
         }
-        (None, u16::from_be_bytes(take(payload, offset)?))
     } else {
-        (decode_entity_ref(payload, offset)?, 0)
+        (target.entity()?, 0)
     };
-    let amount = u16::from_be_bytes(take(payload, offset)?);
     let invalid = || ProtocolError::new("malformed event record");
     let damage = |critical_allowed: bool| -> Result<bool, ProtocolError> {
         match flags {
@@ -1394,8 +1454,34 @@ pub(crate) fn decode_piece_views(
     Ok(pieces)
 }
 
-/// Fired pressure traps near the viewer (#300): count (`u8`), then per trap its ID (`u32`) and
-/// age in ticks (`u16`), nearest first.
+record! {
+    /// A fired trap (#300): `u32` ID and `u16` age in ticks.
+    pub(crate) struct TrapRecord {
+        id: u32,
+        age: u16,
+    }
+}
+
+impl Codec for mmorpg_core::TrapView {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        TrapRecord {
+            id: self.id.get(),
+            age: self.age,
+        }
+        .encode(payload)
+    }
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let TrapRecord { id, age } = TrapRecord::read(payload, offset)?;
+        Ok(Self {
+            id: mmorpg_core::TrapId::new(id),
+            age,
+        })
+    }
+}
+
+/// Fired pressure traps near the viewer (#300): count (`u8`), then a [`TrapRecord`] per trap,
+/// nearest first.
 pub(crate) fn encode_trap_views(
     payload: &mut Vec<u8>,
     views: &[mmorpg_core::TrapView],
@@ -1407,8 +1493,7 @@ pub(crate) fn encode_trap_views(
             .ok_or_else(|| ProtocolError::new("too many trap views"))?,
     );
     for view in views {
-        payload.extend_from_slice(&view.id.get().to_be_bytes());
-        payload.extend_from_slice(&view.age.to_be_bytes());
+        view.encode(payload)?;
     }
     Ok(())
 }
@@ -1421,17 +1506,50 @@ pub(crate) fn decode_trap_views(
     if count > mmorpg_core::MAX_VISIBLE_TRAPS {
         return Err(ProtocolError::new("too many trap views"));
     }
-    let mut views = Vec::with_capacity(count);
-    for _ in 0..count {
-        let id = mmorpg_core::TrapId::new(u32::from_be_bytes(take(payload, offset)?));
-        let age = u16::from_be_bytes([read_u8(payload, offset)?, read_u8(payload, offset)?]);
-        views.push(mmorpg_core::TrapView { id, age });
-    }
-    Ok(views)
+    (0..count)
+        .map(|_| mmorpg_core::TrapView::decode(payload, offset))
+        .collect()
 }
 
-/// Summoned terrain near the viewer (#293): count (`u8`), then per obstacle its ID (`u32`),
-/// kind (`u8`), centre (`3 × i32`), facing (`u16`) and health percent (`u8`), nearest first.
+record! {
+    /// A summoned obstacle (#293): `u32` ID, kind, `3 × i32` centre, `u16` facing, health
+    /// percent.
+    pub(crate) struct SummonedRecord {
+        id: u32,
+        kind: u8,
+        centre: [i32; 3],
+        facing: u16,
+        health_percent: u8,
+    }
+}
+
+impl Codec for mmorpg_core::SummonedView {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        SummonedRecord {
+            id: self.id,
+            kind: self.kind.code(),
+            centre: self.centre,
+            facing: self.facing,
+            health_percent: self.health_percent,
+        }
+        .encode(payload)
+    }
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let record = SummonedRecord::read(payload, offset)?;
+        Ok(Self {
+            id: record.id,
+            kind: mmorpg_core::SummonedTerrainKind::from_code(record.kind)
+                .ok_or_else(|| ProtocolError::new("unknown summoned terrain kind"))?,
+            centre: record.centre,
+            facing: record.facing,
+            health_percent: record.health_percent,
+        })
+    }
+}
+
+/// Summoned terrain near the viewer (#293): count (`u8`), then a [`SummonedRecord`] per
+/// obstacle, nearest first.
 pub(crate) fn encode_summoned_views(
     payload: &mut Vec<u8>,
     views: &[mmorpg_core::SummonedView],
@@ -1443,13 +1561,7 @@ pub(crate) fn encode_summoned_views(
             .ok_or_else(|| ProtocolError::new("too much summoned terrain"))?,
     );
     for view in views {
-        payload.extend_from_slice(&view.id.to_be_bytes());
-        payload.push(view.kind.code());
-        for axis in view.centre {
-            payload.extend_from_slice(&axis.to_be_bytes());
-        }
-        payload.extend_from_slice(&view.facing.to_be_bytes());
-        payload.push(view.health_percent);
+        view.encode(payload)?;
     }
     Ok(())
 }
@@ -1462,40 +1574,15 @@ pub(crate) fn decode_summoned_views(
     if count > mmorpg_core::MAX_VISIBLE_SUMMONED {
         return Err(ProtocolError::new("too much summoned terrain"));
     }
-    let mut views = Vec::with_capacity(count);
-    let word = |offset: &mut usize| -> Result<[u8; 4], ProtocolError> {
-        Ok([
-            read_u8(payload, offset)?,
-            read_u8(payload, offset)?,
-            read_u8(payload, offset)?,
-            read_u8(payload, offset)?,
-        ])
-    };
-    for _ in 0..count {
-        let id = u32::from_be_bytes(word(offset)?);
-        let kind = mmorpg_core::SummonedTerrainKind::from_code(read_u8(payload, offset)?)
-            .ok_or_else(|| ProtocolError::new("unknown summoned terrain kind"))?;
-        let centre = [
-            i32::from_be_bytes(word(offset)?),
-            i32::from_be_bytes(word(offset)?),
-            i32::from_be_bytes(word(offset)?),
-        ];
-        let facing = u16::from_be_bytes([read_u8(payload, offset)?, read_u8(payload, offset)?]);
-        let health_percent = read_u8(payload, offset)?;
-        views.push(mmorpg_core::SummonedView {
-            id,
-            kind,
-            centre,
-            facing,
-            health_percent,
-        });
-    }
-    Ok(views)
+    (0..count)
+        .map(|_| mmorpg_core::SummonedView::decode(payload, offset))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codec::generate::{CASES, Gen, round_trip};
 
     #[test]
     fn guard_events_carry_their_lane_and_amount() {
@@ -1636,5 +1723,113 @@ mod tests {
         assert_eq!(decode_event(&bytes, &mut 0).unwrap(), event);
         bytes[10] = PLAYER_KIND;
         assert!(decode_event(&bytes, &mut 0).is_err());
+    }
+
+    fn entity_ref(rng: &mut Gen) -> Option<EntityRef> {
+        let kind = rng.pick(&[
+            None,
+            Some(EntityKind::Player),
+            Some(EntityKind::Creature),
+            Some(EntityKind::Npc),
+            Some(EntityKind::Minion),
+        ])?;
+        Some(EntityRef::new(kind, rng.int()))
+    }
+
+    fn some_ref(rng: &mut Gen) -> EntityRef {
+        loop {
+            if let Some(entity) = entity_ref(rng) {
+                return entity;
+            }
+        }
+    }
+
+    #[test]
+    fn entity_references_round_trip() {
+        let mut rng = Gen::new(6);
+        for _ in 0..CASES {
+            round_trip(&entity_ref(&mut rng), Some(ENTITY_REF_BYTES));
+        }
+        let mut offset = 0;
+        assert_eq!(
+            Option::<EntityRef>::decode(&[0, 0, 0, 0, 1], &mut offset)
+                .unwrap_err()
+                .to_string(),
+            "an absent entity must have ID 0"
+        );
+    }
+
+    #[test]
+    fn events_round_trip() {
+        let mut rng = Gen::new(7);
+        let lanes = [StrikeHeight::Low, StrikeHeight::Middle, StrikeHeight::High];
+        for _ in 0..CASES {
+            let (source, target) = (some_ref(&mut rng), some_ref(&mut rng));
+            let event = match rng.below(9) {
+                0 => ZoneEvent::DamageDealt {
+                    source,
+                    target,
+                    amount: rng.int(),
+                    critical: rng.bool(),
+                },
+                1 => ZoneEvent::DamageTaken {
+                    source,
+                    target,
+                    amount: rng.int(),
+                    critical: rng.bool(),
+                },
+                2 => ZoneEvent::DamageObserved {
+                    source,
+                    target,
+                    amount: rng.int(),
+                    critical: rng.bool(),
+                },
+                3 => ZoneEvent::Miss { source, target },
+                4 => ZoneEvent::Evade { source, target },
+                5 => ZoneEvent::Died {
+                    entity: target,
+                    killer: entity_ref(&mut rng),
+                },
+                6 => ZoneEvent::AttackPerformed {
+                    source,
+                    target: entity_ref(&mut rng),
+                },
+                7 => ZoneEvent::TrapHit {
+                    trap: mmorpg_core::TrapId::new(rng.int()),
+                    target,
+                    amount: rng.int(),
+                },
+                _ => ZoneEvent::Blocked {
+                    source,
+                    target,
+                    lane: rng.pick(&lanes),
+                    amount: rng.int(),
+                },
+            };
+            round_trip(&event, Some(EventRecord::BYTES));
+        }
+    }
+
+    #[test]
+    fn traps_and_summoned_terrain_round_trip() {
+        let kinds = (0..=u8::MAX)
+            .filter_map(mmorpg_core::SummonedTerrainKind::from_code)
+            .collect::<Vec<_>>();
+        let mut rng = Gen::new(8);
+        for _ in 0..CASES {
+            let trap = mmorpg_core::TrapView {
+                id: mmorpg_core::TrapId::new(rng.int()),
+                age: rng.int(),
+            };
+            round_trip(&trap, Some(TrapRecord::BYTES));
+            let summoned = mmorpg_core::SummonedView {
+                id: rng.int(),
+                kind: rng.pick(&kinds),
+                centre: [rng.int(), rng.int(), rng.int()],
+                facing: rng.int(),
+                health_percent: rng.int(),
+            };
+            round_trip(&summoned, Some(SummonedRecord::BYTES));
+        }
     }
 }

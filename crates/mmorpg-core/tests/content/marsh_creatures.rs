@@ -12,7 +12,7 @@ use mmorpg_core::{
 };
 
 /// `MAX_WIRE_ENTITIES` in `mmorpg-protocol`: the entity records one projection can carry.
-const WIRE_ENTITIES: usize = 33;
+const WIRE_ENTITIES: usize = 32;
 /// Records the wetlands must leave free for the viewer and other players.
 const PLAYER_ROOM: usize = 15;
 /// Clearance kept between a floating lurker's feet and the bed under it.
