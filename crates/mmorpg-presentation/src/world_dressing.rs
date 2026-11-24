@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 15] = [
+const GREYHAVEN: [&str; 16] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -84,6 +84,12 @@ const GREYHAVEN: [&str; 15] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/wolfrun-cart.json"
+    )),
+    // Quest evidence off the Wolfrun cart's trail, at the Tanner's and at Millbrook (#1019), at
+    // the spots `content/greyhaven/quests.json` names.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/evidence.json"
     )),
     // The Eastdown meadow's cairn and rock scar (#872).
     include_str!(concat!(

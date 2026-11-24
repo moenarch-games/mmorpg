@@ -319,6 +319,46 @@
       "prerequisite": 31,
       "objectives": [{"kill": {"template": 1, "count": 5}}],
       "rewards": {"experience": 350, "copper": 25, "choices": [6, 9]}
+    },
+    {
+      "id": 33,
+      "name": "Cut Sacks, Red Rags",
+      "text": "The pack never found my cart by chance. Go back up the Wolfrun Climb and look hard at the cut sacks, the meat rack hung by the cart and that red-ragged stake beside the trail. Then tell me what you make of it.",
+      "giver": 2,
+      "ender": 2,
+      "prerequisite": 1,
+      "objectives": [{"inspect": {"spot": 1}}, {"inspect": {"spot": 2}}, {"inspect": {"spot": 3}}],
+      "rewards": {"experience": 200, "copper": 10, "choices": []}
+    },
+    {
+      "id": 34,
+      "name": "The Bait Trail",
+      "text": "Whoever hung that bait dragged it up from somewhere: scraps lead off the trail, and a second red rag hangs in the trees. Follow them to where the courier hid his goods, then tell the Marshal what you found.",
+      "giver": 2,
+      "ender": 1,
+      "prerequisite": 33,
+      "objectives": [{"inspect": {"spot": 4}}, {"inspect": {"spot": 5}}, {"inspect": {"spot": 6}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": [7, 23]}
+    },
+    {
+      "id": 36,
+      "name": "The Tanner's Ledger",
+      "text": "My ledger says three loads went to Millbrook this month; Osric swears he got two. Read my ledger on the strongbox here, ask Osric, and check the tally on his delivery crates. Tell me which load went missing.",
+      "giver": 2,
+      "ender": 2,
+      "prerequisite": 33,
+      "objectives": [{"inspect": {"spot": 7}}, {"talk": {"npc": 4}}, {"inspect": {"spot": 8}}],
+      "rewards": {"experience": 250, "copper": 15, "choices": []}
     }
+  ],
+  "evidence": [
+    {"id": 1, "name": "the cut sacks", "at": [-6050, 1036, 1150], "reach": 200},
+    {"id": 2, "name": "the bait rack", "at": [-6420, 1064, 1230], "reach": 200},
+    {"id": 3, "name": "the red-ragged marker", "at": [-6130, 1042, 1180], "reach": 200},
+    {"id": 4, "name": "the dragged bait scraps", "at": [-6900, 1093, 600], "reach": 250},
+    {"id": 5, "name": "the second red rag", "at": [-7600, 1100, -400], "reach": 250},
+    {"id": 6, "name": "the courier's cache", "at": [-8300, 1100, -1300], "reach": 250},
+    {"id": 7, "name": "Hilda's ledger", "at": [-2650, -10, 3000], "reach": 200},
+    {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250}
   ]
 }

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "area": "evidence",
+  "placements": [
+    {"id":"evidence-bait-scraps","asset":"wolf-den.kit.bone-scatter","position":[-6900,1093,600],"yaw":20000,"scale":[700,1000,700]},
+    {"id":"evidence-second-rag","asset":"discoveries.kit.fen-marker","position":[-7600,1100,-400],"yaw":40000,"scale":[1000,1000,1000]},
+    {"id":"evidence-couriers-cache","asset":"discoveries.kit.supply-crates","position":[-8300,1100,-1300],"yaw":8000,"scale":[1000,1000,1000]},
+    {"id":"evidence-hildas-ledger","asset":"discoveries.kit.hunter-chest","position":[-2650,-10,3000],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"evidence-delivery-tally","asset":"discoveries.kit.supply-crates","position":[6550,1100,3950],"yaw":49152,"scale":[900,900,900]}
+  ]
+}
