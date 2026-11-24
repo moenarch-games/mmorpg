@@ -2,7 +2,8 @@
 # Re-records every committed golden fixture (#487) by running only the tests that own one with
 # MMORPG_UPDATE_FIXTURES=1, then prints what changed. Minutes instead of the whole workspace;
 # useful after a rebase onto a wire or scenery change. Review the diff like any other change.
-# A wire layout change still needs scripts/new-protocol-id.sh first (ADR 0006).
+# A wire layout change needs nothing else: the re-recorded fixtures/protocol/layout.txt and byte
+# fixtures derive the next build's protocol ID (ADR 0012).
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"

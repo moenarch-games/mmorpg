@@ -2721,12 +2721,7 @@ mod tests {
         let path = core::golden::workspace_root()
             .join("fixtures/protocol")
             .join(name);
-        let hex = std::fs::read_to_string(path).expect("fixture");
-        let hex = hex.trim();
-        (0..hex.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
-            .collect()
+        mmorpg_protocol::fixture::bytes(&std::fs::read_to_string(path).expect("fixture"))
     }
 
     #[test]
@@ -2740,6 +2735,25 @@ mod tests {
             let snapshot = decode_snapshot(&bytes).expect(name);
             assert_eq!(encode_snapshot(&snapshot).expect(name), bytes, "{name}");
         }
+    }
+
+    /// The browser reads the derived protocol ID from this crate (#1066) and refuses a peer of
+    /// any other ID.
+    #[test]
+    fn the_browser_refuses_another_protocol_id() {
+        assert_eq!(wire_catalog().protocol_id, mmorpg_protocol::PROTOCOL_ID);
+        let bytes = fixture("player-snapshot.hex");
+        for at in 0..3 {
+            let mut other = bytes.clone();
+            other[at] ^= 1;
+            assert!(decode_snapshot(&other).is_err(), "ID byte {at}");
+        }
+        let jump = encode_command(&WorldCommand::Jump).unwrap();
+        assert_eq!(
+            u32::from(jump[0]),
+            mmorpg_protocol::PROTOCOL_ID & 0xff,
+            "commands lead with the ID's low byte"
+        );
     }
 
     #[test]

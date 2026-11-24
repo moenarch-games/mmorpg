@@ -1797,9 +1797,91 @@ pub(crate) mod tests {
         mmorpg_core::Equipment::from_slots(slots).unwrap()
     }
 
+    /// The shared observer-cue golden projection (#27): another player attacking, damaging and
+    /// swinging at a creature, as the viewer sees it.
+    pub(crate) fn observation_fixture_snapshot() -> ZoneSnapshot {
+        let mut zone = mmorpg_core::ZoneSimulation::new(ZoneId::new(1));
+        zone.add_player(1).unwrap();
+        let mut view = zone.snapshot_for_player(1).unwrap();
+        view.content_revision = 1;
+        // No bag or quest sheet to send, as to a client that holds them (#544).
+        view.inventory_revision = 0;
+        view.inventory = None;
+        view.equipment = None;
+        view.quests = None;
+        view.entities[0].position = [0, 90, 0];
+        let mut other = view.entities[0].clone();
+        other.id = 2;
+        other.position = [100, 90, 0];
+        view.entities.push(other);
+        let mut creature = view.entities[0].clone();
+        creature.kind = mmorpg_core::EntityKind::Creature;
+        creature.flags.weapon = None;
+        creature.id = 101;
+        creature.appearance = 1;
+        creature.position = [200, 45, 0];
+        creature.flags.hostile = true;
+        creature.flags.attackable = true;
+        view.entities.push(creature);
+        let source = EntityRef::Player(2);
+        let target = EntityRef::Creature(CreatureId::new(101));
+        view.events = vec![
+            ZoneEvent::AttackPerformed {
+                source,
+                target: Some(target),
+            },
+            ZoneEvent::DamageObserved {
+                source,
+                target,
+                amount: 7,
+                critical: true,
+            },
+            ZoneEvent::SwingBegan {
+                source,
+                ability: AbilityId::new(1),
+                facing: 16384,
+                aim: mmorpg_core::StrikeAim::new(
+                    mmorpg_core::StrikeSide::Centre,
+                    mmorpg_core::StrikeHeight::Middle,
+                ),
+                startup: 18,
+                active: 9,
+            },
+        ];
+        view
+    }
+
+    #[test]
+    fn observation_records_round_trip_through_the_shared_fixture() {
+        let view = observation_fixture_snapshot();
+        let bytes = encode_snapshot(&view).unwrap();
+        let expected = crate::fixture::golden_wire_hex(
+            mmorpg_core::golden::workspace_root()
+                .join("fixtures/protocol/presentation-observation.hex"),
+            &bytes,
+        );
+        assert_eq!(bytes, expected);
+        assert_eq!(decode_snapshot(&bytes).unwrap(), view);
+        let packed = pack_snapshot(&view).unwrap();
+        assert!(packed.payload.len() <= crate::MAX_PLAYER_PROJECTION_BYTES);
+        assert_eq!(
+            decode_snapshot(&packed.payload).unwrap().events,
+            view.events
+        );
+        let mut zone = mmorpg_core::ZoneSimulation::new(ZoneId::new(1));
+        zone.add_player(1).unwrap();
+        let mut state = zone.snapshot().unwrap();
+        state.players[0].combat.events = view.events.clone();
+        assert_eq!(
+            crate::decode_canonical_snapshot(&crate::encode_canonical_snapshot(&state).unwrap())
+                .unwrap(),
+            state
+        );
+    }
+
     /// The checked-in player snapshot fixture (`MMORPG_UPDATE_FIXTURES=1` rewrites it).
     fn fixture_bytes() -> Vec<u8> {
-        mmorpg_core::golden::golden_hex(
+        crate::fixture::golden_wire_hex(
             mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-snapshot.hex"),
             &encode_snapshot(&fixture_snapshot()).unwrap(),
         )
@@ -1961,8 +2043,8 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn complete_corpse_sheet_matches_shared_bytes_and_rejects_inconsistent_claims() {
+    /// The shared loot golden projection: [`fixture_snapshot`] looking at its tapped corpse.
+    pub(crate) fn loot_fixture_snapshot() -> ZoneSnapshot {
         let mut snapshot = fixture_snapshot();
         snapshot.target_of_target = None;
         let corpse = &mut snapshot.entities[1];
@@ -1990,8 +2072,14 @@ pub(crate) mod tests {
         });
         // A dead target has no target detail.
         snapshot.target_detail = TargetDetail::default();
+        snapshot
+    }
+
+    #[test]
+    fn complete_corpse_sheet_matches_shared_bytes_and_rejects_inconsistent_claims() {
+        let snapshot = loot_fixture_snapshot();
         let bytes = encode_snapshot(&snapshot).unwrap();
-        let expected = mmorpg_core::golden::golden_hex(
+        let expected = crate::fixture::golden_wire_hex(
             mmorpg_core::golden::workspace_root().join("fixtures/protocol/player-loot.hex"),
             &bytes,
         );
@@ -2051,7 +2139,7 @@ pub(crate) mod tests {
         );
         let wolf_record = FIRST_ENTITY + ENTITY_RECORD_BYTES;
         for (offset, value, message) in [
-            (0, 4, "unsupported snapshot protocol id"),
+            (0, encoded[0] ^ 1, "unsupported snapshot protocol id"),
             (3, 1, "unexpected snapshot scope"),
             (53, 0b11, "viewer state is inconsistent"),
             (54, 9, "unknown entity kind"),

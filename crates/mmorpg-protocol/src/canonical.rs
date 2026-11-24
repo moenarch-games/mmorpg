@@ -2283,7 +2283,7 @@ fn decode_canonical_doors(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::decode_snapshot;
     use mmorpg_core::{ErrorCode, NpcId, ZoneDefinition, ZoneEvent, ZoneId, ZoneSimulation};
@@ -2292,7 +2292,8 @@ mod tests {
         intents.into_iter().map(Into::into).collect()
     }
 
-    fn snapshot() -> CanonicalZoneSnapshot {
+    /// The shared canonical golden snapshot (`fixtures/protocol/canonical-snapshot.hex`).
+    pub(crate) fn snapshot() -> CanonicalZoneSnapshot {
         let wolf = EntityRef::Creature(CreatureId::new(4));
         CanonicalZoneSnapshot {
             parties: vec![(
@@ -2981,6 +2982,14 @@ mod tests {
     fn canonical_snapshot_round_trip_preserves_continuation_state() {
         let snapshot = snapshot();
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
+        assert_eq!(
+            crate::fixture::golden_wire_hex(
+                mmorpg_core::golden::workspace_root()
+                    .join("fixtures/protocol/canonical-snapshot.hex"),
+                &encoded,
+            ),
+            encoded
+        );
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
         // A canonical snapshot is never a player projection.
         assert!(decode_snapshot(&encoded).is_err());
@@ -3004,7 +3013,7 @@ mod tests {
         assert_eq!(encoded[jump_flag], 1);
         for (offset, value, message) in [
             (jump_flag, 2, "jump flag must be 0 or 1"),
-            (0, 4, "unsupported snapshot protocol id"),
+            (0, encoded[0] ^ 1, "unsupported snapshot protocol id"),
             (3, 2, "unexpected snapshot scope"),
             (48, 2, "snapshot exceeds configured zone player capacity"),
         ] {

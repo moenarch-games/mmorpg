@@ -12,7 +12,10 @@ mod character;
 mod chat;
 mod command;
 mod depths;
+#[doc(hidden)]
+pub mod fixture;
 mod inventory;
+mod layout;
 mod loot;
 pub mod party;
 mod projection;
@@ -59,13 +62,13 @@ use std::fmt;
 /// Identity of the host <-> client wire format: commands, player projections, presentation
 /// observations and canonical snapshots (and so checkpoints and saved browser worlds).
 ///
-/// A random 24-bit token, not a counter. Any change to one of those layouts replaces it with
-/// fresh random bytes by running `scripts/new-protocol-id.sh`; the browser reads it through
-/// `mmorpg-wasm` (#541). Two parallel format changes therefore edit this line
-/// differently and git refuses to merge them silently; decoders accept only this exact value
+/// A 24-bit hash, not a counter, derived at compile time from the layout description
+/// `fixtures/protocol/layout.txt` and the byte fixtures (#1066, `src/layout.rs`). A layout change
+/// rewrites some of their lines and the build derives a new ID, with no manual step. The browser
+/// reads it through `mmorpg-wasm` (#541). Decoders accept only this exact value
 /// (docs/adr/0006-merge-safe-format-identities.md). Snapshots lead with its three bytes and
 /// commands with its low byte.
-pub const PROTOCOL_ID: u32 = 0x0073_995a;
+pub const PROTOCOL_ID: u32 = layout::PROTOCOL_ID;
 
 /// Smallest WebTransport datagram payload measured over the pinned stack:
 /// QUIC's 1,200-byte initial MTU before path MTU discovery, observed as 1,161

@@ -1,79 +1,79 @@
 # Command golden fixture, verified by mmorpg-protocol.
-5a0101000000 move 1 0 0
-5a0101014000 move 1 1 16384
-5a01ffff8000 move -1 -1 32768
-5a010001abcd move 0 1 43981
-5a010000ffff move 0 0 65535
-5a02 jump
-5a1d roll
-5a1901 rise 1
-5a1900 rise 0
-5a19ff rise -1
-5a03020000006c select_target 2 108
-5a0301ee6b2800 select_target 1 4000000000
-5a030300000005 select_target 3 5
-5a030000000000 select_target 0 0
-5a04ffff swing 65535
-5a06 release_spirit
-5a07000f0002 move_item 0 15 2
-5a070f00ffff move_item 15 0 65535
-5a07ff000000 move_item 255 0 0
-5a08000000010000000000000063 loot 1 99
-5a08ffffffffffffffffffffffff loot 4294967295 18446744073709551615
-5a09000000010000000000000000 use_ability 1 0 0
-5a0900000009020000006c000000 use_ability 9 2 108
-5a09ffffffff01ee6b280001ffff use_ability 4294967295 1 4000000000 facing 65535
-5a0a cancel_cast
-5a150000000100000101 directed_strike 1 0 1 1
-5a1500000001abcd0002 directed_strike 1 43981 0 2
-5a15ffffffffffff0200 directed_strike 4294967295 65535 2 0
-5a1601 guard 1
-5a1602 guard 2
-5a1603 guard 3
-5a1600 guard 0
-5a0b0001 choose_class 0 1
-5a0b0200 choose_class 2 0
-5a0bff07 choose_class 255 7
-5a0c00 equip_item 0
-5a0c0f equip_item 15
-5a0cff equip_item 255
-5a0d00 unequip_item 0
-5a0d05 unequip_item 5
-5a0dff unequip_item 255
-5a0e00000003000000000001 buy_item 3 0 1
-5a0effffffffffffffffffff buy_item 4294967295 4294967295 65535
-5a0f00000003000000000003 sell_item 3 0 3
-5a0f00000000000000ff0000 sell_item 0 255 0
-5a1000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
-5a1001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
-5a1101 emote 1
-5a1105 emote 5
-5a120000000100000001 accept_quest 1 1
-5a12ffffffffffffffff accept_quest 4294967295 4294967295
-5a13000000020000000201 complete_quest 2 2 1
-5a130000000000000000ff complete_quest 0 0 255
-5a1400000003 abandon_quest 3
-5a2000000004 raid_aid 4
-5a2600000002 gather 2
-5a2700000078 skin 120
-5a2200000000000000050101 roll_depths_drop 5 1 Greed
-5a23000000000000000500 claim_depths_drop 5 0
-5a210200000001 raid_prepare Brace(1)
-5a1e00000002 use_waystone 2
-5a170000000101 use_door 1 1
-5a2501 set_weapon_drawn true
-5a2500 set_weapon_drawn false
-5a17ffffffff00 use_door 4294967295 0
-5a2400000000 sit 0
-5a2400000003 sit 3
-5a1800000004 repair 4
-5a1800000000 repair 0
-5a1a010000000000000000 command_minions follow
-5a1a02020000006c000000 command_minions attack 2 108
-5a1a03fffffb2e0000ddd5 command_minions defend -1234 56789
-5a1a040000000000000000 command_minions retreat
-5a1c0000000400 release_ability 4 0
-5a1cffffffff01 release_ability 4294967295 1
-5a1b00000000000004d20900000003020000006c000000 observed 1234 use_ability 3 2 108
-5a1bffffffffffffffff150000000140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
-5a1b000000000000000002 observed 0 jump
+PP0101000000 move 1 0 0
+PP0101014000 move 1 1 16384
+PP01ffff8000 move -1 -1 32768
+PP010001abcd move 0 1 43981
+PP010000ffff move 0 0 65535
+PP02 jump
+PP1d roll
+PP1901 rise 1
+PP1900 rise 0
+PP19ff rise -1
+PP03020000006c select_target 2 108
+PP0301ee6b2800 select_target 1 4000000000
+PP030300000005 select_target 3 5
+PP030000000000 select_target 0 0
+PP04ffff swing 65535
+PP06 release_spirit
+PP07000f0002 move_item 0 15 2
+PP070f00ffff move_item 15 0 65535
+PP07ff000000 move_item 255 0 0
+PP08000000010000000000000063 loot 1 99
+PP08ffffffffffffffffffffffff loot 4294967295 18446744073709551615
+PP09000000010000000000000000 use_ability 1 0 0
+PP0900000009020000006c000000 use_ability 9 2 108
+PP09ffffffff01ee6b280001ffff use_ability 4294967295 1 4000000000 facing 65535
+PP0a cancel_cast
+PP150000000100000101 directed_strike 1 0 1 1
+PP1500000001abcd0002 directed_strike 1 43981 0 2
+PP15ffffffffffff0200 directed_strike 4294967295 65535 2 0
+PP1601 guard 1
+PP1602 guard 2
+PP1603 guard 3
+PP1600 guard 0
+PP0b0001 choose_class 0 1
+PP0b0200 choose_class 2 0
+PP0bff07 choose_class 255 7
+PP0c00 equip_item 0
+PP0c0f equip_item 15
+PP0cff equip_item 255
+PP0d00 unequip_item 0
+PP0d05 unequip_item 5
+PP0dff unequip_item 255
+PP0e00000003000000000001 buy_item 3 0 1
+PP0effffffffffffffffffff buy_item 4294967295 4294967295 65535
+PP0f00000003000000000003 sell_item 3 0 3
+PP0f00000000000000ff0000 sell_item 0 255 0
+PP1000104861696c2c2047726579686176656e21 chat say 4861696c2c2047726579686176656e21
+PP1001084772c3bcc39f6521 chat yell 4772c3bcc39f6521
+PP1101 emote 1
+PP1105 emote 5
+PP120000000100000001 accept_quest 1 1
+PP12ffffffffffffffff accept_quest 4294967295 4294967295
+PP13000000020000000201 complete_quest 2 2 1
+PP130000000000000000ff complete_quest 0 0 255
+PP1400000003 abandon_quest 3
+PP2000000004 raid_aid 4
+PP2600000002 gather 2
+PP2700000078 skin 120
+PP2200000000000000050101 roll_depths_drop 5 1 Greed
+PP23000000000000000500 claim_depths_drop 5 0
+PP210200000001 raid_prepare Brace(1)
+PP1e00000002 use_waystone 2
+PP170000000101 use_door 1 1
+PP2501 set_weapon_drawn true
+PP2500 set_weapon_drawn false
+PP17ffffffff00 use_door 4294967295 0
+PP2400000000 sit 0
+PP2400000003 sit 3
+PP1800000004 repair 4
+PP1800000000 repair 0
+PP1a010000000000000000 command_minions follow
+PP1a02020000006c000000 command_minions attack 2 108
+PP1a03fffffb2e0000ddd5 command_minions defend -1234 56789
+PP1a040000000000000000 command_minions retreat
+PP1c0000000400 release_ability 4 0
+PP1cffffffff01 release_ability 4294967295 1
+PP1b00000000000004d20900000003020000006c000000 observed 1234 use_ability 3 2 108
+PP1bffffffffffffffff150000000140000002 observed 18446744073709551615 directed_strike 1 16384 0 2
+PP1b000000000000000002 observed 0 jump
