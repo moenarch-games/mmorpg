@@ -267,7 +267,7 @@ mod tests {
     fn missing_deck_stays_missing_and_roof_cutaway_only_hides_standing_deck() {
         let pieces = mmorpg_core::greyhaven_vale::watch_post();
         let mut presenter = Structures::new(&pieces);
-        let viewer = Some([7.0, 0.0, -72.0]);
+        let viewer = Some([-35.0, 0.0, -117.0]);
         let inside = presenter.frame(&[], 0.0, viewer, true);
         assert!(
             inside

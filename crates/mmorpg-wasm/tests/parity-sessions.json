@@ -3,23 +3,24 @@
   "sessions": [
     {
       "name": "boulder-trap",
-      "about": "A Warden walks north off the rise above the Redbrand camp, shoulders the boulder trap downhill and fights Redbrand Bandit 401 hand to hand.",
+      "about": "A Warden walks north off the Redbrand quarry's south spur, shoulders the boulder trap off its rim into the gateway, follows it down, walks east into the quarry and fights Redbrand Bandit 401 hand to hand.",
       "world": "boulder-trap",
       "characters": [],
-      "ticks": 320,
+      "ticks": 360,
       "steps": [
         { "tick": 0, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 32768 } },
-        { "tick": 25, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 32768 } },
-        { "tick": 26, "player": 0, "command": { "kind": "select-target", "target": { "kind": "creature", "id": 401 } } },
-        { "tick": 40, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 70, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 100, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 130, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 160, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 190, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 220, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 250, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
-        { "tick": 280, "player": 0, "command": { "kind": "swing", "facing": 32768 } }
+        { "tick": 40, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 16384 } },
+        { "tick": 75, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 16384 } },
+        { "tick": 76, "player": 0, "command": { "kind": "select-target", "target": { "kind": "creature", "id": 401 } } },
+        { "tick": 90, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 120, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 150, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 180, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 210, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 240, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 270, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 300, "player": 0, "command": { "kind": "swing", "facing": 16384 } },
+        { "tick": 330, "player": 0, "command": { "kind": "swing", "facing": 16384 } }
       ]
     },
     {

@@ -2,13 +2,15 @@
 //! quarry mock-up (1195 3b)"): cart rails from the old mine's adit west across the floor and out
 //! through the gateway, with a branch to a spoil heap in the north-east corner and a mine cart
 //! on the line; a hand winch over an old shaft on the east rim above the adit; and a wooden
-//! derrick crane by the south wall reaching over the cut blocks. Presentation only: nothing here
-//! collides. The adit's timbering and its first rails are the mine entrance's prop.
+//! derrick crane by the south wall reaching over stacked cut blocks. Presentation only: nothing
+//! here collides. The adit's timbering and its first rails are the mine entrance's prop.
 use mmorpg_scenery::Scenery;
 
-use crate::batching::{Batcher, Cull};
+use crate::batching::Batcher;
 use crate::geometry::{V, align_y, blob, box_shape, compose, scale, translate};
 
+/// One scene-wide batch per colour, like the cave's torches: a handful of small pieces.
+const WORKINGS: &str = "quarry-workings";
 const TIMBER: u32 = 0x5c3f27;
 const OLD_TIMBER: u32 = 0x4a3524;
 const IRON: u32 = 0x3b3c40;
@@ -32,6 +34,18 @@ const CART: [f64; 2] = [14.5, -113.0];
 const SPOIL_HEAP: [f64; 2] = [10.5, -128.5];
 const WINDLASS: [f64; 2] = [26.0, -116.0];
 const DERRICK: [f64; 2] = [9.5, -94.5];
+/// Stacked cut blocks on the floor: (x, z, base above the ground, yaw in radians), each 1.3 m
+/// long and 0.9 m wide and high.
+const BLOCKS: [(f64, f64, f64, f64); 7] = [
+    (6.0, -97.6, 0., 0.1),
+    (7.4, -97.3, 0., -0.05),
+    (6.7, -97.5, 0.9, 0.25),
+    (-4.0, -130.4, 0., 0.3),
+    (-2.6, -130.0, 0., 0.09),
+    (-12.0, -96.4, 0., 0.),
+    (3.6, -94.8, 0., 2.9),
+];
+const CUT_STONE: u32 = 0xb8b2a2;
 const DERRICK_REACH: [f64; 2] = [4.0, -98.5];
 
 /// The drawn ground at `(x, z)` metres.
@@ -70,35 +84,25 @@ fn beam(b: &mut Batcher, color: u32, from: V, to: V, r: f64) {
     let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
     let length = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
     let mid = [0, 1, 2].map(|i| (from[i] + to[i]) / 2.);
-    b.put(
-        color,
+    b.global(WORKINGS, color).add(
         &box_shape(),
         compose(&[
             translate(mid[0], mid[1], mid[2]),
             align_y(d),
             scale(r, length / 2., r),
         ]),
-        mid[0],
-        mid[2],
-        Cull::Mid,
-        false,
     );
 }
 
 /// A box with half extents `half` round `centre`, turned `yaw` radians about +Y.
 fn block(b: &mut Batcher, color: u32, centre: V, half: V, yaw: f64) {
-    b.put(
-        color,
+    b.global(WORKINGS, color).add(
         &box_shape(),
         compose(&[
             translate(centre[0], centre[1], centre[2]),
             crate::geometry::ry(yaw),
             scale(half[0], half[1], half[2]),
         ]),
-        centre[0],
-        centre[2],
-        Cull::Mid,
-        false,
     );
 }
 
@@ -154,18 +158,13 @@ pub(crate) fn build(b: &mut Batcher, scenery: &Scenery) {
     // The spoil heap the carts tipped in the north-east corner: a long, flat-topped mound.
     let [sx, sz] = SPOIL_HEAP;
     let y = floor(scenery, sx, sz);
-    b.put(
-        SPOIL,
+    b.global(WORKINGS, SPOIL).add(
         &blob(1, false, 0.25, 11.),
         compose(&[
             translate(sx, y - 0.4, sz),
             crate::geometry::ry(0.6),
             scale(4.8, 2.4, 3.2),
         ]),
-        sx,
-        sz,
-        Cull::Mid,
-        false,
     );
 
     // A hand winch over an old shaft on the east rim above the adit.
@@ -210,7 +209,11 @@ pub(crate) fn build(b: &mut Batcher, scenery: &Scenery) {
     beam(b, ROPE, mast, tip, 0.03);
     beam(b, ROPE, mast, [dx + 2., y + 8.9, dz + 4.], 0.03);
     beam(b, ROPE, tip, [rx, y + 1.6, rz], 0.03);
-    block(b, 0xb8b2a2, [rx, y + 1.1, rz], [0.5, 0.4, 0.35], 0.3);
+    block(b, CUT_STONE, [rx, y + 1.1, rz], [0.5, 0.4, 0.35], 0.3);
+    for (x, z, base, yaw) in BLOCKS {
+        let y = floor(scenery, x, z) + base;
+        block(b, CUT_STONE, [x, y + 0.45, z], [0.65, 0.45, 0.45], yaw);
+    }
     for (fx, fz) in [(-1.4, 0.), (1.4, 0.), (0., 1.4)] {
         beam(
             b,

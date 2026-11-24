@@ -19,13 +19,6 @@
     {"id":"quarry-ivy-4-2","asset":"climbing.kit.vine-strip","position":[-1274,1058,-9241],"yaw":30660,"scale":[1000,1000,1000]},
     {"id":"quarry-ivy-5-0","asset":"climbing.kit.vine-top","position":[-1459,1881,-8993],"yaw":29307,"scale":[1000,1000,1000]},
     {"id":"quarry-ivy-5-1","asset":"climbing.kit.vine-strip","position":[-1454,1681,-9005],"yaw":29307,"scale":[1000,1000,1000]},
-    {"id":"quarry-ivy-5-2","asset":"climbing.kit.vine-strip","position":[-1446,1481,-9029],"yaw":29307,"scale":[1000,1000,1000]},
-    {"id":"quarry-block-0","asset":"limestone-rocks.kit.block-1","position":[600,1095,-9760],"yaw":1000,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-1","asset":"limestone-rocks.kit.block-2","position":[740,1095,-9730],"yaw":64800,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-2","asset":"limestone-rocks.kit.block-3","position":[670,1185,-9750],"yaw":2600,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-3","asset":"limestone-rocks.kit.block-2","position":[-400,1095,-13040],"yaw":3100,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-4","asset":"limestone-rocks.kit.block-1","position":[-260,1095,-13000],"yaw":900,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-5","asset":"limestone-rocks.kit.block-3","position":[-1200,1095,-9640],"yaw":0,"scale":[1000,1000,1000],"cull":"Mid"},
-    {"id":"quarry-block-6","asset":"limestone-rocks.kit.block-1","position":[360,1095,-9480],"yaw":30000,"scale":[1000,1000,1000],"cull":"Mid"}
+    {"id":"quarry-ivy-5-2","asset":"climbing.kit.vine-strip","position":[-1446,1481,-9029],"yaw":29307,"scale":[1000,1000,1000]}
   ]
 }

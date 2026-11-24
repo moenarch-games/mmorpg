@@ -191,9 +191,8 @@ spurs, so the Outpost to the south sees the closed south wall.
   through the gateway, with a branch to a spoil heap in the north-east corner and a mine cart
   on the line. A hand winch stands over an old shaft on the east rim, and a wooden derrick by
   the south wall reaches over stacked cut blocks. These workings are blockout-level
-  presentation (`mmorpg-presentation/src/quarry.rs`). The cut blocks and the ivy on a few
-  cuts are world dressing (`dressing/hollow-cliffs.json`). Finished mine art would be a later
-  proposal.
+  presentation (`mmorpg-presentation/src/quarry.rs`); the ivy on a few cuts is world
+  dressing (`dressing/hollow-cliffs.json`). Finished mine art would be a later proposal.
 - **Camp.** The tents, crates, fire, bandits, powder watch and spike pit turned with the
   layout onto the floor. The powder watch keeps its exact spacing. The spike pit is at the
   gateway's inner end. The watch post stands outside the gateway's north spur and looks down

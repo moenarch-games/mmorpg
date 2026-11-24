@@ -25,13 +25,13 @@ off the rope onto it.
 
 Run it headless with `python3` (it needs nothing else): it replaces meshes 400-408 in
 `crates/mmorpg-core/content/collision/redbrand.json` (the cave's meshes, authored by
-`redbrand.py`, stay byte for byte) and writes the quarry's ivy and cut blocks into
+`redbrand.py`, stay byte for byte) and writes the ivy on a few of its cuts into
 `content/greyhaven/dressing/hollow-cliffs.json`. Every height is measured from the 11 m datum
 and buried 1.2 m, so the output never depends on the drawn ground and regenerates byte for byte.
 
 In Blender (5.2+; the Python console, `__file__` set to this file's path) it also draws the
 wall in the collection `Redbrand quarry (1195 3b) built`: orange where climbable, blue where
-sheer, one object per collider, with the ivy and blocks, and the ground round it when
+sheer, one object per collider, with the ivy, and the ground round it when
 `artifacts/hollow/site.json` exists:
 
     cargo run -p mmorpg-scenery --example export-site-context -- \\
@@ -104,10 +104,6 @@ IVY = [((-12.5, -133.6), 0), ((-11.5, -133.7), 0), ((-2.0, -134.0), 1), ((13.0, 
 VINE_PITCH = 2.0
 VINE_TOP_HEIGHT = 1.0
 VINE_OUT = 0.05
-# Stacked cut blocks on the floor (limestone kit): (x, z, base above the datum, yaw, kind).
-BLOCKS = [(6.0, -97.6, 0.0, 1000, 1), (7.4, -97.3, 0.0, 64800, 2), (6.7, -97.5, 0.9, 2600, 3),
-          (-4.0, -130.4, 0.0, 3100, 2), (-2.6, -130.0, 0.0, 900, 1), (-12.0, -96.4, 0.0, 0, 3),
-          (3.6, -94.8, 0.0, 30000, 1)]
 
 # Segments: (collider ID, grip) in the outline's order; their extents are found in `segments`.
 SEGMENTS = [(400, 'rock'), (401, 'rock'), (402, 'rock'), (403, 'rock'), (404, 'sheer'),
@@ -648,17 +644,6 @@ def ivy(rings, meshes, owner):
     return out
 
 
-def blocks():
-    return [{
-        'id': f'quarry-block-{i}',
-        'asset': f'limestone-rocks.kit.block-{kind}',
-        'position': [round(x * UNITS), DATUM - 5 + round(base * UNITS), round(z * UNITS)],
-        'yaw': yaw,
-        'scale': [1000, 1000, 1000],
-        'cull': 'Mid',
-    } for i, (x, z, base, yaw, kind) in enumerate(BLOCKS)]
-
-
 def write(meshes, placed):
     existing = json.loads(COLLISION.read_text())
     ids = {id for id, _ in SEGMENTS}
@@ -701,7 +686,6 @@ def review(meshes, placed):
              'sheer': material('Quarry built sheer (1195 3b)', (0.2, 0.4, 0.85))}
     grass = material('Quarry built ground (1195 3b)', (0.30, 0.34, 0.22))
     leaf = material('Quarry built ivy (1195 3b)', (0.15, 0.45, 0.12))
-    stone = material('Quarry built block (1195 3b)', (0.74, 0.70, 0.62))
 
     def child(label):
         collection = bpy.data.collections.new(f'{NAME} {label}')
@@ -744,21 +728,15 @@ def review(meshes, placed):
         obj['collider_id'] = id
         obj['grip'] = grip
 
-    dressing = child('ivy and blocks')
+    dressing = child('ivy')
     for p in placed:
         x, y, z = (v / UNITS for v in p['position'])
         turn = p['yaw'] / 65536 * math.tau
-        if 'vine' in p['asset']:
-            height = VINE_TOP_HEIGHT if p['asset'].endswith('vine-top') else VINE_PITCH
-            sx, sz = math.cos(turn) * 0.5, -math.sin(turn) * 0.5
-            quad = [(x - sx, y, z - sz), (x + sx, y, z + sz), (x + sx, y + height, z + sz),
-                    (x - sx, y + height, z - sz)]
-            add(dressing, p['id'], quad, [(0, 1, 2, 3)], leaf)
-        else:
-            corners = [(x + dx, y + dy, z + dz) for dx in (-0.65, 0.65) for dy in (0, 0.9)
-                       for dz in (-0.45, 0.45)]
-            add(dressing, p['id'], corners, [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6),
-                                             (0, 2, 6, 4), (1, 5, 7, 3)], stone)
+        height = VINE_TOP_HEIGHT if p['asset'].endswith('vine-top') else VINE_PITCH
+        sx, sz = math.cos(turn) * 0.5, -math.sin(turn) * 0.5
+        quad = [(x - sx, y, z - sz), (x + sx, y, z + sz), (x + sx, y + height, z + sz),
+                (x - sx, y + height, z - sz)]
+        add(dressing, p['id'], quad, [(0, 1, 2, 3)], leaf)
 
 
 def main():
@@ -778,7 +756,7 @@ def main():
     rope = meshes[ROPE_SEGMENT][0]
     if min(v[2] for v in rope) < ROPE_FACE_Z - 1e-6 or max(v[1] for v in rope) > ROPE_TOP + 1e-6:
         raise SystemExit('the rope segment no longer has its face as its north edge and its landing on top')
-    placed = ivy(rings, meshes, owner) + blocks()
+    placed = ivy(rings, meshes, owner)
     write(meshes, placed)
     for (id, grip), members in zip(SEGMENTS, groups):
         (x0, z0), (x1, z1) = rings[members[0]][1], rings[members[-1]][1]
