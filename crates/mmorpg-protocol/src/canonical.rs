@@ -129,6 +129,7 @@ pub fn encode_canonical_snapshot(
     encode_gathering(&mut payload, &snapshot.gathering)?;
     encode_escorts(&mut payload, &snapshot.escorts)?;
     encode_loads(&mut payload, &snapshot.loads)?;
+    encode_constructions(&mut payload, &snapshot.constructions)?;
     Ok(payload)
 }
 
@@ -1395,6 +1396,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let gathering = decode_gathering(payload, &mut offset)?;
     let escorts = decode_escorts(payload, &mut offset)?;
     let loads = decode_loads(payload, &mut offset)?;
+    let constructions = decode_constructions(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1424,6 +1426,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         wakes,
         escorts,
         loads,
+        constructions,
         depths,
         rewind_history,
         gathering,
@@ -1513,6 +1516,78 @@ fn encode_escorts(
         }
     }
     Ok(())
+}
+
+/// Every construction site (#1019): a count (`u16`), then per site in content order its piece
+/// (`u32`), materials (`u8`), builders (count `u8`, each `u32`) and whether it is raised (`u8`),
+/// a raised one adding the tick it rose (`u64`).
+fn encode_constructions(
+    payload: &mut Vec<u8>,
+    sites: &[mmorpg_core::ConstructionState],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            sites.len(),
+            mmorpg_core::MAX_CONSTRUCTION_SITES,
+            "construction sites exceed their count",
+        )?
+        .to_be_bytes(),
+    );
+    for site in sites {
+        payload.extend_from_slice(&site.piece.get().to_be_bytes());
+        payload.push(site.materials);
+        payload.push(encode_u8_count(
+            site.builders.len(),
+            usize::from(mmorpg_core::MAX_CONSTRUCTION_MATERIALS),
+            "construction builders exceed their count",
+        )?);
+        for builder in &site.builders {
+            payload.extend_from_slice(&builder.to_be_bytes());
+        }
+        payload.push(u8::from(site.raised.is_some()));
+        if let Some(raised) = site.raised {
+            payload.extend_from_slice(&raised.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_constructions(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::ConstructionState>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_CONSTRUCTION_SITES,
+        "construction sites exceed their count",
+    )?;
+    (0..count)
+        .map(|_| {
+            let piece = mmorpg_core::PieceId::new(u32::from_be_bytes(take(payload, offset)?));
+            let materials = read_u8(payload, offset)?;
+            let builders = decode_u8_count(
+                payload,
+                offset,
+                usize::from(mmorpg_core::MAX_CONSTRUCTION_MATERIALS),
+                "construction builders exceed their count",
+            )?;
+            let builders = (0..builders)
+                .map(|_| take(payload, offset).map(u32::from_be_bytes))
+                .collect::<Result<_, _>>()?;
+            let raised = if read_bool(payload, offset)? {
+                Some(u64::from_be_bytes(take(payload, offset)?))
+            } else {
+                None
+            };
+            Ok(mmorpg_core::ConstructionState {
+                piece,
+                materials,
+                builders,
+                raised,
+            })
+        })
+        .collect()
 }
 
 /// Every player's load (#1077): a count (`u16`), then per load in player-ID order its player
@@ -2955,12 +3030,14 @@ pub(crate) mod tests {
                     phase_started: 3,
                     scaled_for: vec![0, 2],
                     participants: vec![1, 2],
+                    civilians: vec![240, 0, 17],
                 }),
                 damage: 40,
                 last: Some(mmorpg_core::RaidResolution {
                     incident: 1,
                     at: 1,
                     outcome: mmorpg_core::RaidOutcome::Lost,
+                    defence: true,
                 }),
                 aftermath: std::collections::BTreeSet::new(),
                 rewarded: vec![1, 2],
@@ -2998,6 +3075,20 @@ pub(crate) mod tests {
                         facing: 16_384,
                         until: 9_000,
                     }),
+                },
+            ],
+            constructions: vec![
+                mmorpg_core::ConstructionState {
+                    piece: mmorpg_core::PieceId::new(4),
+                    materials: 1,
+                    builders: vec![2],
+                    raised: None,
+                },
+                mmorpg_core::ConstructionState {
+                    piece: mmorpg_core::PieceId::new(5),
+                    materials: 0,
+                    builders: Vec::new(),
+                    raised: Some(70),
                 },
             ],
             depths: None,

@@ -212,6 +212,7 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::NotCarrying => 59,
         ErrorCode::NoFooting => 60,
         ErrorCode::LoadLost => 61,
+        ErrorCode::SiteNotReady => 62,
     }
 }
 
@@ -278,6 +279,7 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         59 => ErrorCode::NotCarrying,
         60 => ErrorCode::NoFooting,
         61 => ErrorCode::LoadLost,
+        62 => ErrorCode::SiteNotReady,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1723,11 +1725,12 @@ mod tests {
             (59, ErrorCode::NotCarrying),
             (60, ErrorCode::NoFooting),
             (61, ErrorCode::LoadLost),
+            (62, ErrorCode::SiteNotReady),
         ] {
             assert_eq!(error_code(code), wire);
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 62, u16::MAX] {
+        for unknown in [0, 63, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

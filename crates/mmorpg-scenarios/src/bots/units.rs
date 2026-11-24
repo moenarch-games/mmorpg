@@ -339,6 +339,7 @@ pub const fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::NotCarrying => "not_carrying",
         ErrorCode::NoFooting => "no_footing",
         ErrorCode::LoadLost => "load_lost",
+        ErrorCode::SiteNotReady => "site_not_ready",
         ErrorCode::WeaponDrawn => "weapon_drawn",
         ErrorCode::MissingMaterials => "missing_materials",
     }
@@ -405,6 +406,7 @@ fn parse_error_code(name: &str) -> Option<ErrorCode> {
         "not_carrying" => ErrorCode::NotCarrying,
         "no_footing" => ErrorCode::NoFooting,
         "load_lost" => ErrorCode::LoadLost,
+        "site_not_ready" => ErrorCode::SiteNotReady,
         "weapon_drawn" => ErrorCode::WeaponDrawn,
         "missing_materials" => ErrorCode::MissingMaterials,
         _ => return None,
@@ -642,6 +644,7 @@ mod tests {
             ErrorCode::NotCarrying,
             ErrorCode::NoFooting,
             ErrorCode::LoadLost,
+            ErrorCode::SiteNotReady,
         ] {
             let spec = EventSpec::Error(code);
             assert_eq!(EventSpec::try_from(spec.to_string()), Ok(spec));

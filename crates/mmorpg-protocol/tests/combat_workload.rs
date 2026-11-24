@@ -126,10 +126,13 @@ fn greyhaven_combat_work_and_wire_budgets_are_ratcheted() {
     // Every row is re-recorded as measured.
     // The two Greyfang cave bats (#995) hold their flight height every tick, so they never sleep:
     // each fixture gains their 720 AI evaluations and 3,960 body visits. Re-recorded as measured.
+    // Millbrook's three farmfolk (#1019) stand beside fights-8's farm fights: each player tests
+    // them every tick, 4,320 candidates more, and sees their records in its projections. Its
+    // candidate and projection byte counts are re-recorded as measured.
     const HEADROOM_PERCENT: usize = 5;
     let recorded: [[usize; 4]; FIXTURES.len()] = [
         [11_772, 94_680, 288_000, 6_186_240],
-        [14_842, 91_759, 84_960, 1_994_321],
+        [14_842, 91_759, 89_280, 2_112_267],
         [18_224, 100_317, 498_240, 8_885_798],
         [13_829, 111_492, 2_337_188, 24_520_435],
     ];

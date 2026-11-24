@@ -64,8 +64,10 @@ pub(crate) fn decode_member(
 
 /// Incidents (`u32`) and damage (`u32`); the running incident: presence, ID (`u32`), phase (`u8`),
 /// phase start (`u64`), the phases' participation snapshots (count `u8`, each `u8`) and the
-/// participants (count `u8`, each `u32`); the last resolution: presence, incident (`u32`), tick
-/// (`u64`) and outcome (`u8`, 0 defended, 1 lost); the open aid tasks (a `u32` set, #531, #882);
+/// participants (count `u8`, each `u32`) and a defence's civilians' health (count `u8`, each
+/// `u32`, #1019); the last resolution: presence, incident (`u32`), tick (`u64`), outcome (`u8`,
+/// 0 defended, 1 lost) and whether it was a defence (`u8`, #1019); the open aid tasks (a `u32`
+/// set, #531, #882);
 /// the rewarded players (count `u16`, each `u32`, #531); the players who read the evening's
 /// tracks (count `u16`, each `u32`, #532), whether the guards are warned (`u8`) and the braced
 /// spots (a `u32` set, #532, #882) and the players rewarded for defending the day's merchant cart
@@ -92,6 +94,14 @@ pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(
         for player in &incident.participants {
             payload.extend_from_slice(&player.to_be_bytes());
         }
+        payload.push(encode_u8_count(
+            incident.civilians.len(),
+            mmorpg_core::raid::MAX_CIVILIANS,
+            "defence civilians exceed their count",
+        )?);
+        for health in &incident.civilians {
+            payload.extend_from_slice(&health.to_be_bytes());
+        }
     }
     payload.push(u8::from(state.last.is_some()));
     if let Some(last) = state.last {
@@ -101,6 +111,7 @@ pub(crate) fn encode_state(payload: &mut Vec<u8>, state: &RaidState) -> Result<(
             RaidOutcome::Defended => 0,
             RaidOutcome::Lost => 1,
         });
+        payload.push(u8::from(last.defence));
     }
     encode_u32_set(
         payload,
@@ -158,12 +169,22 @@ pub(crate) fn decode_state(payload: &[u8], offset: &mut usize) -> Result<RaidSta
         let participants = (0..count)
             .map(|_| take(payload, offset).map(u32::from_be_bytes))
             .collect::<Result<_, _>>()?;
+        let count = decode_u8_count(
+            payload,
+            offset,
+            mmorpg_core::raid::MAX_CIVILIANS,
+            "defence civilians exceed their count",
+        )?;
+        let civilians = (0..count)
+            .map(|_| take(payload, offset).map(u32::from_be_bytes))
+            .collect::<Result<_, _>>()?;
         Some(RaidIncident {
             id,
             phase,
             phase_started,
             scaled_for,
             participants,
+            civilians,
         })
     } else {
         None
@@ -176,10 +197,12 @@ pub(crate) fn decode_state(payload: &[u8], offset: &mut usize) -> Result<RaidSta
             1 => RaidOutcome::Lost,
             _ => return Err(ProtocolError::new("invalid raid outcome")),
         };
+        let defence = read_bool(payload, offset)?;
         Some(RaidResolution {
             incident,
             at,
             outcome,
+            defence,
         })
     } else {
         None
@@ -251,9 +274,12 @@ fn decode_players(
 const SIGNS_BIT: u8 = 1;
 const WARNED_BIT: u8 = 1 << 1;
 const SCOUTED_BIT: u8 = 1 << 2;
+/// A running defence (#1019): its civilians still standing (`u8`) follow the flags.
+const DEFENCE_BIT: u8 = 1 << 3;
 
 /// Presence (`u8`); then the phase (`u8`, 0 once resolved), the integrity percent (`u8`), flags
-/// (`u8`: signs, warned, scouted), the open aid tasks and the braced spots (`u32` sets, #531,
+/// (`u8`: signs, warned, scouted, defence), a defence's standing civilians (`u8`, #1019, only
+/// with the defence flag), the open aid tasks and the braced spots (`u32` sets, #531,
 /// #532, #882). Signs come only without a phase and with the barn whole, scouting only with
 /// signs; aid never comes with preparations, nor bracing without the warning.
 pub(crate) fn encode_view(
@@ -273,8 +299,12 @@ pub(crate) fn encode_view(
         view.integrity,
         flag(view.signs, SIGNS_BIT)
             | flag(view.warned, WARNED_BIT)
-            | flag(view.scouted, SCOUTED_BIT),
+            | flag(view.scouted, SCOUTED_BIT)
+            | flag(view.standing.is_some(), DEFENCE_BIT),
     ]);
+    if let Some(standing) = view.standing {
+        payload.push(standing);
+    }
     encode_u32_set(payload, &view.aid, "raid aid tasks exceed their count")?;
     encode_u32_set(payload, &view.braced, "raid braces exceed their count")
 }
@@ -290,6 +320,9 @@ fn view_valid(view: &RaidView) -> bool {
         && (!view.scouted || view.signs)
         && (view.aid.is_empty() || (!view.warned && view.braced.is_empty()))
         && (view.braced.is_empty() || view.warned)
+        && view.standing.is_none_or(|standing| {
+            view.phase > 0 && usize::from(standing) <= mmorpg_core::raid::MAX_CIVILIANS
+        })
 }
 
 pub(crate) fn decode_view(
@@ -300,9 +333,14 @@ pub(crate) fn decode_view(
         return Ok(None);
     }
     let [phase, integrity, flags] = take(payload, offset)?;
-    if flags & !(SIGNS_BIT | WARNED_BIT | SCOUTED_BIT) != 0 {
+    if flags & !(SIGNS_BIT | WARNED_BIT | SCOUTED_BIT | DEFENCE_BIT) != 0 {
         return Err(ProtocolError::new("invalid raid view"));
     }
+    let standing = if flags & DEFENCE_BIT != 0 {
+        Some(read_u8(payload, offset)?)
+    } else {
+        None
+    };
     let view = RaidView {
         phase,
         integrity,
@@ -311,6 +349,7 @@ pub(crate) fn decode_view(
         scouted: flags & SCOUTED_BIT != 0,
         aid: decode_u32_set(payload, offset, "raid aid tasks are invalid")?,
         braced: decode_u32_set(payload, offset, "raid braces are invalid")?,
+        standing,
     };
     if !view_valid(&view) {
         return Err(ProtocolError::new("invalid raid view"));
@@ -326,6 +365,8 @@ pub(crate) const fn notice_code(notice: RaidNotice) -> u8 {
         RaidNotice::Braced => 2,
         RaidNotice::Held => 3,
         RaidNotice::Fell => 4,
+        RaidNotice::Stood => 5,
+        RaidNotice::Overrun => 6,
     }
 }
 
@@ -336,6 +377,8 @@ pub(crate) fn decode_notice(code: u8) -> Result<RaidNotice, ProtocolError> {
         2 => RaidNotice::Braced,
         3 => RaidNotice::Held,
         4 => RaidNotice::Fell,
+        5 => RaidNotice::Stood,
+        6 => RaidNotice::Overrun,
         _ => return Err(ProtocolError::new("unknown raid notice")),
     })
 }
@@ -386,6 +429,7 @@ mod tests {
             warned: braced.is_some(),
             braced: braced.unwrap_or_default().iter().copied().collect(),
             scouted: false,
+            standing: None,
         }
     }
 
@@ -400,6 +444,11 @@ mod tests {
             view(0, 100, &[], true, None),
             view(2, 63, &[], false, Some(&[0, 1, 2, 40])),
             view(0, 20, &[1, 2, 4, 70], false, None),
+            // A running defence's standing civilians (#1019).
+            RaidView {
+                standing: Some(2),
+                ..view(3, 81, &[], false, None)
+            },
         ] {
             let mut payload = Vec::new();
             encode_view(&mut payload, Some(&expected)).unwrap();
@@ -407,8 +456,13 @@ mod tests {
             assert_eq!(decode_view(&payload, &mut offset).unwrap(), Some(expected));
             assert_eq!(offset, payload.len());
         }
-        // Aid and preparations never come together, nor signs with a phase.
+        // Aid and preparations never come together, nor signs with a phase, nor a defence's
+        // civilians without one.
         for invalid in [
+            RaidView {
+                standing: Some(1),
+                ..view(0, 100, &[], false, None)
+            },
             view(0, 20, &[0], false, Some(&[])),
             view(1, 100, &[], true, None),
             RaidView {
