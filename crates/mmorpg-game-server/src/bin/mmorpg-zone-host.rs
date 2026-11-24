@@ -11,6 +11,7 @@ use mmorpg_game_server::{
 use std::env;
 use std::error::Error;
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -85,11 +86,26 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
     let character_directory = read_optional_path("MMORPG_CHARACTER_DIR")?;
     let route_prefix =
         BrowserRoutePrefix::new(read_string("MMORPG_ROUTE_PREFIX", DEFAULT_ROUTE_PREFIX)?)?;
+    let bind_ip = parse_bind_ip(read_optional_string("MMORPG_BIND_IP")?.as_deref())?;
+    if env::var_os("MMORPG_PERSISTENCE_MODE").is_some() {
+        require_claim_acknowledgement(
+            bind_ip,
+            read_string("MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS", "")? == "1",
+        )?;
+    }
+    eprintln!(
+        "Zone host serving on {bind_ip} (WebTransport UDP {port}, status TCP {status_port})."
+    );
+    if !bind_ip.is_loopback() {
+        eprintln!(
+            "Reachable beyond this machine: character claims are unauthenticated until account authentication exists."
+        );
+    }
 
     let (shutdown_sender, shutdown_receiver) = mpsc::channel(4);
     install_shutdown_forwarder(shutdown_sender)?;
     let transport_config = MatchHostWebTransportConfig {
-        bind_ip: None,
+        bind_ip: Some(bind_ip),
         port,
         certificate_pem,
         private_key_pem,
@@ -104,9 +120,7 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
         if character_directory.is_some() || recovery_directory.is_some() {
             return Err(ConfigError("PostgreSQL persistence cannot be combined with file character/recovery directories".into()).into());
         }
-        eprintln!(
-            "PostgreSQL persistence selected; character admission uses trusted development/LAN identities."
-        );
+        eprintln!("PostgreSQL persistence selected; character claims are unauthenticated.");
         mmorpg_game_server::persistence::serve_postgres_character_host(
             zone_ids,
             reconnect_grace_ticks,
@@ -220,7 +234,7 @@ async fn serve_local_world(
             reconnect_grace_ticks: DEFAULT_RECONNECT_GRACE_TICKS,
         },
         MatchHostWebTransportConfig {
-            bind_ip: Some(std::net::Ipv4Addr::LOCALHOST.into()),
+            bind_ip: Some(Ipv4Addr::LOCALHOST.into()),
             port: owner.world.port,
             certificate_pem: owner.world.certificate.clone(),
             private_key_pem: owner.private_key.clone(),
@@ -299,7 +313,30 @@ fn parse_zone_routes(
         .collect()
 }
 
-#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
+/// The address the host serves on: loopback unless `MMORPG_BIND_IP` names one (#1141).
+fn parse_bind_ip(value: Option<&str>) -> Result<IpAddr, ConfigError> {
+    match value {
+        None => Ok(Ipv4Addr::LOCALHOST.into()),
+        Some(value) => value.parse().map_err(|error| {
+            ConfigError(format!(
+                "MMORPG_BIND_IP {value:?} is not an IP address: {error}"
+            ))
+        }),
+    }
+}
+
+/// PostgreSQL persistence creates durable characters from unauthenticated claims, so it
+/// serves beyond loopback only with `MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS=1` (#1141).
+fn require_claim_acknowledgement(bind_ip: IpAddr, acknowledged: bool) -> Result<(), ConfigError> {
+    if bind_ip.is_loopback() || acknowledged {
+        Ok(())
+    } else {
+        Err(ConfigError(format!(
+            "PostgreSQL persistence on {bind_ip} would accept unauthenticated character claims from other machines; set MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS=1 to accept that, or bind loopback"
+        )))
+    }
+}
+
 fn read_optional_string(name: &str) -> Result<Option<String>, ConfigError> {
     match env::var(name) {
         Ok(value) if value.is_empty() => Err(ConfigError(format!("{name} must not be empty"))),
@@ -391,6 +428,31 @@ mod tests {
         );
         assert!(parse_zone_ids("7,nope").is_err());
         assert!(parse_zone_ids("7,").is_err());
+    }
+
+    #[test]
+    fn binds_loopback_unless_an_address_is_configured() {
+        assert_eq!(
+            parse_bind_ip(None).unwrap(),
+            IpAddr::from(Ipv4Addr::LOCALHOST)
+        );
+        assert_eq!(
+            parse_bind_ip(Some("192.168.1.20")).unwrap(),
+            IpAddr::from(Ipv4Addr::new(192, 168, 1, 20))
+        );
+        assert!(parse_bind_ip(Some("::1")).unwrap().is_loopback());
+        assert!(parse_bind_ip(Some("lan")).is_err());
+    }
+
+    #[test]
+    fn persistence_beyond_loopback_needs_the_acknowledgement() {
+        let loopback = IpAddr::from(Ipv4Addr::LOCALHOST);
+        let lan = IpAddr::from(Ipv4Addr::new(192, 168, 1, 20));
+        let everywhere = IpAddr::from(Ipv4Addr::UNSPECIFIED);
+        assert!(require_claim_acknowledgement(loopback, false).is_ok());
+        assert!(require_claim_acknowledgement(lan, false).is_err());
+        assert!(require_claim_acknowledgement(everywhere, false).is_err());
+        assert!(require_claim_acknowledgement(lan, true).is_ok());
     }
 
     #[test]
