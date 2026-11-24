@@ -247,6 +247,13 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
     for &(min, max, _) in super::highlands::CRAGS {
         block((min, max), &mut buckets);
     }
+    // The Redbrand watch post's pieces (#305) are structure bodies, not colliders: keep its
+    // footprint, before the quarry's gateway (#1195), clear as well.
+    for piece in super::watch_post() {
+        let [x, _, z] = piece.position;
+        let [hx, _, hz] = piece.half_extents;
+        block(([x - hx, z - hz], [x + hx, z + hz]), &mut buckets);
+    }
     // The Redbrand quarry's wall is authored rock (#1195): a loose rock never lies inside it.
     let quarry: Vec<_> = super::cave::collision_meshes()
         .into_iter()

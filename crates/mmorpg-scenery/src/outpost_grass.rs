@@ -56,7 +56,7 @@ mod tests {
         // of #889, the Eastdown meadow (#872), Trapper Sela's hunting bear (#991), the forest lynxes (#989), the
         // river crayfish (#996), the Southwood stags (#997), the highland crags' outcrop
         // groups (#1195), the Redbrand Hollow's re-modelled cliffs (#1195) and its quarry (#1195).
-        assert_eq!(before.stable_hash(), 0x5f98_a300_3c36_9ba0);
+        assert_eq!(before.stable_hash(), 0xb477_fa6e_977f_826a);
         let original: Vec<_> = before
             .props
             .iter()
