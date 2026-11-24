@@ -81,6 +81,14 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
             .map_err(|cause| ConfigError(cause.to_string()))?;
         return Ok(());
     }
+    // Restores a shared directory this build cannot decode (#1146) and exits.
+    #[cfg(feature = "postgres")]
+    if env::var("MMORPG_PERSISTENCE_MODE").as_deref() == Ok("repair-directories") {
+        mmorpg_game_server::persistence::repair_postgres_directories()
+            .await
+            .map_err(|cause| ConfigError(cause.to_string()))?;
+        return Ok(());
+    }
     let zone_ids = parse_zone_ids(&read_string("MMORPG_ZONE_IDS", DEFAULT_ZONE_IDS)?)?;
     let port = read_number("MMORPG_PORT", DEFAULT_PORT)?;
     let status_port = read_number("MMORPG_STATUS_PORT", DEFAULT_HOST_STATUS_PORT)?;

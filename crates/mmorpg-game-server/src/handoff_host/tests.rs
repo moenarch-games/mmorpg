@@ -21,7 +21,9 @@ use mmorpg_core::{
 };
 use tokio::sync::{Barrier, Semaphore};
 
-use super::{HandoffHost, LocalZone, ZoneInputs, ZoneRoute};
+use super::{
+    ARRIVAL_CLAIM_TIMEOUT, ARRIVAL_RECHECK, HandoffHost, LocalZone, ZoneInputs, ZoneRoute,
+};
 use crate::dev_characters::DevCharacterStorage;
 use crate::handoff::{handoff_id, holder};
 use crate::transfer_link::{LinkError, LinkFailure, TransferLinkHandler, TransferLinks};
@@ -750,4 +752,59 @@ fn an_unreachable_destination_delays_only_its_own_departures_once_a_poll() {
             Some(holder(&world.leases[&WEST]))
         );
     }
+}
+
+/// #1146: an accepted arrival whose client never claims it is given up after
+/// [`ARRIVAL_CLAIM_TIMEOUT`], once its source retired: the destination
+/// releases the character's lease, so the character logs in afresh in the
+/// destination zone, and a resent offer adds no arrival.
+#[test]
+fn an_unclaimed_arrival_releases_its_lease_once_its_source_retired() {
+    let (world, mut a, b) = World::new(Duration::from_secs(10));
+    let walker = a.traveller(&world, "walker", SEAM_TEST_EAST);
+    a.tick(3);
+    world.authority.failing_commits.store(1, Ordering::SeqCst);
+    a.poll();
+    let [transfer_id] = world.links.offered_to(EAST_LINK)[..] else {
+        panic!("one offer to East");
+    };
+    let arrivals = || b.host.inbound.lock().unwrap().len();
+    assert_eq!(arrivals(), 1);
+    let offered = b.host.inbound.lock().unwrap()[&transfer_id]
+        .transfer
+        .clone();
+    let east = holder(&world.leases[&EAST]);
+
+    // Past its deadline, but the source has not retired: it waits.
+    let late = Instant::now() + ARRIVAL_CLAIM_TIMEOUT;
+    b.host.expire_arrivals(late);
+    assert_eq!(arrivals(), 1, "the source may still hold the frozen copy");
+    assert_eq!(world.leased_by(&walker.character), Some(east));
+
+    a.poll();
+    assert_eq!(
+        world.authority.phase(transfer_id),
+        Some(HandoffPhase::Committed)
+    );
+    b.host.expire_arrivals(late + ARRIVAL_RECHECK);
+    assert_eq!(arrivals(), 0);
+    assert_eq!(world.leased_by(&walker.character), None, "released");
+    let record = CharacterStore::new(world.entries.clone())
+        .committed(&walker.character)
+        .unwrap()
+        .unwrap()
+        .record;
+    assert_eq!(record.location.zone_id, EAST, "it stands where it arrived");
+
+    // A resent offer of the settled transfer stages nothing again.
+    assert!(b.host.offer(offered).is_err());
+    assert_eq!(arrivals(), 0);
+    assert_eq!(
+        world.authority.phase(transfer_id),
+        Some(HandoffPhase::Committed),
+        "the record still answers within its retention"
+    );
+    CharacterStore::new(world.entries.clone())
+        .acquire(&walker.character, east)
+        .expect("the character logs in again at its destination");
 }

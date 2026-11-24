@@ -307,6 +307,31 @@ fn zone_id(id: &MatchId) -> std::result::Result<ZoneId, String> {
         .map_err(message)
 }
 
+/// The repair step for the shared party and instance directories
+/// (`MMORPG_PERSISTENCE_MODE=repair-directories`, #1146) through
+/// `MMORPG_MIGRATION_DATABASE_URL`: a directory the build cannot decode gets its previous
+/// encoding back; `MMORPG_DIRECTORY_RESET=1` empties one whose previous encoding does not
+/// decode either. A directory written by a newer build is left for that build.
+pub async fn repair_postgres_directories() -> Result<()> {
+    let url = required("MMORPG_MIGRATION_DATABASE_URL")?;
+    let reset = env::var("MMORPG_DIRECTORY_RESET").as_deref() == Ok("1");
+    let report = tokio::task::spawn_blocking(move || -> std::result::Result<_, String> {
+        let mut client = mmorpg_postgres::connect(&url).map_err(message)?;
+        mmorpg_postgres::require_schema(
+            &mut client,
+            "mmorpg_coordination",
+            mmorpg_control_plane::postgres::SCHEMA_VERSION,
+        )
+        .map_err(message)?;
+        mmorpg_control_plane::postgres::repair_directories(&mut client, reset).map_err(message)
+    })
+    .await??;
+    for line in report {
+        eprintln!("{line}");
+    }
+    Ok(())
+}
+
 /// The explicit migration step (`MMORPG_PERSISTENCE_MODE=migrate`, #1142): applies
 /// every schema a PostgreSQL host reads (zone directory, characters, journal)
 /// through `MMORPG_MIGRATION_DATABASE_URL`, a login allowed to change schemas.

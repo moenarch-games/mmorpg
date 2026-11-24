@@ -10,10 +10,13 @@
 //! [`MAX_BACKOFF_POLLS`] polls, and a successful connect forgets it.
 //!
 //! Host state only, never canonical: it decides when to try, never who owns
-//! a character. Every attempt is fenced by the handoff itself.
+//! a character. Every attempt is fenced by the handoff itself. The same holds
+//! for [`ArrivalDeadlines`], which only decides when a destination gives up
+//! waiting for an arrival's client.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
+use std::time::Instant;
 
 /// The most polls an unreachable destination waits before it is tried again.
 pub const MAX_BACKOFF_POLLS: u64 = 32;
@@ -124,9 +127,72 @@ pub fn depart_toward<T>(
     }
 }
 
+/// Accepted arrivals by the deadline their client has to claim them (#1146): a destination
+/// takes the due ones each departure poll and visits only those, never the arrivals still in
+/// time nor the ones already claimed ([`Self::remove`]).
+#[derive(Debug)]
+pub struct ArrivalDeadlines<K> {
+    due: BTreeSet<(Instant, K)>,
+    visits: u64,
+}
+
+impl<K> Default for ArrivalDeadlines<K> {
+    fn default() -> Self {
+        Self {
+            due: BTreeSet::new(),
+            visits: 0,
+        }
+    }
+}
+
+impl<K: Ord + Copy> ArrivalDeadlines<K> {
+    pub fn insert(&mut self, deadline: Instant, arrival: K) {
+        self.due.insert((deadline, arrival));
+    }
+
+    /// Forgets a claimed or discarded arrival.
+    pub fn remove(&mut self, deadline: Instant, arrival: K) {
+        self.due.remove(&(deadline, arrival));
+    }
+
+    /// Takes every arrival whose deadline passed by `now`, earliest first.
+    pub fn take_due(&mut self, now: Instant) -> Vec<K> {
+        let mut taken = Vec::new();
+        while let Some(&(deadline, arrival)) = self.due.first() {
+            if deadline > now {
+                break;
+            }
+            self.due.pop_first();
+            self.visits += 1;
+            taken.push(arrival);
+        }
+        taken
+    }
+
+    /// Arrivals taken so far, for `arrival-expiry` in `.performance/contract.json`.
+    #[must_use]
+    pub const fn visits(&self) -> u64 {
+        self.visits
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arrivals_come_due_in_deadline_order_and_claimed_ones_never_do() {
+        let start = Instant::now();
+        let at = |seconds| start + std::time::Duration::from_secs(seconds);
+        let mut deadlines = ArrivalDeadlines::default();
+        deadlines.insert(at(20), 2);
+        deadlines.insert(at(10), 1);
+        deadlines.insert(at(15), 3);
+        deadlines.remove(at(15), 3);
+        assert!(deadlines.take_due(at(9)).is_empty());
+        assert_eq!(deadlines.take_due(at(30)), [1, 2]);
+        assert_eq!(deadlines.visits(), 2);
+    }
 
     /// Polls `players` departures toward one link whose connects all fail;
     /// the connects each poll made.
