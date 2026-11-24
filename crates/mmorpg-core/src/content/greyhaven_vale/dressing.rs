@@ -253,10 +253,19 @@ fn rocks(colliders: &[StaticCollider]) -> Vec<Piece> {
         .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
         .collect();
     let on_quarry = |(min, max): ([i32; 2], [i32; 2])| {
-        [[min[0], min[1]], [max[0], min[1]], [min[0], max[1]], [max[0], max[1]]]
-            .into_iter()
-            .chain([[(min[0] + max[0]) / 2, (min[1] + max[1]) / 2]])
-            .any(|at| quarry.iter().any(|mesh| super::surface_at(mesh, at).is_some()))
+        [
+            [min[0], min[1]],
+            [max[0], min[1]],
+            [min[0], max[1]],
+            [max[0], max[1]],
+        ]
+        .into_iter()
+        .chain([[(min[0] + max[0]) / 2, (min[1] + max[1]) / 2]])
+        .any(|at| {
+            quarry
+                .iter()
+                .any(|mesh| super::surface_at(mesh, at).is_some())
+        })
     };
     let posts: Vec<[i32; 2]> = units::creature_spawns()
         .iter()

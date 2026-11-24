@@ -152,7 +152,13 @@ pub(crate) fn build(b: &mut Batcher, scenery: &Scenery) {
     block(b, TIMBER, [cx, y + 0.9, cz], [0.8, 0.45, 0.55], 0.);
     block(b, IRON, [cx, y + 1.36, cz], [0.82, 0.02, 0.57], 0.);
     for (dx, dz) in [(-0.55, -0.5), (-0.55, 0.5), (0.55, -0.5), (0.55, 0.5)] {
-        block(b, IRON, [cx + dx, y + 0.34, cz + dz], [0.26, 0.26, 0.05], 0.);
+        block(
+            b,
+            IRON,
+            [cx + dx, y + 0.34, cz + dz],
+            [0.26, 0.26, 0.05],
+            0.,
+        );
     }
 
     // The spoil heap the carts tipped in the north-east corner: a long, flat-topped mound.

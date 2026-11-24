@@ -313,7 +313,11 @@ fn the_quarry_walls_footprints_follow_their_rock() {
             .unwrap();
         assert_eq!(
             (structure.1, structure.2, structure.3),
-            ([min[0], min[2]], [max[0], max[2]], max[1] - rock.position[1]),
+            (
+                [min[0], min[2]],
+                [max[0], max[2]],
+                max[1] - rock.position[1]
+            ),
             "segment {id}"
         );
     }

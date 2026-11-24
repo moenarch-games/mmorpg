@@ -262,9 +262,10 @@ impl ZoneSimulation {
     /// The body centre height at which creature `id` stands at its spawn point `at`: on its
     /// authored perch (#1195), such as a boulder on a cliff's rim, or else [`Self::rest_y`].
     pub(crate) fn home_y(&self, id: CreatureId, at: [i32; 2], template: &CreatureTemplate) -> i32 {
-        self.content
-            .perch(id)
-            .map_or_else(|| self.rest_y(at, template), |feet| feet + template.half_extents[1])
+        self.content.perch(id).map_or_else(
+            || self.rest_y(at, template),
+            |feet| feet + template.half_extents[1],
+        )
     }
 
     /// The body centre height (units) at which a creature with `template` rests at `at`: on

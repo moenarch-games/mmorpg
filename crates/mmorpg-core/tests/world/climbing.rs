@@ -647,7 +647,10 @@ fn assert_benched_climb(benches: &[(f32, bool)]) {
         benches.windows(2).all(|pair| pair[1].0 > pair[0].0 + 3.),
         "benches: {benches:?}"
     );
-    assert!(benches.iter().any(|bench| bench.1), "never mantled: {benches:?}");
+    assert!(
+        benches.iter().any(|bench| bench.1),
+        "never mantled: {benches:?}"
+    );
     assert!(benches.last().unwrap().0 > 12., "on the rim: {benches:?}");
 }
 
@@ -660,7 +663,10 @@ fn a_player_climbs_the_quarry_benches_across_a_segment_seam_onto_the_rim() {
     for id in [401, 402] {
         assert_eq!(greyhaven_vale::climbing().collider(id), Some(Grip::Rock));
     }
-    let (west, east) = (outcrop(401).bounds().unwrap(), outcrop(402).bounds().unwrap());
+    let (west, east) = (
+        outcrop(401).bounds().unwrap(),
+        outcrop(402).bounds().unwrap(),
+    );
     // The seam: the ring 401's mesh ends and 402's begins with, on the north wall's foot at
     // (-10.98, -134.01) m, its face turned 9° east of due north (`hollow_cliffs.py`).
     let (player, benches) = climb_the_benches([-1_068, -13_200], 34_368);
@@ -678,7 +684,11 @@ fn a_player_climbs_the_quarry_benches_across_a_segment_seam_onto_the_rim() {
 fn a_player_climbs_the_south_wall_across_the_rope_segments_seam() {
     let (player, benches) = climb_the_benches([1_155, -9_500], 0);
     assert_benched_climb(&benches);
-    assert!(player.feet()[2] > -9_260.0, "behind the face: {:?}", player.feet());
+    assert!(
+        player.feet()[2] > -9_260.0,
+        "behind the face: {:?}",
+        player.feet()
+    );
 }
 
 /// The quarry's east wall over the old mine's adit is smooth, sheer rock (#1195): its authored
