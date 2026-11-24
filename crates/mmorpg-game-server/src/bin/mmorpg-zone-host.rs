@@ -146,7 +146,9 @@ async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
             )
             .into());
         }
-        eprintln!("Trusted-LAN handoff host: unauthenticated character claims and transfer link.");
+        eprintln!(
+            "Trusted-LAN handoff host: character claims and the transfer link are unauthenticated and unencrypted; run them on a private network only."
+        );
         let config = mmorpg_game_server::handoff_host::HandoffHostConfig {
             database_url,
             host_id: mmorpg_control_plane::HostId::new(read_string("MMORPG_HOST_ID", "")?)

@@ -36,7 +36,7 @@ Recovery, at every phase:
 
 The registry's `commit` and `abort` accept the ticket's lease or a newer epoch of the same zone, which speaks for its fenced predecessor. `commit` no longer requires the destination's lease to be current: the source confirming its own retirement does not depend on the destination host.
 
-Hosts reach each other over the `transfer_link` TCP link: length-prefixed offer and activate requests, each answered ok or refused. It is unauthenticated and unencrypted, for development and trusted LAN only (Q1 = A, ADR 0003); production transfer credentials are not claimed.
+Hosts reach each other over the `transfer_link` TCP link: length-prefixed offer and activate requests, each answered ok or refused. It is unauthenticated and unencrypted, for development and trusted LAN only (Q1 = A, ADR 0003); production transfer credentials are not claimed. Run it on a private network only. The link carries no authority over the character: the destination stages the pending transfer the source committed to the shared character store under its lease and refuses an offer that differs from it, so a peer that reaches the link cannot alter the character that later saves make durable (#1143).
 
 Formats: `mmorpg-protocol` encodes `CharacterTransfer` (`CHARACTER_TRANSFER_WIRE_VERSION`, a random token). The character entry gains the pending handoff and the last completed handoff with its lease generation; `ENTRY_FORMAT_VERSION` became a random token, so older entries are refused (no migration, pre-1.0).
 
