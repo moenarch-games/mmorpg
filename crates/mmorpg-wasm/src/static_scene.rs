@@ -113,6 +113,69 @@ pub fn seed_grass(seed: Vec<u8>) -> bool {
     GRASS_SEED.seed(seed)
 }
 
+/// Every terrain tile's far level another instance derived (#855), packed by [`pack`] one after
+/// another, for the scene with `prefix`; `offsets` (one more than the tiles) delimit them.
+struct FarLevels {
+    prefix: String,
+    levels: Vec<f32>,
+    offsets: Vec<usize>,
+}
+
+static FAR_LEVELS: PerZone<FarLevels> = PerZone::new();
+
+/// The hosted scene's prefix (`StaticScene::prefix`), which [`seed_far_levels`] checks.
+#[must_use]
+pub fn prefix() -> String {
+    hosted_static_scene().prefix.clone()
+}
+
+/// Every terrain tile's far level of the hosted scene, packed by [`pack`] in tile order, for
+/// [`seed_far_levels`] in another instance (#855).
+#[must_use]
+pub fn far_levels() -> Vec<f32> {
+    let tiles = &hosted_static_scene().terrain;
+    let mut out = Vec::new();
+    for index in 0..tiles.tiles.len() {
+        out.extend(pack(&tiles.far_level(index)));
+    }
+    out
+}
+
+/// Where each of `levels`' packed tiles starts, and their end; `None` for truncated data.
+fn far_offsets(levels: &[f32]) -> Option<Vec<usize>> {
+    let mut offsets = vec![0];
+    let mut at = 0;
+    while at < levels.len() {
+        let draws = levels[at] as usize;
+        at += 1;
+        for _ in 0..draws {
+            let header = levels.get(at..at + 5)?;
+            let (vertices, indices) = (header[3] as usize, header[4] as usize);
+            at += 5 + vertices * PACKED_FLOATS_PER_VERTEX + indices;
+        }
+        if at > levels.len() {
+            return None;
+        }
+        offsets.push(at);
+    }
+    Some(offsets)
+}
+
+/// Reuses the far levels another instance of this module derived for the scene with `prefix`
+/// (#855: [`far_levels`]), so this instance's terrain stream hands them out instead of building
+/// them. False, nothing seeded, for truncated data or once seeded; levels of another scene, or
+/// of another tile count, are ignored on use.
+#[must_use]
+pub fn seed_far_levels(prefix: String, levels: Vec<f32>) -> bool {
+    far_offsets(&levels).is_some_and(|offsets| {
+        FAR_LEVELS.seed(FarLevels {
+            prefix,
+            levels,
+            offsets,
+        })
+    })
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Layout {
@@ -414,10 +477,19 @@ impl TerrainStream {
         self.scene().terrain.tiles.len()
     }
 
-    /// Tile `index`'s far level, packed by [`pack`].
+    /// Tile `index`'s far level, packed by [`pack`]: as another instance derived it when seeded
+    /// for this scene ([`seed_far_levels`], #855), otherwise built now.
     #[must_use]
     pub fn far(&self, index: usize) -> Vec<f32> {
-        pack(&self.scene().terrain.tiles[index].far)
+        let scene = self.scene();
+        if !self.arena
+            && let Some(seeded) = FAR_LEVELS.peek()
+            && seeded.prefix == scene.prefix
+            && seeded.offsets.len() == scene.terrain.tiles.len() + 1
+        {
+            return seeded.levels[seeded.offsets[index]..seeded.offsets[index + 1]].to_vec();
+        }
+        pack(&scene.terrain.far_level(index))
     }
 
     /// Tile `index`'s near level, built now, packed by [`pack`].
@@ -518,6 +590,9 @@ impl GroupStream {
     }
 }
 
+/// The floats [`pack`] writes per vertex.
+const PACKED_FLOATS_PER_VERTEX: usize = 3 + 3 + 3 + 2 + 4 + 1;
+
 /// Ground draws as one float array: the draw count, then per draw its layer
 /// (`mmorpg_presentation::ground::Layer` order), overlay and far flags (0 or 1), vertex and index
 /// counts, then positions and normals (three floats per vertex), sRGB colours (three), texture
@@ -598,5 +673,23 @@ mod tests {
                 .sum::<usize>();
         assert_eq!(models().len(), draws * 16);
         assert_eq!(motion(1.0, true).len(), scene.animated.len() * 16);
+    }
+
+    /// Seeded far levels (#855) are handed out as the stream would build them; truncated ones
+    /// are refused.
+    #[test]
+    fn seeded_far_levels_match_the_built_ones() {
+        let stream = TerrainStream::new(false);
+        let built: Vec<_> = (0..stream.count()).map(|index| stream.far(index)).collect();
+        let levels = far_levels();
+        assert_eq!(levels, built.concat());
+        assert!(!seed_far_levels(
+            prefix(),
+            levels[..levels.len() - 1].to_vec()
+        ));
+        assert!(seed_far_levels(prefix(), levels));
+        for (index, level) in built.iter().enumerate() {
+            assert_eq!(&stream.far(index), level, "tile {index}");
+        }
     }
 }

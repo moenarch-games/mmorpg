@@ -1079,6 +1079,32 @@ pub fn seed_static_scene(
         .is_ok_and(|layout| static_scene::seed(skeleton, (layout, vertices, indices, models)))
 }
 
+/// The hosted static scene's prefix (`StaticScene::prefix`), which [`seed_terrain_far_levels`]
+/// checks.
+#[wasm_bindgen(js_name = staticScenePrefix)]
+#[must_use]
+pub fn static_scene_prefix() -> String {
+    static_scene::prefix()
+}
+
+/// Every terrain tile's far level of the hosted scene (#855), packed as [`static_scene::TerrainStream`]'s `far`
+/// packs one, in tile order, for [`seed_terrain_far_levels`] in another instance of this module.
+#[wasm_bindgen(js_name = terrainFarLevels)]
+#[must_use]
+pub fn terrain_far_levels() -> Vec<f32> {
+    static_scene::far_levels()
+}
+
+/// Reuses the far levels another instance of this module derived (#855) for the scene with
+/// `prefix` ([`static_scene_prefix`]), so this instance's terrain streams hand them out instead
+/// of building them. False, nothing seeded, for truncated levels or once seeded; another scene's
+/// are ignored.
+#[wasm_bindgen(js_name = seedTerrainFarLevels)]
+#[must_use]
+pub fn seed_terrain_far_levels(prefix: String, levels: Vec<f32>) -> bool {
+    static_scene::seed_far_levels(prefix, levels)
+}
+
 /// The hosted grass's per-sample density and tint (#855), for [`seed_grass`] in another
 /// instance of this module; derives the grass now.
 #[wasm_bindgen(js_name = grassSeed)]
