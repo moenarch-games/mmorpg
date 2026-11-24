@@ -24,7 +24,9 @@ const START: [i32; 2] = [0, -9_000];
 const DRAW: [i32; 2] = [-250, -9_480];
 
 /// The shipped terrain, colliders and templates with only the powder watch and its barrels, so
-/// the rest of the camp does not join in.
+/// the rest of the camp does not join in. The seed is pinned: content seeds its zone from its
+/// own fingerprint, so a collision edit anywhere in Greyhaven would otherwise move where the
+/// bandits idle, and one may stand on [`DRAW`] when the Ranger walks there.
 fn content() -> Arc<ZoneContent> {
     let shipped = greyhaven_vale::content();
     let watch: Vec<_> = powder_watch::BARRELS
@@ -49,7 +51,8 @@ fn content() -> Arc<ZoneContent> {
         )
         .unwrap()
         .with_creature_abilities(greyhaven_vale::units::creature_abilities())
-        .unwrap(),
+        .unwrap()
+        .with_rng_seed(0xb323_f98a_aa51_6cad),
     )
 }
 
