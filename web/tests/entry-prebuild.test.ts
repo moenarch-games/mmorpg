@@ -75,6 +75,23 @@ test("a compose settles within its round limit, and new roots re-prepare a bound
   expect(counts.prepares).toBe(MAX_PREPARES_PER_ENTRY);
 });
 
+test("the static scene stops before its grass until the grass's seed arrives, unsettled, and finishes when asked again", async () => {
+  const { prebuild, idle, counts, deriveGrass } = harness(2, false);
+  prebuild.request({ at: 1 }, "1", true);
+  expect(await idle()).toBe(STATIC_PARTS - 1);
+  expect(counts).toMatchObject({ parts: STATIC_PARTS - 1, composes: 0, prepares: 0 });
+  expect(prebuild.settled).toBe(false);
+  // Asking again before the grass arrives builds nothing.
+  prebuild.request({ at: 1 }, "1", true);
+  expect(await idle()).toBe(0);
+  deriveGrass();
+  prebuild.request({ at: 1 }, "1", true);
+  await idle();
+  expect(counts).toMatchObject({ parts: STATIC_PARTS, composes: 2, prepares: 1 });
+  expect(prebuild.settled).toBe(true);
+  expect(prebuild.work.staticParts).toBe(STATIC_PARTS);
+});
+
 test("entering the world pauses the prebuild; a static scene left unfinished is built by the first frame", async () => {
   const { prebuild, idle, frame, counts, slices } = harness();
   prebuild.request(null, null, false);

@@ -36,7 +36,7 @@ import {
 } from "./orbit-camera";
 import { SceneryFrame, buildSceneryScene, type DrawnKits, type SceneryScene } from "./scenery-nodes";
 import { markStartup } from "../startup-marks";
-import { EntryPrebuild, type EntryPreview, type PrebuildWork } from "./entry-prebuild";
+import { EntryPrebuild, STATIC_PARTS, type EntryPreview, type PrebuildWork } from "./entry-prebuild";
 import { FrameStages, PanelGate, RootRegistry, emptyFrameWork, fixedRootEntry, rootEntry, type FrameWork } from "./frame-stages";
 import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects } from "./impact-effects";
@@ -419,8 +419,8 @@ const RECEIVED_PANELS = 9;
 const LATEST_PANELS = 3;
 const NO_NODES: readonly RendererSceneNode[] = [];
 const NO_KICK = [0, 0, 0] as const;
-/** The static scene's parts (`#buildStaticPart`): the decoded scene, its batches, the ground and the grass. */
-const STATIC_PARTS = 4;
+/** The static scene's last part (`#buildStaticPart`), the grass, which waits for the grass's seed (#855). */
+const GRASS_PART = STATIC_PARTS - 1;
 
 function appendAll<T>(into: T[], from: readonly T[]): void {
   for (let index = 0; index < from.length; index += 1) { into.push(from[index]!); }
@@ -566,6 +566,10 @@ export class WorldView {
   #loadedWorld: ZoneWorld | null = null;
   /** How many of the static scene's parts (`STATIC_PARTS`) are built for the loaded world. */
   #staticParts = 0;
+  /** The loaded scene's rest transforms, read by the static scene's first part for its second (#855). */
+  #restModels: Float32Array | null = null;
+  /** Whether the grass's seed has reached the page's module (#855): until then the static scene stops before its grass. */
+  #grassDerived = false;
   /** Static scene builds a world frame had to run itself: none once the selection screen prebuilt it (#855). */
   #frameStaticBuilds = 0;
   /** The selection screen's prebuild of the entry view (#855). */
@@ -776,6 +780,7 @@ export class WorldView {
     ]);
     this.#prebuild = new EntryPrebuild<EntryPreview>({
       staticBuilt: () => this.#staticParts >= STATIC_PARTS,
+      staticPartReady: () => this.#staticParts !== GRASS_PART || this.#grassDerived,
       buildStaticPart: () => { if (this.#loadedWorld) { this.#buildStaticPart(this.#loadedWorld); } },
       compose: (entry) => this.#composeEntry(entry),
       prepareKey: () => this.#entryPrepareKey(),
@@ -862,6 +867,7 @@ export class WorldView {
     this.#loadedWorld = world;
     this.#rootRegistry.markDirty();
     this.#staticParts = 0;
+    this.#restModels = null;
     this.#prebuild.reset();
     this.#avatarPrepared = false;
     this.#pendingKitArea = null;
@@ -945,10 +951,12 @@ export class WorldView {
    * units, and once `prepare` allows it (the entry art is in) that view's programs and textures through the lighting's
    * passes. Enter World then joins into the built scene, and its `prepare` adds what the joined projection changes: the
    * units. A different character or slot composes and prepares again; the static scene stays. Cheap to call again with
-   * the same arguments; nothing joins.
+   * the same arguments; nothing joins. The static scene starts once the worker's scene reached the page and stops before
+   * its grass until `grassDerived` says the grass's seed did too; ask again then.
    */
-  prebuild(world: ZoneWorld, entry: EntryPreview | null, prepare: boolean): void {
+  prebuild(world: ZoneWorld, entry: EntryPreview | null, prepare: boolean, grassDerived: boolean): void {
     if (world.scenery !== this.#loadedScenery || !this.#loadedWorld) { return; }
+    this.#grassDerived = grassDerived;
     const key = entry && `${entry.feet.join(",")}|${entry.facing}|${wasm.zoneSkyHour(entry.tick, this.#animate)}`;
     // The turntable's first frame prepares its own programs first; a prebuild prepare meanwhile would swap the scene.
     this.#prebuild.request(entry, key, prepare && this.#previewPrepared !== "pending");
@@ -1111,24 +1119,37 @@ export class WorldView {
   }
 
   /**
-   * Builds the static scene's next part (`STATIC_PARTS` in all): the decoded scene, the batches its groups stream into,
-   * the ground, the grass. The selection screen's prebuild builds one per idle slice (#855).
+   * Builds the loaded world's static scene up to its grass (#855): Enter World clicked before the prebuild finished
+   * builds these while the worker still derives the grass, which the world's prepare then adds.
+   */
+  buildStaticBeforeGrass(world: ZoneWorld): void {
+    if (world.scenery !== this.#loadedScenery || !this.#loadedWorld) { return; }
+    while (this.#staticParts < GRASS_PART) { this.#buildStaticPart(world); }
+  }
+
+  /**
+   * Builds the static scene's next part (`STATIC_PARTS` in all): the page's module realizing its seeded scene (its
+   * terrain tiles, on the first read of the rest transforms), the decoded scene, the batches its groups stream into, the
+   * ground, the grass. The selection screen's prebuild builds one per idle slice (#855).
    */
   #buildStaticPart(world: ZoneWorld): void {
     const part = this.#staticParts;
     this.#staticParts += 1;
     const content = world.scenery.staticScene;
     if (part === 0) {
-      const scene = buildSceneryScene(world.scenery.scenery, content);
+      this.#restModels = content.staticSceneMotion(0, false);
+    } else if (part === 1) {
+      const scene = buildSceneryScene(world.scenery.scenery, content, this.#restModels ?? undefined);
+      this.#restModels = null;
       this.#scene = scene;
       this.#sceneryFrame = new SceneryFrame(scene);
-    } else if (part === 1) {
+    } else if (part === 2) {
       this.#sceneryBatches = this.#zone.own(new BatchedScenery(this.#scene!, content.groupStream()));
       this.#rootRegistry.markDirty();
-    } else if (part === 2) {
+    } else if (part === 3) {
       this.#ground = this.#zone.own(new Ground(content.terrainStream(), this.#scene!.surfaces, this.#scene!.cutaways));
       void this.#ground.load(this.#models.ktx2Loader);
-    } else if (part === 3) {
+    } else if (part === GRASS_PART) {
       this.#grass = content.grassCell && content.grassCellMetres
         ? new Grass({
           cell: (column, row) => content.grassCell!(column, row), cellMetres: content.grassCellMetres(),

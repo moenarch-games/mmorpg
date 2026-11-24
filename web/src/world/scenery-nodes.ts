@@ -189,8 +189,12 @@ function bounds(group: GroupEntry): Bounds {
   };
 }
 
-/** Decodes the shared static world once; unknown shapes fail closed. */
-export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent): SceneryScene {
+/**
+ * Decodes the shared static world once; unknown shapes fail closed. `rest` is the animated parts' rest transforms
+ * (`staticSceneMotion(0, false)`), which a caller may read in an earlier step: a module seeded with another instance's
+ * scene realizes it, terrain tiles and all, on that first read (#855).
+ */
+export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent, rest?: Float32Array): SceneryScene {
   let layout: Layout;
   try {
     layout = JSON.parse(content.staticScene()) as Layout;
@@ -323,11 +327,11 @@ export function buildSceneryScene(scenery: Scenery, content: StaticSceneContent)
   // Fixed textured roofs use their rest transform and shared cutaway visibility; moving
   // props (flames, doors, sails) retain the renderer's ordinary lit-material path.
   const cutaways: CutawaySurface[] = [];
-  const rest = content.staticSceneMotion(0, false);
+  const restModels = rest ?? content.staticSceneMotion(0, false);
   const animated = layout.animated.map((part, index) => part.flatMap((draw): AnimatedNode[] => {
     if (draw.ground) {
-      if (rest.length < (index + 1) * 16) { fail("cutaway roof needs its rest transform"); }
-      cutaways.push({ part: index, draw: surface(draw), model: rest.slice(index * 16, index * 16 + 16) });
+      if (restModels.length < (index + 1) * 16) { fail("cutaway roof needs its rest transform"); }
+      cutaways.push({ part: index, draw: surface(draw), model: restModels.slice(index * 16, index * 16 + 16) });
       return [];
     }
     return [{ id: draw.id, geometry: geometry(draw), color: draw.color, opacity: draw.opacity,

@@ -71,16 +71,14 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
   const scenery = await derived.scenery;
   const seeded = reused || (scenery !== null && generated.seedTerrainGrids(scenery.grids));
   if (scenery) { generated.seedScenery(scenery.scenery); }
-  staticSceneDerived = Promise.all([
-    derived.scene.then((scene) => {
-      if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
-      markStartup("scene-derived");
-    }),
-    derived.grass.then((grass) => {
-      if (grass) { generated.seedGrass(grass); }
-      markStartup("grass-derived");
-    }),
-  ]).then(() => {});
+  sceneDerived = derived.scene.then((scene) => {
+    if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
+    markStartup("scene-derived");
+  });
+  grassDerived = derived.grass.then((grass) => {
+    if (grass) { generated.seedGrass(grass); }
+    markStartup("grass-derived");
+  });
   const world = createLocalWorld(generated, characters);
   markStartup("world-created");
   if (release && !reused) {
@@ -89,14 +87,24 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
   return world;
 }
 
-let staticSceneDerived: Promise<void> = Promise.resolve();
+let sceneDerived: Promise<void> = Promise.resolve();
+let grassDerived: Promise<void> = Promise.resolve();
 
 /**
- * Settles once the worker's static scene and grass (#855) were seeded into this page's module, or failed, so building
- * the scene then costs only its terrain tiles' levels and the renderer's own work; call after `loadLocalWorld`.
+ * Settles once the worker's static scene (#855) was seeded into this page's module, or failed, so building the scene
+ * then costs only its terrain tiles' levels and the renderer's own work; call after `loadLocalWorld`. Everything of the
+ * static scene but its grass can be built then.
  */
-export function whenStaticSceneDerived(): Promise<void> {
-  return staticSceneDerived;
+export function whenSceneDerived(): Promise<void> {
+  return sceneDerived;
+}
+
+/**
+ * Settles once the worker's grass (#855), derived after the static scene, was seeded into this page's module, or
+ * failed, so the static scene's grass part can be built; call after `loadLocalWorld`.
+ */
+export function whenGrassDerived(): Promise<void> {
+  return grassDerived;
 }
 
 /**
