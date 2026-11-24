@@ -952,14 +952,9 @@ fn cave_roof(p: &Prop, index: usize, scenery: &Scenery) -> Animated {
             let first = geometry.p.len();
             geometry.face(&points);
             let world = points.map(|v| [v[0] + cx, v[1] + cy, v[2] + cz]);
-            // Adjacent shrine cells share one palette, so their joined shore has no
-            // per-cell colour seams. The rock profile and moss still vary in world space.
-            let palette = if mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.contains(&mesh.id) {
-                *mmorpg_core::greyhaven_vale::ids::SHRINE_CAVE_ROOF.start()
-            } else {
-                mesh.id
-            };
-            let color = crate::cliffs::landscape_color(world, palette);
+            // The stone's tone and moss vary in world space, so adjacent shrine cells' joined
+            // shore has no per-cell colour seams.
+            let color = crate::cliffs::landscape_color(world);
             geometry.colors.extend(std::iter::repeat_n(
                 rgb(color).map(f64::from),
                 geometry.p.len() - first,

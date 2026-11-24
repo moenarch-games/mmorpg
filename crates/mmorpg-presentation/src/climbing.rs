@@ -7,12 +7,12 @@
 //! - **Ropes.** Each rope collider ([`PropKind::Rope`], `Grip::Rope`) is a `rope-end`, 1.2 m
 //!   `rope-section`s and a `rope-anchor` whose beam sits just under the face's top, the rope's
 //!   axis 0.30 m in front of the face (the collider's front). The end hangs clear of the ground.
-//! - **Ivy.** A few climbable faces ([`COVERS`]: palisade and cliff faces) and the
+//! - **Ivy.** A few climbable faces ([`COVERS`]: palisade faces) and the
 //!   boundary climbing routes on the terrain wear climbing ivy, a `vine-3m` cover on a low face
 //!   or `vine-strip`s capped by a `vine-top`, so a climbable route reads from about 20 m. A few
-//!   climbable highland crags wear the same ivy as world dressing on their sculpted rock
-//!   (#1195, `content/greyhaven/dressing/crags.json`). The ivy is a cover: the face beneath
-//!   keeps its own grip, and sheer faces stay bare.
+//!   climbable highland crags and Redbrand Hollow cliffs wear the same ivy as world dressing on
+//!   their sculpted rock (#1195, `content/greyhaven/dressing/crags.json` and `hollow-cliffs.json`).
+//!   The ivy is a cover: the face beneath keeps its own grip, and sheer faces stay bare.
 //!
 //! The shared [`Lods`] picks each part's level from the descriptor's `lodSelection`. While a
 //! client does not draw the kit, the static scene draws the procedural ladders and ropes
@@ -77,13 +77,12 @@ const STEEP: f64 = 1.;
 /// along the face in metres from the face's centre)`.
 pub type Cover = (u32, [i32; 2], &'static [f64]);
 
-/// The covered collider faces (#621), each a route two or three strips wide: the Outpost
-/// palisade's north wall from inside and its east wall from outside, and the Redbrand Hollow's
-/// western cliff. The highland crags' ivy is world dressing on their sculpted rock (#1195).
-pub const COVERS: [Cover; 3] = [
+/// The covered collider faces (#621), each a route two strips wide: the Outpost palisade's
+/// north wall from inside and its east wall from outside. The highland crags' and the Redbrand
+/// Hollow's ivy is world dressing on their sculpted rock (#1195).
+pub const COVERS: [Cover; 2] = [
     (*ids::PALISADE.start(), [0, 1], &[8.0, 9.0]),
     (*ids::PALISADE.start() + 6, [1, 0], &[-4.0, -3.0]),
-    (*ids::CLIFFS.start(), [1, 0], &[4.0, 5.0, 6.0]),
 ];
 /// Each boundary climbing route on the terrain wears three strips up its middle.
 const ROUTE_STRIPS: [f64; 3] = [-1., 0., 1.];

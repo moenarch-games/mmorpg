@@ -54,9 +54,9 @@ mod tests {
         // redesign and its heart (#816), its walk-in cottages (#843, #847), its village props (#851), the hamlets' creatures (#859),
         // its walk-in farmhouses (#886), its second settlement props batch (#891), the beasts
         // of #889, the Eastdown meadow (#872), Trapper Sela's hunting bear (#991), the forest lynxes (#989), the
-        // river crayfish (#996), the Southwood stags (#997) and the highland crags' outcrop
-        // groups (#1195).
-        assert_eq!(before.stable_hash(), 0x0a17_95d3_d0b3_047f);
+        // river crayfish (#996), the Southwood stags (#997), the highland crags' outcrop
+        // groups (#1195) and the Redbrand Hollow's re-modelled cliffs (#1195).
+        assert_eq!(before.stable_hash(), 0xb4d7_7299_eecf_2d7d);
         let original: Vec<_> = before
             .props
             .iter()

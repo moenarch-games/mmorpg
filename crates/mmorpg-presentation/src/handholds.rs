@@ -192,8 +192,10 @@ pub fn boulder(
     surface_routes(g, a, centre, radii, seed, routes, put);
 }
 
-/// Routes on an authored cliff's actual facets, at the existing four-metre spacing. The
-/// caller supplies a point low inside the rock so rays leave the solid even below a saddle.
+/// Routes on an authored cliff's actual facets, about one every eight metres round it: on the
+/// Redbrand Hollow's broken rock a few worn lines mark it climbable without striping every face
+/// (#1195, owner Q3: subtle cues). The caller supplies a point low inside the rock so rays
+/// leave the solid even below a saddle.
 pub fn cliff(
     g: &Geometry,
     centre: V,
@@ -201,7 +203,7 @@ pub fn cliff(
     seed: f64,
     put: &mut impl FnMut(u32, Shape, Affine),
 ) {
-    let routes = ((radii[0] + radii[2]) * 4. / ROUTE_SPACING)
+    let routes = ((radii[0] + radii[2]) * 2. / ROUTE_SPACING)
         .round()
         .clamp(2., 32.);
     surface_routes(g, super::geometry::ID, centre, radii, seed, routes, put);
