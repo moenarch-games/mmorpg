@@ -20,6 +20,7 @@
 use std::fmt;
 
 mod engine;
+mod mover_grid;
 #[cfg(feature = "physics-ab")]
 mod queries;
 #[cfg(feature = "physics-ab")]
@@ -599,6 +600,11 @@ pub struct StepStats {
     /// every platform (#895). Static colliders are reached only through the backend's query tree
     /// when a move sweeps past them, so this does not grow with a zone's scenery.
     pub visited: usize,
+    /// Bodies the slide-around intent examined for the moving bodies that stepped with horizontal
+    /// motion (#1149, the `mover-pairs` operation in `.performance/contract.json`): each candidate
+    /// neighbour counts once per mover, the mover itself included. Asleep and still bodies examine
+    /// none.
+    pub mover_pairs: usize,
 }
 
 /// How [`World::grounded`] answered its reads since the world was built (#1148, the

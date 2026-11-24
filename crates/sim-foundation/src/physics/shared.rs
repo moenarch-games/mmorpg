@@ -51,11 +51,13 @@ pub(super) const TICKS_PER_SECOND: f32 = crate::TICK_HZ as f32;
 /// along it, so characters slide around each other instead of locking head-on: Rapier's
 /// controller only stops a kinematic body at another (#273; physics-engine #308 will do
 /// this natively). Within 60 degrees of head-on, both step aside to opposite sides at full
-/// speed. The engine arm turns its moves the same way, so the two agree.
+/// speed. The engine arm turns its moves the same way, so the two agree. `pairs` counts every
+/// body examined (#1149, the `mover-pairs` operation); it never steers the result.
 pub(super) fn slide_around<'a>(
     bodies: impl IntoIterator<Item = &'a RigidBody>,
     body: &RigidBody,
     desired: [f32; 3],
+    pairs: &mut usize,
 ) -> [f32; 3] {
     let [mut vx, vy, mut vz] = desired;
     let speed = libm::hypotf(vx, vz);
@@ -69,6 +71,7 @@ pub(super) fn slide_around<'a>(
         body.position[1] + body.half_extents.y as f32,
     );
     for other in bodies {
+        *pairs += 1;
         if other.id == body.id || !other.is_moving() {
             continue;
         }
