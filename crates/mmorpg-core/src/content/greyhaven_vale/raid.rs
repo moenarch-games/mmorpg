@@ -43,7 +43,7 @@ const APPROACHES: [ApproachRow; 3] = [
 
 /// From the barn to the camp, last point the camp.
 #[rustfmt::skip]
-const RETREAT: [[i32; 2]; 19] = [
+const RETREAT: [[i32; 2]; 20] = [
     [6_400, 3_000],
     [5_400, 1_400],
     [5_400, -1_800],
@@ -58,9 +58,10 @@ const RETREAT: [[i32; 2]; 19] = [
     [-3_600, -7_000],
     [0, -7_000],
     // Along the quarry's south wall and in through its gateway (#1195).
-    [-1_200, -7_600],
-    [-2_800, -8_300],
-    [-3_700, -9_600],
+    [-600, -7_650],
+    [-2_000, -7_800],
+    [-3_000, -8_200],
+    [-3_700, -9_400],
     [-3_900, -10_800],
     [-3_000, -11_300],
     [-1_800, -11_300],

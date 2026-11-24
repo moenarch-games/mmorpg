@@ -95,18 +95,18 @@ K = len(BENCH)
 # The rim's back edge: the end of the face's rising part.
 RIM = 7
 # Where benches have collapsed into scree cones: (x, z) on the inner foot, half width (m).
-SCREES = [((-6.0, -134.0), 3.2), ((10.0, -133.0), 2.0), ((-11.0, -93.4), 2.8)]
+SCREES = [((-6.0, -134.0), 3.2), ((10.0, -133.0), 2.0), ((-15.8, -95.5), 2.4)]
 
 # Climbing ivy (#621's kit) down a few cut faces: (x, z) on the inner foot, the bench it hangs
 # from (0: the floor's cut, 1: the cut above the first bench).
 IVY = [((-12.5, -133.6), 0), ((-11.5, -133.7), 0), ((-2.0, -134.0), 1), ((13.0, -132.0), 0),
-       ((-14.5, -92.9), 0), ((-15.2, -93.3), 1)]
+       ((-13.0, -92.8), 0), ((-13.6, -92.9), 1)]
 VINE_PITCH = 2.0
 VINE_TOP_HEIGHT = 1.0
 VINE_OUT = 0.05
 # Stacked cut blocks on the floor (limestone kit): (x, z, base above the datum, yaw, kind).
 BLOCKS = [(6.0, -97.6, 0.0, 1000, 1), (7.4, -97.3, 0.0, 64800, 2), (6.7, -97.5, 0.9, 2600, 3),
-          (-4.0, -131.4, 0.0, 3100, 2), (-2.6, -131.0, 0.0, 900, 1), (-12.0, -96.4, 0.0, 0, 3),
+          (-4.0, -130.4, 0.0, 3100, 2), (-2.6, -130.0, 0.0, 900, 1), (-12.0, -96.4, 0.0, 0, 3),
           (3.6, -94.8, 0.0, 30000, 1)]
 
 # Segments: (collider ID, grip) in the outline's order; their extents are found in `segments`.
@@ -203,7 +203,7 @@ def outer_scale(x, z):
     dz, dx = (z - CZ) / BZ, (x - CX) / AX
     s = 1.0
     if dz > 0:
-        s -= 0.42 * min(1, dz)     # south: keep off the basin rim and the ridge path
+        s -= 0.6 * min(1, 1.25 * dz)  # south: keep off the basin rim and the Hollow Road
     if dx > 0:
         s -= 0.12 * min(1, dx)     # east: keep off the cave mound
     return s
@@ -228,9 +228,12 @@ def ring(part, index, count, x, z, n, u):
         plan *= smooth(0.0, 3.0, ROPE_FACE_Z - z) if rope else smooth(0.0, 3.0, abs(x) - 6.0)
     bx, bz = x + nx * plan, z + nz * plan
     profile = []
+    blended = []
+    lobe = 2.6 * max(0.0, wave(u * 11.0, 13))                  # buttress lobes outside
     for k in range(K):
         o = wb * BENCH[k][0] + ws * SHEER[k][0] + wn * NATURAL[k][0] + wsc * SCREE[k][0]
         h = wb * BENCH[k][1] + ws * SHEER[k][1] + wn * NATURAL[k][1] + wsc * SCREE[k][1]
+        blended.append(o)
         rough = wn + 0.3 * wb + 0.6 * wsc
         if 1 <= k <= 6:
             h += rough * 0.6 * wave(index * 0.23 + u * 31, k)
@@ -238,12 +241,17 @@ def ring(part, index, count, x, z, n, u):
             h += (wb + wsc) * 0.6 * wave(u * 5.0, 2)          # benches jog slowly
         if 6 <= k <= 9:
             h += 1.4 * wave(u * 7.0, 7) * (1 - 0.7 * ws)      # crest saddles and knolls
-        if 7 <= k <= 9:
-            lobe = 2.6 * max(0.0, wave(u * 11.0, 13))          # buttress lobes outside
-            o = (o + lobe * (k - 6) / 4) * outer_scale(x, z) + 0.8 * wave(u * 53.0, k, 5)
+        if k == RIM:
+            # The rim keeps its width behind the face's top.
+            o = profile[RIM - 1][0] + (o - blended[RIM - 1]) + lobe / 4
+        if k > RIM:
+            # The outer slope falls from the rim's back edge, its reach shortened toward the
+            # basin rim and the cave mound.
+            reach = o - blended[RIM] + (lobe * (k - RIM) / 4 if k < K - 1 else lobe * 3 / 4)
+            o = profile[RIM][0] + reach * outer_scale(x, z)
+        if RIM <= k <= 9:
+            o += 0.8 * wave(u * 53.0, k, 5) * (0.3 if k == RIM else 1.0)
             h += 0.9 * wave(u * 61.0, k, 5)
-        if k == K - 1:
-            o *= outer_scale(x, z)
         profile.append([o, h])
     # The gateway's spurs drop toward their outer ends.
     if part != 'arc':

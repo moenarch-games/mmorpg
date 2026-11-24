@@ -71,9 +71,8 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
             name: "Hollow camp track",
             points: vec![
                 [-2800, -11300],
-                [-1100, -11300],
-                [-500, -11550],
-                [-100, -11450],
+                [-1100, -11250],
+                [-100, -11300],
                 [1100, -11300],
                 [1750, -11300],
             ],
@@ -81,12 +80,12 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
         },
         crate::Road {
             name: "Hollow north tent track",
-            points: vec![[-100, -11450], [-200, -11900], [-250, -12600]],
+            points: vec![[-100, -11300], [-150, -11900], [-250, -12500]],
             half_width: 70,
         },
         crate::Road {
             name: "Hollow south tent track",
-            points: vec![[-100, -11450], [50, -10700], [50, -10300]],
+            points: vec![[-100, -11300], [50, -10700], [50, -10300]],
             half_width: 70,
         },
         crate::Road {

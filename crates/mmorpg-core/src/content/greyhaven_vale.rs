@@ -1766,12 +1766,22 @@ pub const ROPES: [Rope; 3] = [
     },
 ];
 
+/// The top of the Redbrand quarry's rock over `(x, z)` (units), if its wall stands there
+/// (#1195): the highest upward face of its segments.
+#[must_use]
+pub fn quarry_rock_top([x, z]: [i32; 2]) -> Option<i32> {
+    cave::collision_meshes()
+        .iter()
+        .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
+        .filter_map(|mesh| surface_at(mesh, [x, z]))
+        .max()
+}
+
 /// The spawns resting on the Redbrand quarry's rock rather than the terrain (#1195): the
 /// boulder trap on the south spur's rim above the gateway, at the rock's highest surface under
 /// its middle and a quarter of its width round it.
 #[must_use]
 pub fn perches() -> Vec<(crate::CreatureId, i32)> {
-    let rock = cave::collision_meshes();
     units::creature_spawns()
         .into_iter()
         .filter(|spawn| spawn.template == units::templates::BOULDER)
@@ -1779,12 +1789,7 @@ pub fn perches() -> Vec<(crate::CreatureId, i32)> {
             let [x, z] = spawn.position;
             let feet = [(0, 0), (-35, 0), (35, 0), (0, -35), (0, 35)]
                 .into_iter()
-                .filter_map(|(dx, dz)| {
-                    rock.iter()
-                        .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
-                        .filter_map(|mesh| surface_at(mesh, [x + dx, z + dz]))
-                        .max()
-                })
+                .filter_map(|(dx, dz)| quarry_rock_top([x + dx, z + dz]))
                 .max()?;
             Some((spawn.id, feet))
         })
@@ -1967,7 +1972,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             id: crate::PieceId::new(id),
             site: 1,
             body,
-            position: [x, basin::TERRACE_Y + 125, -12_200],
+            position: [x, basin::TERRACE_Y + 125, -11_700],
             half_extents: [150, 125, 20],
             health: 120,
             supports: Vec::new(),
@@ -1980,16 +1985,16 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
         wall(
             1,
             west,
-            -4_200,
+            -3_700,
             "the watch post's west wall",
-            Some(([-4_200, basin::TERRACE_Y + 20, -12_200], [150, 20, 40])),
+            Some(([-3_700, basin::TERRACE_Y + 20, -11_700], [150, 20, 40])),
         ),
-        wall(2, east, -3_800, "the watch post's east wall", None),
+        wall(2, east, -3_300, "the watch post's east wall", None),
         crate::StructurePiece {
             id: crate::PieceId::new(3),
             site: 1,
             body: deck,
-            position: [-4_000, basin::TERRACE_Y + 265, -12_200],
+            position: [-3_500, basin::TERRACE_Y + 265, -11_700],
             half_extents: [350, 15, 120],
             health: 60,
             supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],

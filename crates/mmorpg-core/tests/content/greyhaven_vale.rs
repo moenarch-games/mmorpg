@@ -289,6 +289,36 @@ fn roads_are_open_corridors() {
     }
 }
 
+/// The Redbrand quarry's wall segments (#1195) keep their structure footprints, which keep the
+/// woods' trunks off them, equal to their generated rock's bounds and top.
+#[test]
+fn the_quarry_walls_footprints_follow_their_rock() {
+    let definition = greyhaven_vale_definition();
+    for id in ids::CLIFFS {
+        let rock = definition
+            .static_meshes()
+            .iter()
+            .find(|mesh| mesh.id == id)
+            .unwrap_or_else(|| panic!("no quarry segment {id}"));
+        let (mut min, mut max) = ([i32::MAX; 3], [i32::MIN; 3]);
+        for vertex in &rock.vertices {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(rock.position[axis] + vertex[axis]);
+                max[axis] = max[axis].max(rock.position[axis] + vertex[axis]);
+            }
+        }
+        let structure = greyhaven_vale::vale::STRUCTURES
+            .iter()
+            .find(|structure| structure.0 == id)
+            .unwrap();
+        assert_eq!(
+            (structure.1, structure.2, structure.3),
+            ([min[0], min[2]], [max[0], max[2]], max[1] - rock.position[1]),
+            "segment {id}"
+        );
+    }
+}
+
 #[test]
 fn road_clearance_is_exact_at_the_boundary() {
     let post = |x: i32, z: i32| StaticCollider {
@@ -296,12 +326,13 @@ fn road_clearance_is_exact_at_the_boundary() {
         position: [x, 50, z],
         half_extents: [10, 50, 10],
     };
-    // Beside the Hollow Road (x = 0) and beyond its northern end (z = −8 600).
+    // Beside the Hollow Road (x = 0) and beyond its end in the quarry's gateway
+    // (x = −1 800, #1195).
     assert!(clear_of_roads(&post(210, -5_000)));
     assert!(!clear_of_roads(&post(209, -5_000)));
     assert!(!clear_of_roads(&post(0, -5_000)), "standing on the road");
-    assert!(clear_of_roads(&post(0, -8_810)));
-    assert!(!clear_of_roads(&post(0, -8_809)));
+    assert!(clear_of_roads(&post(-1_590, -11_300)));
+    assert!(!clear_of_roads(&post(-1_591, -11_300)));
     // A long box straddling the road without an endpoint near it.
     let wall = StaticCollider {
         id: 99,

@@ -161,6 +161,55 @@ sheared by height, so it varies up a face without bands. The rock PBR material d
 The cave roofs share the same colouring. Live Blender review collection:
 **Redbrand Hollow re-model (1195)**.
 
+## The Redbrand quarry (#1195 part 3b)
+
+Owner decision (2026-11-24, from the live-Blender mock-up "Redbrand quarry mock-up (1195 3b)"):
+the seven ridges give way to one worked quarry, and the cave becomes an old mine.
+`hollow_cliffs.py` now generates one continuous horseshoe wall round a floor of about
+38 × 42 m centred at (0, −113), 16 m north of the old camp. The rim stands 11–15 m above the
+floor. One 12 m gateway cuts 8 m through the rim on the **west** side between two natural rock
+spurs, so the Outpost to the south sees the closed south wall.
+
+- **Faces.** The north and south walls are worked faces: 4.4 m vertical cuts with 2.5 m
+  benches, broken by three scree cones. The east wall is one smooth, sheer cut face (404's
+  old role). The rim is a grassy shoulder, and the outside falls away as natural rock
+  buttresses. The outer slope is shortened toward the south, so its foot keeps off the basin
+  rim and the Hollow Road.
+- **Segments.** The wall is rings of one blended profile (benched cut, sheer cut, natural rock,
+  scree) round the inner foot. It is split into nine closed meshes (400–408, 9–23 m each),
+  each with its own `grip`; only 404 is sheer. Arc segments share their seam ring, so a climb
+  crosses a seam on one face. The gateway's spurs (400, 408) overlap the arc at the gateway's
+  inner corners. There each point takes the height of the face it lies nearest, so the
+  corners meet in a mitre. Every height is relative to the 11 m datum (buried 1.2 m), so the
+  script needs no exported ground and regenerates byte for byte.
+- **Rope.** `ROPES[0]` hangs down the south wall at x = 3.5 m. There the inner foot is a
+  straight cut at z = −92.6 m, the face is upright and the rim is a level landing at 13 m,
+  the highest point of its segment (406).
+- **Old mine.** The mine entrance (410) is a timbered adit at the foot of the east wall,
+  opening west. It has two sets of posts, caps, braces, lagging and half-torn boards over a
+  dark recess. Garrick holds it. Cart rails run west from it across the floor and out
+  through the gateway, with a branch to a spoil heap in the north-east corner and a mine cart
+  on the line. A hand winch stands over an old shaft on the east rim, and a wooden derrick by
+  the south wall reaches over stacked cut blocks. These workings are blockout-level
+  presentation (`mmorpg-presentation/src/quarry.rs`). The cut blocks and the ivy on a few
+  cuts are world dressing (`dressing/hollow-cliffs.json`). Finished mine art would be a later
+  proposal.
+- **Camp.** The tents, crates, fire, bandits, powder watch and spike pit turned with the
+  layout onto the floor. The powder watch keeps its exact spacing. The spike pit is at the
+  gateway's inner end. The watch post stands outside the gateway's north spur and looks down
+  the approach. The boulder trap rests on the south spur's rim above the gateway: creature
+  spawns stand on the terrain, so content now names **perches**, spawns that rest on authored
+  rock at a fixed height (`ZoneContent::with_perches`, `greyhaven_vale::perches`).
+- **Routes and area.** The Hollow Road's last leg runs west along the foot of the south wall,
+  round the south spur and in through the gateway. The Wolfrun Ridge Path ends at the gateway,
+  and the night raid's survivors retreat the same way. Area 5's footprint grows to cover the
+  quarry ([−47, −153]–[38, −70] m); Greyfang Ridge's now starts at z = −153 m, with seeds
+  that keep the Greyfang cave in it. `areas.json` is regenerated. The wider footprints moved
+  the scenery's seeded nature scatter across the region (owner-accepted).
+
+The Redbrand cave, its north mouth, the Depths threshold and the cavern spawns are unchanged.
+Live Blender review collection: **Redbrand quarry (1195 3b) built**.
+
 ## Used camp ground and canvas tents
 
 The camp is now grass with worn approach tracks, a bare fire apron and patches of gravel

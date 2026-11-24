@@ -811,8 +811,39 @@ fn charge_path_commands(tick: usize) -> Vec<(u32, ZoneCommand)> {
 /// The watch post workload's length.
 pub const WATCH_POST_TICKS: usize = mmorpg_core::golden::t30(420) as usize;
 
-/// The arcanist just north of the watch post, inside the camp, and a ranger beside it.
-const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] = [(1, [700.0, -7_350.0]), (2, [300.0, -7_400.0])];
+/// The arcanist just south of the watch post, on the approach to the quarry's gateway, and a
+/// ranger beside it (#1195).
+const WATCH_POST_PLAYERS: [(u32, [f32; 2]); 2] =
+    [(1, [-3_500.0, -11_550.0]), (2, [-3_900.0, -11_500.0])];
+
+/// The two bandits who charge them, out of the quarry where they stood round the post before it
+/// moved to the gateway (#1195): one 6 m off the arcanist and one beyond the ranger.
+const WATCH_POST_BANDITS: [(u32, [f32; 2]); 2] =
+    [(413, [-3_200.0, -11_100.0]), (400, [-5_200.0, -10_700.0])];
+
+/// The watch post workload's zone: [`WATCH_POST_PLAYERS`] at level six and
+/// [`WATCH_POST_BANDITS`] standing on the ground.
+fn watch_post_zone() -> Result<ZoneSimulation, Box<dyn Error>> {
+    let zone = placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?;
+    let mut state = zone.snapshot()?;
+    for creature in &mut state.creatures {
+        let Some(&(_, [x, z])) = WATCH_POST_BANDITS
+            .iter()
+            .find(|(id, _)| *id == creature.creature_id.get())
+        else {
+            continue;
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        let ground = zone.content().definition().ground_at(x as i32, z as i32);
+        #[allow(clippy::cast_precision_loss)]
+        let y = (ground + 90) as f32;
+        creature.position = [x, y, z];
+    }
+    Ok(ZoneSimulation::from_snapshot(
+        state,
+        std::sync::Arc::clone(zone.content()),
+    )?)
+}
 
 /// The watch post commands: classes, the nearest bandits as targets, Fire Blasts and arrows
 /// fired where the standing players turn to face them, and the ranger's swings at its bandit
@@ -836,13 +867,13 @@ fn watch_post_commands(tick: usize, zone: &ZoneSimulation) -> Vec<(u32, ZoneComm
             (2, ZoneCommand::ChooseClass { class: 1, sex: 1 }),
         ],
         1 => vec![
-            (1, ZoneCommand::SelectTarget(creature(401))),
+            (1, ZoneCommand::SelectTarget(creature(413))),
             (2, ZoneCommand::SelectTarget(creature(400))),
         ],
         // The bandits run at them past the post; blast whoever is at the walls.
         30 | 340 => vec![
-            (1, face(1, 401)),
-            (1, ability(ids::FIRE_BLAST, creature(401))),
+            (1, face(1, 413)),
+            (1, ability(ids::FIRE_BLAST, creature(413))),
         ],
         60 | 120 | 200 => vec![
             (2, face(2, 400)),
@@ -1160,7 +1191,7 @@ impl Run {
             Workload::MillHoist => (mill_hoist_zone()?, 0),
             Workload::MillRamps => (placed_zone(&MILL_RAMPS_PLAYERS)?, 0),
             Workload::ChargePath => (placed_zone_at_level(&CHARGE_PATH_PLAYERS, 6)?, 0),
-            Workload::WatchPost => (placed_zone_at_level(&WATCH_POST_PLAYERS, 6)?, 0),
+            Workload::WatchPost => (watch_post_zone()?, 0),
             Workload::CrateShove => (crate_shove_zone()?, 0),
             Workload::CrateSmash => (placed_zone_at_level(&CRATE_SMASH_PLAYERS, 6)?, 0),
             Workload::BarrelChain => (barrel_chain_zone()?, 0),

@@ -18,10 +18,10 @@ use support::{arena, classes};
 
 const PLAYER: u32 = 1;
 const RANGER: u8 = 1;
-/// Where the Ranger starts: 9.4 m east of the powder, beyond every watchman's aggro radius.
-const START: [i32; 2] = [0, -9_000];
-/// Where the Ranger draws the pair: 5.5 m east of the powder, just outside its blast.
-const DRAW: [i32; 2] = [-250, -9_480];
+/// Where the Ranger starts: 9.4 m south of the powder, beyond every watchman's aggro radius.
+const START: [i32; 2] = [-700, -11_150];
+/// Where the Ranger draws the pair: 5.5 m south of the powder, just outside its blast.
+const DRAW: [i32; 2] = [-220, -11_400];
 
 /// The shipped terrain, colliders and templates with only the powder watch and its barrels, so
 /// the rest of the camp does not join in. The seed is pinned: content seeds its zone from its

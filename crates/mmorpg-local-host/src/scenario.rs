@@ -34,10 +34,10 @@ pub enum Scenario {
     /// A level 6 Warden before the Greyfang cave mouth with *Deeper into the Hollow* accepted,
     /// facing in: Redbrand Bandits, Crossbowmen and two shield-bearing Brutes hold the outer
     /// cavern and the inner chamber with its sealed threshold (#160).
-    /// A level 6 Warden on the rise above the Redbrand camp, a step south of the boulder trap
-    /// (#299), facing it: walk north to roll it downhill onto the camp, or Shield Bash it.
+    /// A level 6 Warden on the Redbrand quarry's south spur, a step south of the boulder trap
+    /// (#299), facing it: walk north to roll it off the rim into the gateway, or Shield Bash it.
     BoulderTrap,
-    /// A level 6 Warden in the Redbrand camp, 4 m east of the spike pit (#300), facing it:
+    /// A level 6 Warden in the Redbrand quarry, 4 m east of the spike pit (#300), facing it:
     /// walk west into the spikes, or step north or south to go round them, or back a bandit up
     /// to the pit and Shield Bash it in (#955).
     RedbrandTraps,
@@ -84,13 +84,13 @@ pub enum Scenario {
     WardenCharge,
     /// … and Cleave's sweep.
     WardenCleave,
-    /// A level 6 Warden south of the Redbrand Hollow camp, facing the bandits: Shield Bash one to
+    /// A level 6 Warden in the Redbrand quarry's gateway, facing the bandits: Shield Bash one to
     /// see it reel (#582).
     WardenStun,
     /// A level 6 Warden on his last hit point beside a Wolfrun wolf: once it kills him, release
     /// the spirit to rise at the graveyard (#582).
     WardenRespawn,
-    /// A level 8 Warden a few steps south of Garrick Redbrand at the mine entrance, facing him:
+    /// A level 8 Warden a few steps west of Garrick Redbrand at the old mine's adit, facing him:
     /// his whirl winds up through its cast and spins (#582).
     RedbrandWhirl,
     /// A level 8 Warden a few steps south of the Greyfang cavern's west Redbrand Brute, facing it:
@@ -106,7 +106,7 @@ pub enum Scenario {
     RogueDaggers,
     /// … and 13 m from it, the Throwing Knife, Venom Flask and Blasting Bomb throws.
     RogueThrows,
-    /// A level 8 Warden 5 m south of a Redbrand Hollow bandit, facing it: beaten below half
+    /// A level 8 Warden 5 m east of a Redbrand Hollow bandit, facing it: beaten below half
     /// health, it wraps a Crude Bandage round its forearm (#603).
     RedbrandBandage,
     /// A level 6 Ranger with full focus 13 m east of a Wolfrun wolf, facing it, to review the
@@ -373,12 +373,12 @@ impl Scenario {
             | Self::WardenWarcry => ([-4_900, -3_600], 49_152),
             // 12 m north of Redbrand Crossbowman 600 at (-1 350, -17 250); facing south at it.
             Self::RedbrandCrossbowman => ([-1_350, -16_050], 32_768),
-            // 12 m south of the camp's nearest bandits; facing north.
-            Self::WardenStun => ([0, -6_600], 32_768),
-            // 5 m south of Redbrand Bandit 401 at (1 000, -7 800); facing north at it.
-            Self::RedbrandBandage => ([1_000, -7_300], 32_768),
-            // 5 m south of Garrick; facing north.
-            Self::RedbrandWhirl => ([0, -10_000], 32_768),
+            // In the quarry's gateway, 12 m west of the camp's nearest bandits; facing east.
+            Self::WardenStun => ([-2_900, -11_300], 16_384),
+            // 5 m east of Redbrand Bandit 401 at (-1 600, -10 300); facing west at it.
+            Self::RedbrandBandage => ([-1_100, -10_300], 49_152),
+            // 5 m west of Garrick at the old mine's adit; facing east.
+            Self::RedbrandWhirl => ([1_050, -11_100], 16_384),
             // 4 m south of the west Brute (650); facing north toward it.
             Self::RedbrandSmash => ([6_100, -13_300], 32_768),
             // 3 m north of Greyhaven Guard 6 at (-500, -800), who faces north; facing south.
@@ -386,10 +386,11 @@ impl Scenario {
             // On the relocated lake's east shore; facing west across the water.
             Self::SunkenShrine => ([-6_200, -5_300], 49_152),
             // On the authored north approach; face south through the concealed mouth (#644).
-            // Just south of the boulder trap on the rise, facing north down it (#299).
-            Self::BoulderTrap => ([950, -7_300], 32_768),
+            // On the quarry's south spur, just south of the boulder trap, facing north over the
+            // gateway (#299, #1195).
+            Self::BoulderTrap => ([-2_350, -9_810], 32_768),
             // Just east of the camp's spike pit, facing west into it (#300).
-            Self::RedbrandTraps => ([-1_400, -8_600], 49_152),
+            Self::RedbrandTraps => ([-1_150, -11_550], 49_152),
             Self::RedbrandCavern => ([6_400, -15_600], 0),
             // In the threshold strip's corner, facing the barred doorway to the east; the door's
             // Brute is three metres off and has not struck yet.
@@ -525,10 +526,12 @@ pub(crate) fn fresh_record(
     let id = CharacterId::new(id.to_owned()).map_err(zone_error)?;
     let mut record = template.capture_character(1, id).map_err(zone_error)?;
     // Outer-valley hills are physical (#159): stand on the authored ground, not inside it.
+    // On the Redbrand quarry's wall (#1195), stand on its rock.
     let ground = content
         .definition()
         .terrain()
-        .map_or(0, |terrain| terrain.height_at(x, z));
+        .map_or(0, |terrain| terrain.height_at(x, z))
+        .max(mmorpg_core::greyhaven_vale::quarry_rock_top([x, z]).unwrap_or(i32::MIN));
     record.level = level;
     record.experience = 0;
     record.location = CharacterLocation {
