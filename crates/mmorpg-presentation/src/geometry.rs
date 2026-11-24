@@ -206,7 +206,19 @@ pub fn blade() -> Geometry {
         ..Default::default()
     }
 }
+/// A `sides`-sided frustum, memoized ([`memo`]).
 pub fn frustum(sides: usize, top: f64, smooth: bool, caps: bool, offset: f64) -> Geometry {
+    let key = [
+        sides as u64,
+        top.to_bits(),
+        u64::from(smooth) | u64::from(caps) << 1,
+        offset.to_bits(),
+    ];
+    memo(Shape::Frustum, key, || {
+        build_frustum(sides, top, smooth, caps, offset)
+    })
+}
+fn build_frustum(sides: usize, top: f64, smooth: bool, caps: bool, offset: f64) -> Geometry {
     let mut g = Geometry::default();
     let ring = |r: f64, y: f64| -> Vec<V> {
         (0..sides)
@@ -273,7 +285,19 @@ pub fn hash(values: &[f64]) -> f64 {
     }
     f64::from(s) / 4294967296.
 }
+/// A jittered icosphere, memoized ([`memo`]).
 pub fn blob(detail: usize, smooth: bool, jitter: f64, seed: f64) -> Geometry {
+    let key = [
+        detail as u64,
+        u64::from(smooth),
+        jitter.to_bits(),
+        seed.to_bits(),
+    ];
+    memo(Shape::Blob, key, || {
+        build_blob(detail, smooth, jitter, seed)
+    })
+}
+fn build_blob(detail: usize, smooth: bool, jitter: f64, seed: f64) -> Geometry {
     let t = (1. + 5f64.sqrt()) / 2.;
     let mut v = vec![
         [-1., t, 0.],
@@ -378,4 +402,32 @@ pub fn align_y(d: V) -> Affine {
         ],
         ..ID
     }
+}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Shape {
+    Blob,
+    Frustum,
+}
+/// Shapes built at most this many times each before [`memo`] stops remembering new ones.
+const MEMO_LIMIT: usize = 4096;
+/// `build`'s shape for `key`, built once per thread (#855): the static scene asks for the same
+/// few blobs and frusta for every one of ~30 000 trees and bushes, and building them each time
+/// was a fifth of its props' cost. Bounded by [`MEMO_LIMIT`].
+fn memo(shape: Shape, key: [u64; 4], build: impl FnOnce() -> Geometry) -> Geometry {
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+    thread_local! {
+        static SHAPES: RefCell<BTreeMap<(Shape, [u64; 4]), Geometry>> =
+            const { RefCell::new(BTreeMap::new()) };
+    }
+    if let Some(geometry) = SHAPES.with_borrow(|shapes| shapes.get(&(shape, key)).cloned()) {
+        return geometry;
+    }
+    let geometry = build();
+    SHAPES.with_borrow_mut(|shapes| {
+        if shapes.len() < MEMO_LIMIT {
+            shapes.insert((shape, key), geometry.clone());
+        }
+    });
+    geometry
 }

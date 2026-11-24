@@ -202,11 +202,116 @@ fn tinted(color: u32, x: f64, z: f64, seed: f64) -> u32 {
 
 /// Per-vertex weights of the grid overlays over the near terrain grid. Deriving them is most of
 /// the terrain tiles' cost, so a client that derived them elsewhere hands them over in the
-/// static scene's skeleton (#855).
+/// static scene's skeleton (#855). Each layer's values serialize as one byte string
+/// ([`packed`]), not value by value.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Weights {
+    #[serde(with = "packed")]
     layers: BTreeMap<Layer, Vec<f64>>,
+    #[serde(with = "packed")]
     colors: BTreeMap<Layer, Vec<u32>>,
+}
+
+/// A map of per-sample values serialized as one little-endian byte string per entry (#855):
+/// value by value, postcard spent ~120 ms in wasm on the ~48 MB of weights each way.
+mod packed {
+    use super::Layer;
+    use serde::de::{Deserializer, Error, Visitor};
+    use serde::ser::Serializer;
+    use std::collections::BTreeMap;
+    use std::marker::PhantomData;
+
+    /// A value with a fixed-width little-endian encoding.
+    pub(super) trait Word: Copy {
+        const SIZE: usize;
+        fn put(self, out: &mut Vec<u8>);
+        fn get(bytes: &[u8]) -> Self;
+    }
+
+    impl Word for f64 {
+        const SIZE: usize = 8;
+        fn put(self, out: &mut Vec<u8>) {
+            out.extend_from_slice(&self.to_le_bytes());
+        }
+        fn get(bytes: &[u8]) -> Self {
+            Self::from_le_bytes(bytes.try_into().expect("an 8-byte chunk"))
+        }
+    }
+
+    impl Word for u32 {
+        const SIZE: usize = 4;
+        fn put(self, out: &mut Vec<u8>) {
+            out.extend_from_slice(&self.to_le_bytes());
+        }
+        fn get(bytes: &[u8]) -> Self {
+            Self::from_le_bytes(bytes.try_into().expect("a 4-byte chunk"))
+        }
+    }
+
+    struct Bytes<'a, T>(&'a [T]);
+
+    impl<T: Word> serde::Serialize for Bytes<'_, T> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            // In blocks through a call of their own, as `Identity::each` (#855).
+            #[inline(never)]
+            fn block<T: Word>(out: &mut Vec<u8>, values: &[T]) {
+                for &value in values {
+                    value.put(out);
+                }
+            }
+            let mut out = Vec::with_capacity(self.0.len() * T::SIZE);
+            for values in self.0.chunks(4096) {
+                block(&mut out, values);
+            }
+            serializer.serialize_bytes(&out)
+        }
+    }
+
+    struct Values<T>(Vec<T>);
+
+    impl<'de, T: Word> serde::Deserialize<'de> for Values<T> {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Packed<T>(PhantomData<T>);
+            impl<T: Word> Visitor<'_> for Packed<T> {
+                type Value = Values<T>;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "a byte string of {}-byte values", T::SIZE)
+                }
+                fn visit_bytes<E: Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+                    if !bytes.len().is_multiple_of(T::SIZE) {
+                        return Err(E::invalid_length(bytes.len(), &self));
+                    }
+                    #[inline(never)]
+                    fn block<T: Word>(out: &mut Vec<T>, bytes: &[u8]) {
+                        out.extend(bytes.chunks_exact(T::SIZE).map(T::get));
+                    }
+                    let mut out = Vec::with_capacity(bytes.len() / T::SIZE);
+                    for bytes in bytes.chunks(4096 * T::SIZE) {
+                        block(&mut out, bytes);
+                    }
+                    Ok(Values(out))
+                }
+            }
+            deserializer.deserialize_bytes(Packed(PhantomData))
+        }
+    }
+
+    pub(super) fn serialize<T: Word, S: Serializer>(
+        map: &BTreeMap<Layer, Vec<T>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(map.iter().map(|(layer, values)| (layer, Bytes(values))))
+    }
+
+    pub(super) fn deserialize<'de, T: Word, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<Layer, Vec<T>>, D::Error> {
+        let map: BTreeMap<Layer, Values<T>> = serde::Deserialize::deserialize(deserializer)?;
+        Ok(map
+            .into_iter()
+            .map(|(layer, values)| (layer, values.0))
+            .collect())
+    }
 }
 
 impl Weights {
@@ -243,13 +348,30 @@ impl Weights {
             .fold(0., f64::max)
     }
 
-    /// Every weight, in a stable order: identity input for the tiles built from them.
-    pub(crate) fn values(&self) -> impl Iterator<Item = f64> + '_ {
+    /// The bytes [`packed`] serializes the weights and colours to.
+    pub(crate) fn packed_len(&self) -> usize {
         self.layers
             .values()
-            .flatten()
-            .copied()
-            .chain(self.colors.values().flatten().map(|&c| f64::from(c)))
+            .map(|weights| weights.len() * 8)
+            .sum::<usize>()
+            + self
+                .colors
+                .values()
+                .map(|colors| colors.len() * 4)
+                .sum::<usize>()
+    }
+
+    /// Hashes every weight and colour, in a stable order: identity input for the tiles built
+    /// from them.
+    pub(crate) fn hash(&self, hash: &mut crate::Identity) {
+        for weights in self.layers.values() {
+            hash.f64s(weights);
+        }
+        for colors in self.colors.values() {
+            let (pairs, rest) = colors.as_chunks::<2>();
+            hash.each(pairs, |[a, b]| u64::from(*a) | u64::from(*b) << 32);
+            hash.each(rest, |c| u64::from(*c));
+        }
     }
 }
 

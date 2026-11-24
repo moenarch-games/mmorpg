@@ -265,14 +265,14 @@ pub struct StaticScene {
     pub terrain: tiles::Tiles,
 }
 
-/// [`StaticScene::skeleton`]'s serialized form.
+/// [`StaticScene::skeleton`]'s serialized form; `W` borrows the weights to serialize them.
 #[derive(serde::Deserialize, serde::Serialize)]
-struct Skeleton {
+struct Skeleton<W = ground::Weights> {
     prefix: String,
     groups: Vec<GroupSkeleton>,
     motions: Vec<Motion>,
     /// The terrain's overlay weights, most of the cost of its tiles.
-    weights: ground::Weights,
+    weights: W,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -306,7 +306,7 @@ impl StaticScene {
                 .chain(&water)
                 .chain(animated.iter().flat_map(|part| &part.draws))
                 .chain(terrain.tiles.iter().flat_map(|tile| &tile.far)),
-            terrain.identity_values(),
+            &terrain,
         );
         let prefix = format!("scenery:{}:{hash:016x}", scenery.content_revision);
         for draw in groups
@@ -348,9 +348,13 @@ impl StaticScene {
                 })
                 .collect(),
             motions: self.animated.iter().map(|part| part.motion).collect(),
-            weights: self.terrain.weights().clone(),
+            weights: self.terrain.weights(),
         };
-        postcard::to_allocvec(&skeleton).expect("the scene skeleton is plain data")
+        // Room for the packed weights up front, so the ~48 MB are not regrown and copied (#855).
+        let room =
+            skeleton.weights.packed_len() + 64 * (skeleton.groups.len() + skeleton.motions.len());
+        postcard::to_extend(&skeleton, Vec::with_capacity(room))
+            .expect("the scene skeleton is plain data")
     }
 
     /// The scene of `scenery` from its [`Self::skeleton`] `bytes`, without draws: no group,
@@ -527,50 +531,111 @@ fn motion(motion: Motion, t: f64, animate: bool) -> Affine {
     }
 }
 
-/// FNV-1a over every draw's identity, placement, material and unique geometry.
-fn identity<'a>(draws: impl Iterator<Item = &'a Draw>, extra: impl Iterator<Item = f64>) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+/// A hash over every draw's identity, placement, material and unique geometry, then the
+/// terrain's near-level inputs ([`tiles::Tiles::hash`]).
+fn identity<'a>(draws: impl Iterator<Item = &'a Draw>, terrain: &tiles::Tiles) -> u64 {
+    let mut hash = Identity(0xcbf2_9ce4_8422_2325);
     let mut seen = std::collections::BTreeSet::new();
-    let mut bytes = |values: &[u8]| {
-        for byte in values {
-            hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3);
-        }
-    };
     for draw in draws {
-        bytes(draw.id.as_bytes());
-        for value in draw
-            .model
-            .iter()
-            .chain(&draw.material.color)
-            .chain(&draw.material.emissive)
-            .chain([&draw.material.opacity])
-        {
-            bytes(&value.to_le_bytes());
-        }
+        hash.text(&draw.id);
+        hash.f32s(&draw.model);
+        hash.f32s(&draw.material.color);
+        hash.f32s(&draw.material.emissive);
+        hash.f32s(&[draw.material.opacity]);
         if let Some(ground) = draw.material.ground {
-            bytes(ground.layer.name().as_bytes());
-            bytes(&[u8::from(ground.overlay), u8::from(ground.far)]);
+            hash.text(ground.layer.name());
+            hash.word(u64::from(ground.overlay) | u64::from(ground.far) << 1);
         }
-        if seen.insert(draw.resource_key.clone()) {
+        if seen.insert(draw.resource_key.as_str()) {
             let g = &draw.geometry;
-            for value in
-                g.p.iter()
-                    .chain(&g.n)
-                    .chain(&g.colors)
-                    .flatten()
-                    .chain(g.uv.iter().flatten())
-                    .chain(g.tangents.iter().flatten())
-                    .chain(&g.alpha)
-            {
-                bytes(&(*value as f32).to_le_bytes());
+            for values in [
+                g.p.as_flattened(),
+                g.n.as_flattened(),
+                g.colors.as_flattened(),
+                g.uv.as_flattened(),
+                g.tangents.as_flattened(),
+                &g.alpha,
+            ] {
+                hash.narrowed(values);
             }
-            for index in &g.indices {
-                bytes(&index.to_le_bytes());
+            for pair in g.indices.chunks(2) {
+                hash.word(
+                    pair.iter()
+                        .rev()
+                        .fold(0, |word, &i| word << 32 | u64::from(i)),
+                );
             }
         }
     }
-    for value in extra {
-        bytes(&value.to_le_bytes());
+    terrain.hash(&mut hash);
+    hash.finish()
+}
+
+/// [`identity`]'s hash, fed one 64-bit word at a time over plain slices (#855): byte-at-a-time
+/// FNV-1a over chained iterators of the geometry and the terrain's weights cost the browser's
+/// scene derivation ~190 ms in wasm. Rotate, xor and multiply per word (as `FxHasher`), then
+/// splitmix64's finalizer, so every input bit reaches every output bit.
+pub(crate) struct Identity(u64);
+
+impl Identity {
+    pub(crate) fn word(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
     }
-    hash
+
+    pub(crate) fn f64s(&mut self, values: &[f64]) {
+        self.each(values, |value| value.to_bits());
+    }
+
+    /// One `word` per value, in blocks through a call of their own: a wasm engine runs a long
+    /// loop in its baseline tier until the call returns (V8's Liftoff, twice as slow here),
+    /// and switches to its optimized code between calls (#855).
+    pub(crate) fn each<T>(&mut self, values: &[T], word: impl Fn(&T) -> u64 + Copy) {
+        #[inline(never)]
+        fn block<T>(hash: &mut Identity, values: &[T], word: impl Fn(&T) -> u64) {
+            for value in values {
+                hash.word(word(value));
+            }
+        }
+        for values in values.chunks(4096) {
+            block(self, values, word);
+        }
+    }
+
+    fn f32s(&mut self, values: &[f32]) {
+        for pair in values.chunks(2) {
+            self.word(
+                pair.iter()
+                    .rev()
+                    .fold(0, |word, value| word << 32 | u64::from(value.to_bits())),
+            );
+        }
+    }
+
+    /// `values` as the `f32`s the clients draw, two to a word.
+    fn narrowed(&mut self, values: &[f64]) {
+        let (pairs, rest) = values.as_chunks::<2>();
+        self.each(pairs, |[a, b]| {
+            u64::from((*a as f32).to_bits()) | u64::from((*b as f32).to_bits()) << 32
+        });
+        for value in rest {
+            self.word(u64::from((*value as f32).to_bits()));
+        }
+    }
+
+    /// `text`'s length, then its bytes in little-endian words (the last one zero-padded).
+    fn text(&mut self, text: &str) {
+        self.word(text.len() as u64);
+        for chunk in text.as_bytes().chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.word(u64::from_le_bytes(word));
+        }
+    }
+
+    fn finish(self) -> u64 {
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
 }
