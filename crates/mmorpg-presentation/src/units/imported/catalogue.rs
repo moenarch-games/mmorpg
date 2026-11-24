@@ -710,7 +710,9 @@ impl Resident {
             | "Fisher Ada" | "Washer Elin"
             // The region's people (#819).
             | "Alewife Gwen Barrow" | "Old Maud" | "Pip" | "Netter Ilsa" | "Trapper Sela"
-            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" | "Trader Maren" => {
+            | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" | "Trader Maren"
+            // Millbrook's farmfolk (#1019).
+            | "Marta Mill" | "Farmhand Edda" => {
                 Some(Self::VillagerWoman)
             }
             "Carpenter Owen Alder"
@@ -730,7 +732,8 @@ impl Resident {
             | "Old Bertil"
             | "Farmhand Jory"
             | "Smith Wulfric Hale"
-            | "Courier Wat Ferrow" => Some(Self::Villager),
+            | "Courier Wat Ferrow"
+            | "Farmhand Cole" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -1021,6 +1024,10 @@ mod tests {
                 // Guardsman Tam Hollis and Courier Wat Ferrow (#1019).
                 Some("resident.guard"),
                 Some("resident.farmer"),
+                // Millbrook's farmfolk: Marta Mill, Farmhand Cole and Farmhand Edda (#1019).
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
             ])
             .collect::<Vec<_>>()
         );

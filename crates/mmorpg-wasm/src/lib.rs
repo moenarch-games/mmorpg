@@ -828,14 +828,15 @@ pub fn raid_area() -> Vec<i32> {
 }
 
 /// The night raid target's aftermath aid tasks (#531) as `[x, z, npc]` triples in units, in
-/// task order: `npc` is the injured guard to tend, or 0 for a breach to mend.
+/// task order: `npc` is the injured guard or, after a defence (#1019), the wounded civilian to
+/// tend, or 0 for a breach to mend.
 #[wasm_bindgen(js_name = raidAid)]
 #[must_use]
 pub fn raid_aid() -> Vec<i32> {
     host::hosted_content()
         .raid()
         .map(|site| {
-            site.aid
+            site.tasks()
                 .iter()
                 .flat_map(|task| {
                     let npc = match task.kind {

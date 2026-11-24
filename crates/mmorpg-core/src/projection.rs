@@ -729,8 +729,12 @@ impl ZoneSimulation {
                     velocity: [placement.velocity[0], 0, placement.velocity[1]],
                     facing: placement.facing,
                     level: npc.level,
-                    // A guard injured in a lost raid (#531) shows its wounds.
-                    health_percent: if self
+                    // A defence's civilian (#1019) shows what it has left, a fallen one barely
+                    // alive; a guard injured in a lost raid (#531), or a civilian still lying
+                    // wounded after a defence, shows its wounds.
+                    health_percent: if let Some(health) = self.civilian_health(npc_id) {
+                        health.max(1)
+                    } else if self
                         .content
                         .raid()
                         .and_then(|site| site.injured_at(npc_id, &self.raid.aftermath))

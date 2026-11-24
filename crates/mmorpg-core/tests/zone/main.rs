@@ -11,6 +11,7 @@ mod chat;
 mod content_identity;
 mod corpse_loot;
 mod crafting;
+mod defence_step;
 mod discovery_rewards;
 mod emote;
 mod ephemeral_builds;

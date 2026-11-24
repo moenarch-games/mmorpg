@@ -79,6 +79,8 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "not-carrying": "You are not carrying the load they need. Fetch it and bring it in your arms.",
   "no-footing": "Stand on firm ground, out of the water, to lift or set down a load.",
   "load-lost": "The water took your load. Fetch another where you found it.",
+  // Millbrook's defence (#1019).
+  "site-not-ready": "Not yet: a fight is still on at the farm, or its barn and people are still being seen to.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

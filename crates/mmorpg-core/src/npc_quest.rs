@@ -23,6 +23,8 @@
 //!   at its post at once and the player asks again. One player escorts an NPC at a time.
 //! - **Delivery** (#1077): takes the load of the objective's source out of the player's arms
 //!   ([`crate::LoadState`]); empty arms are refused with [`crate::ErrorCode::NotCarrying`].
+//! - **Defence**: starts the raid site's defence ([`crate::raid`]) at once when the site is ready;
+//!   otherwise [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
 //!
 //! The escorts are canonical zone state, so snapshots, replay and recovery continue them; the
 //! log stores the completed objectives like a talk objective's.
@@ -269,6 +271,12 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::NotCarrying, target)));
                 }
                 self.complete_objective(player_id, quest, index);
+            }
+            // A defence (#1019) starts at its NPC; it completes when it holds.
+            QuestObjective::Defend { .. } => {
+                if !self.begin_defence()? {
+                    return Ok(Some((ErrorCode::SiteNotReady, target)));
+                }
             }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),
         }

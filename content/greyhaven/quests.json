@@ -437,6 +437,36 @@
       "prerequisite": 36,
       "objectives": [{"deliver_load": {"source": 1, "npc": 4}}],
       "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 44,
+      "name": "Barricades at Millbrook",
+      "text": "That sack tells me they will come for the barn. Carry timber from my pile, two loads each, and raise barricades across the Rim Trail and the open rim. Set the timber down where the barricade should stand.",
+      "giver": 4,
+      "ender": 4,
+      "prerequisite": 43,
+      "objectives": [{"build": {"piece": 4}}, {"build": {"piece": 5}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": []}
+    },
+    {
+      "id": 45,
+      "name": "Hold Until Dawn",
+      "text": "Marta, Cole and Edda will hold the barn doors. Tell me when you are ready and I ring the bell; the Redbrands will come in waves. Keep my people standing, at least two of three. The raiders you cut down matter less.",
+      "giver": 4,
+      "ender": 4,
+      "prerequisite": 44,
+      "objectives": [{"defend": {"npc": 4}}],
+      "rewards": {"experience": 500, "copper": 40, "choices": [8, 5]}
+    },
+    {
+      "id": 46,
+      "name": "After the Raid",
+      "text": "We held, but the farm is hurt. Mend a breach in the barn and tend one of the wounded before my farmhands patch it all themselves. If the raid passed us by, the next one will not.",
+      "giver": 4,
+      "ender": 4,
+      "prerequisite": 45,
+      "objectives": [{"aid": {"chore": "mend", "count": 1}}, {"aid": {"chore": "tend", "count": 1}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
     }
   ],
   "attitudes": [
@@ -456,6 +486,7 @@
     {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250}
   ],
   "loads": [
-    {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300}
+    {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},
+    {"id": 2, "name": "timber from Millbrook's pile", "kind": "firewood", "at": [7000, 1100, 4400], "reach": 300}
   ]
 }

@@ -1014,6 +1014,7 @@ pub(crate) mod tests {
                 warned: true,
                 braced: BTreeSet::from([1]),
                 scouted: false,
+                standing: None,
             }),
             pieces: vec![
                 mmorpg_core::PieceView {
@@ -2307,6 +2308,7 @@ pub(crate) mod tests {
                 warned: true,
                 braced: BTreeSet::from([0, 1, 2, 3]),
                 scouted: false,
+                standing: None,
             }),
             projectiles: Vec::new(),
             debris: Vec::new(),

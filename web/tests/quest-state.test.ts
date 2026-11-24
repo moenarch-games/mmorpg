@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { evidenceInReach, liftInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
+import { defenceStatus, evidenceInReach, liftInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -53,6 +53,34 @@ describe("quest state", () => {
     const sack = (own: boolean) => ({ kind: "sack" as const, own, x: 0, y: 0, z: 50, facing: 0 });
     expect(liftInReach(open, [0, 90, 0], false, [sack(false), sack(true)])).toBe(0);
     expect(liftInReach(open, [0, 90, 0], false, [sack(false)])).toBeNull();
+  });
+
+  test("labels Millbrook's defence quests and heads the tracker with a running defence (#1019)", () => {
+    expect(objectiveViews(44, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Raise the north barricade (done)",
+      "Raise the east barricade",
+    ]);
+    expect(objectiveViews(45, [0]).map((objective) => objective.text)).toEqual([
+      "Hold Millbrook Farm with 2 of its people standing",
+    ]);
+    expect(objectiveViews(46, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Breaches mended: 1/1",
+      "Wounded tended: 0/1",
+    ]);
+    // A build's timber comes from Millbrook's pile; the zone checks reach and the site again.
+    const pile = [7100, 1100 + 90, 4400];
+    expect(liftInReach(sheet({ entries: [{ quest: 44, progress: [0, 0, 0] }] }), pile, false, [])).toBe(2);
+    expect(liftInReach(sheet({ entries: [{ quest: 44, progress: [1, 1, 0] }] }), pile, false, [])).toBeNull();
+    // Osric starts the defence.
+    expect(questActionAt(sheet({ entries: [{ quest: 45, progress: [0, 0, 0] }] }), 4)).toBe(
+      "Hold Millbrook Farm with 2 of its people standing",
+    );
+    const raid = { phase: 2, integrity: 90, aid: [], signs: false, warned: false, braced: [], scouted: false };
+    expect(defenceStatus({ ...raid, standing: 3 })).toBe(
+      "Millbrook Farm under attack: wave 2 of 3, 3 of 3 of its people standing (2 must stand)",
+    );
+    expect(defenceStatus({ ...raid, standing: null })).toBeNull();
+    expect(defenceStatus(null)).toBeNull();
   });
 
   test("labels the NPC quest actions and picks the one Interact performs, in the quest's order (#1019)", () => {

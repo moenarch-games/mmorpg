@@ -1,6 +1,6 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ObjectiveView, QuestView as ModelQuestView, TrackerRow } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type SetDownLoad, type ZoneSnapshot } from "../../replication";
+import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type RaidSignal, type SetDownLoad, type ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 
@@ -109,6 +109,14 @@ export function questActionAt(sheet: QuestSheet | null, npc: number): string | n
 /** The HUD tracker's rows: each active quest followed by its objectives. */
 export function trackerRows(sheet: QuestSheet): TrackerRow[] {
   return wasm.trackerRows(sheet);
+}
+
+/**
+ * The HUD line of a running defence near the viewer (#1019), from its raid signal: "Millbrook Farm under attack:
+ * wave 2 of 3, 3 of 3 of its people standing (2 must stand)"; null outside a defence (the shared client model's text).
+ */
+export function defenceStatus(raid: RaidSignal | null): string | null {
+  return raid?.standing == null ? null : (wasm.defenceStatus(raid.phase, raid.standing) ?? null);
 }
 
 /** Ticks (3 s) a confirmed objective change stays highlighted in the tracker. */

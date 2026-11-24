@@ -1089,7 +1089,8 @@ impl Presentation {
         .then_some(mmorpg_core::ZoneCommand::Skin { creature })
     }
 
-    /// The `RaidAid` of the first open aftermath task (#531) the viewer can reach, if any.
+    /// The `RaidAid` of the first open aftermath task (#531) the viewer can reach, if any; a
+    /// defence's wounded civilians (#1019) follow the authored tasks.
     #[must_use]
     pub fn reachable_raid_aid(&self) -> Option<mmorpg_core::ZoneCommand> {
         let snapshot = self.latest()?;
@@ -1103,7 +1104,7 @@ impl Presentation {
         let task = self
             .content
             .raid()?
-            .aid
+            .tasks()
             .iter()
             .enumerate()
             .position(|(index, task)| {

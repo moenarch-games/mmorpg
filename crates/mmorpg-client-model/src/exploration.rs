@@ -293,6 +293,24 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                             .map(Area::id)
                     })
                 }
+                // A build (#1019) hints at the area its site stands in; a defence and the aid
+                // after it at the raid site's.
+                QuestObjective::Build { piece } => content
+                    .pieces()
+                    .iter()
+                    .find(|candidate| candidate.id == piece)
+                    .and_then(|piece| {
+                        content
+                            .areas()
+                            .area_at(piece.position[0], piece.position[2])
+                            .map(Area::id)
+                    }),
+                QuestObjective::Defend { .. } | QuestObjective::Aid { .. } => {
+                    content.raid().and_then(|site| {
+                        let [x, z] = site.centre();
+                        content.areas().area_at(x, z).map(Area::id)
+                    })
+                }
                 QuestObjective::Talk { .. }
                 | QuestObjective::DefeatThorn
                 | QuestObjective::UseItem { .. }

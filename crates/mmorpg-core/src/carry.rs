@@ -23,6 +23,9 @@
 //!   allows; one carried into deep water is lost ([`crate::ErrorCode::LoadLost`]).
 //! - **Delivery**: [`crate::ZoneCommand::QuestAction`] at the objective's NPC with a load of its
 //!   source in hand hands it over: the load is gone and the objective done.
+//! - **Construction** (#1019): a source also hands out loads for an open
+//!   [`crate::QuestObjective::Build`] of a site it supplies, and setting such a load down at that
+//!   site puts it into the site instead ([`crate::ConstructionSite`]).
 //!
 //! A load is never an item: it cannot be sold, banked or duplicated, and the bag and the saved
 //! character never hold it. Loads are canonical zone state ([`LoadState`]), so snapshots,
@@ -269,12 +272,14 @@ impl ZoneSimulation {
         Ok(footed.then_some(feet))
     }
 
-    /// Whether an active quest of the player still has a delivery of `source` open.
+    /// Whether an active quest of the player still has a delivery of `source` open, or a build
+    /// of a construction site of it (#1019).
     fn needs_load(&self, player_id: PlayerId, source: crate::LoadSpotId) -> bool {
         let Some(player) = self.players.get(&player_id) else {
             return false;
         };
-        player.quests.entries.iter().any(|entry| {
+        self.needs_material(player_id, source)
+            || player.quests.entries.iter().any(|entry| {
             self.content.quest(entry.quest).is_some_and(|quest| {
                 quest
                     .objectives
@@ -359,6 +364,12 @@ impl ZoneSimulation {
         let Some(feet) = self.footing(player_id)? else {
             return Ok(Some((ErrorCode::NoFooting, None)));
         };
+        // Material set down at a construction site that wants it goes into the site (#1019).
+        if let Some(source) = self.loads.get(&player_id).map(|load| load.source)
+            && self.feed_construction(player_id, source, feet, now)?
+        {
+            return Ok(None);
+        }
         self.place_load(player_id, feet, now);
         Ok(None)
     }

@@ -115,6 +115,21 @@ pub enum QuestObjective {
         source: crate::LoadSpotId,
         npc: NpcId,
     },
+    /// Raise construction site `piece` (#1019): carry its material loads to it and set them down
+    /// there ([`crate::ConstructionSite`]); the objective is done for every player who brought
+    /// one once the piece stands. The log stores it.
+    Build { piece: crate::PieceId },
+    /// Hold the raid site through a defence (#1019): [`crate::ZoneCommand::QuestAction`] at `npc`
+    /// starts one when the site is ready, and the objective is done for each player who fought
+    /// it and stands near when it ends with enough of the site's civilians standing
+    /// ([`crate::RaidSite::hold`]). The raiders slain do not count. The log stores it.
+    Defend { npc: NpcId },
+    /// Have `count` aid actions of `chore` accepted at the raid site's aftermath (#1019): mend a
+    /// breach or tend a wounded defender ([`crate::ZoneCommand::RaidAid`]). The log stores it.
+    Aid {
+        chore: crate::raid::AidChore,
+        count: u8,
+    },
 }
 
 impl QuestObjective {
@@ -125,7 +140,8 @@ impl QuestObjective {
             Self::Kill { count, .. }
             | Self::Collect { count, .. }
             | Self::DefeatWithLoan { count, .. }
-            | Self::Crush { count, .. } => count,
+            | Self::Crush { count, .. }
+            | Self::Aid { count, .. } => count,
             Self::Talk { .. }
             | Self::Explore { .. }
             | Self::Retrieve { .. }
@@ -135,13 +151,15 @@ impl QuestObjective {
             | Self::Escort { .. }
             | Self::Interview { .. }
             | Self::Demolish { .. }
-            | Self::DeliverLoad { .. } => 1,
+            | Self::DeliverLoad { .. }
+            | Self::Build { .. }
+            | Self::Defend { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
-    /// 13 demolish, 14 deliver a load.
+    /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -159,6 +177,9 @@ impl QuestObjective {
             Self::Crush { .. } => 12,
             Self::Demolish { .. } => 13,
             Self::DeliverLoad { .. } => 14,
+            Self::Build { .. } => 15,
+            Self::Defend { .. } => 16,
+            Self::Aid { .. } => 17,
         }
     }
 
@@ -170,7 +191,8 @@ impl QuestObjective {
             Self::UseItem { npc, .. }
             | Self::Escort { npc, .. }
             | Self::Interview { npc }
-            | Self::DeliverLoad { npc, .. } => Some(npc),
+            | Self::DeliverLoad { npc, .. }
+            | Self::Defend { npc } => Some(npc),
             _ => None,
         }
     }
@@ -406,6 +428,21 @@ pub(crate) fn validate_quests(
                     content.npc(npc).is_some()
                         && content.load_spot(source).is_some()
                         && !quest.objectives[..index].contains(objective)
+                }
+                // Construction, defence and aid (#1019), each once per quest: a build names a
+                // construction site, a defence is started at an NPC the content has.
+                QuestObjective::Build { piece } => {
+                    content.construction(piece).is_some()
+                        && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Defend { npc } => {
+                    content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Aid { chore, count } => {
+                    count > 0
+                        && !quest.objectives[..index].iter().any(|earlier| {
+                            matches!(*earlier, QuestObjective::Aid { chore: other, .. } if other == chore)
+                        })
                 }
             };
             if !valid {
@@ -1294,7 +1331,10 @@ impl ZoneSimulation {
                         | QuestObjective::DefeatWithLoan { .. }
                         | QuestObjective::Crush { .. }
                         | QuestObjective::Demolish { .. }
-                        | QuestObjective::DeliverLoad { .. } => false,
+                        | QuestObjective::DeliverLoad { .. }
+                        | QuestObjective::Build { .. }
+                        | QuestObjective::Defend { .. }
+                        | QuestObjective::Aid { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

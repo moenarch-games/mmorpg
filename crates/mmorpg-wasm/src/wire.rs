@@ -291,6 +291,7 @@ mirror!(
         NotCarrying,
         NoFooting,
         LoadLost,
+        SiteNotReady,
     }
 );
 mirror!(
@@ -373,7 +374,9 @@ mirror!(
         Warned,
         Braced,
         Held,
-        Fell
+        Fell,
+        Stood,
+        Overrun
     }
 );
 
@@ -924,9 +927,11 @@ pub struct TrapState {
 /// #882). `signs` is set on a forewarned evening, when the scouts' tracks lie on the approach,
 /// and `scouted` once the viewer read them; `warned` once the guards accepted a report for the
 /// coming or running raid, and `braced` holds the indices of its braced spots in `raidPrep()`
-/// order (#532, #882).
+/// order (#532, #882). `standing` counts a running defence's civilians still on their feet
+/// (#1019), null outside a defence.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
+#[tsify(missing_as_null)]
 pub struct RaidSignal {
     pub phase: u8,
     pub integrity: u8,
@@ -935,6 +940,7 @@ pub struct RaidSignal {
     pub warned: bool,
     pub braced: Vec<u32>,
     pub scouted: bool,
+    pub standing: Option<u8>,
 }
 
 /// One projectile: position in units, heading/pitch in 1/65 536 turns (heading 0 is +Z).
@@ -1965,6 +1971,7 @@ impl ZoneSnapshot {
                 warned: raid.warned,
                 braced: raid.braced.iter().copied().collect(),
                 scouted: raid.scouted,
+                standing: raid.standing,
             }),
             events: snapshot.events.iter().copied().map(Into::into).collect(),
             chat: snapshot.chat.iter().map(Into::into).collect(),
@@ -2242,6 +2249,7 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 warned: raid.warned,
                 braced: raid.braced.iter().copied().collect(),
                 scouted: raid.scouted,
+                standing: raid.standing,
             }),
             // The party sheet only informs the page's own frame; nothing presents it back.
             party: None,

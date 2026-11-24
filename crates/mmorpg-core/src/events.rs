@@ -155,6 +155,9 @@ pub enum ErrorCode {
     NoFooting,
     /// A carried load was lost in deep water (#1077); fetch another from its source.
     LoadLost,
+    /// The raid site is not ready for a defence (#1019): a raid or defence is still running, or
+    /// the site is still being mended or tended after the last one.
+    SiteNotReady,
 }
 
 /// One feedback event addressed to a player.

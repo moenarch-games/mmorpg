@@ -31,9 +31,9 @@
 use serde::Deserialize;
 
 use crate::{
-    AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot, ItemId,
-    LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcId, PieceId, PlayerClass, Quest, QuestId,
-    QuestObjective, QuestRewards, QuestSupply,
+    AidChore, AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot,
+    ItemId, LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcId, PieceId, PlayerClass, Quest,
+    QuestId, QuestObjective, QuestRewards, QuestSupply,
 };
 use strum::VariantArray;
 
@@ -133,6 +133,13 @@ pub const THE_LAST_SACK: QuestId = QuestId::new(43);
 pub const CART_SACK: LoadSpotId = LoadSpotId::new(1);
 /// Farmer Osric Mill, who takes it at Millbrook.
 pub const OSRIC_MILL: NpcId = NpcId::new(4);
+
+/// Millbrook's defence (#1019, slice 3a): Osric has the player raise two barricades with timber
+/// from the farm's pile, hold the farm through a defence with his farmfolk standing, and help
+/// the farm recover afterwards.
+pub const BARRICADES_AT_MILLBROOK: QuestId = QuestId::new(44);
+pub const HOLD_UNTIL_DAWN: QuestId = QuestId::new(45);
+pub const AFTER_THE_RAID: QuestId = QuestId::new(46);
 
 /// Their people: the wounded watchman on the Wolfrun terrace, the courier outside the east gate,
 /// the distrustful resident, the herbalist, the farmhand and the smith.
@@ -290,6 +297,17 @@ enum ObjectiveSource {
     Crush { template: u32, count: u8 },
     Demolish { piece: u32 },
     DeliverLoad { source: u32, npc: u32 },
+    Build { piece: u32 },
+    Defend { npc: u32 },
+    Aid { chore: ChoreSource, count: u8 },
+}
+
+/// An aid objective's chore (#1019).
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ChoreSource {
+    Mend,
+    Tend,
 }
 
 #[derive(Deserialize)]
@@ -374,6 +392,19 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::DeliverLoad { source, npc } => Self::DeliverLoad {
                 source: LoadSpotId::new(source),
                 npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Build { piece } => Self::Build {
+                piece: PieceId::new(piece),
+            },
+            ObjectiveSource::Defend { npc } => Self::Defend {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Aid { chore, count } => Self::Aid {
+                chore: match chore {
+                    ChoreSource::Mend => AidChore::Mend,
+                    ChoreSource::Tend => AidChore::Tend,
+                },
+                count,
             },
         }
     }

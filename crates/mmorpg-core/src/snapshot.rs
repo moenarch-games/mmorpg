@@ -427,6 +427,8 @@ pub struct CanonicalZoneSnapshot {
     pub escorts: Vec<crate::EscortState>,
     /// Every player's one load, carried or set down (#1077), in player-ID order.
     pub loads: Vec<crate::LoadState>,
+    /// Every construction site's material and raising (#1019), in content order.
+    pub constructions: Vec<crate::ConstructionState>,
     /// The private run bound to a depths zone (#404).
     pub depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks of a match with hit rewind (#680), oldest
@@ -717,6 +719,7 @@ impl ZoneSimulation {
             wakes: self.canonical_wakes(),
             escorts: self.canonical_escorts(),
             loads: self.canonical_loads(),
+            constructions: self.canonical_constructions(),
             depths: self.depths.clone(),
             rewind_history: self.canonical_rewind_history(),
         })
@@ -825,6 +828,7 @@ impl ZoneSimulation {
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
         zone.restore_escorts(&snapshot.escorts, snapshot.tick)?;
         zone.restore_loads(&snapshot.loads)?;
+        zone.restore_constructions(&snapshot.constructions, snapshot.tick)?;
         // One unit per seat, and nobody on a seat its routine NPC holds at this tick (#619).
         let mut held = BTreeSet::new();
         for (&id, player) in &zone.players {

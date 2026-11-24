@@ -121,6 +121,13 @@ pub const fn raid_notice_text(notice: RaidNotice) -> &'static str {
         RaidNotice::Fell => {
             "Greyhaven Guard: \"We were ready and it slowed them, but they broke into the barn all the same.\""
         }
+        // A defence's end (#1019): what Osric says of his people.
+        RaidNotice::Stood => {
+            "Farmer Osric Mill: \"They're falling back, and my people are standing. We held!\""
+        }
+        RaidNotice::Overrun => {
+            "Farmer Osric Mill: \"Too many of my people are down. Once they're tended and the barn is whole, we try again.\""
+        }
     }
 }
 
@@ -164,6 +171,8 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::NotCarrying => "You are not carrying the load they need. Fetch it and bring it in your arms.".into(),
         ErrorCode::NoFooting => "Stand on firm ground, out of the water, to lift or set down a load.".into(),
         ErrorCode::LoadLost => "The water took your load. Fetch another where you found it.".into(),
+        // Millbrook's defence (#1019).
+        ErrorCode::SiteNotReady => "Not yet: a fight is still on at the farm, or its barn and people are still being seen to.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
