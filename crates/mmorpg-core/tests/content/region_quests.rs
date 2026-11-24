@@ -120,7 +120,10 @@ fn every_region_quest_has_its_givers_items_and_creatures_in_the_region() {
     let content = greyhaven_vale::content();
     let region: Vec<_> = quests::quests()
         .into_iter()
-        .filter(|quest| quest.id.get() >= quests::WORD_FROM_THE_DOWNS.get())
+        .filter(|quest| {
+            (quests::WORD_FROM_THE_DOWNS.get()..=quests::THE_SHEPHERDS_WOLVES.get())
+                .contains(&quest.id.get())
+        })
         .collect();
     assert_eq!(region.len(), 20);
     for quest in &region {

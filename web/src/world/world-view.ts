@@ -74,6 +74,7 @@ import { LootPanel, type LootElements } from "./units/loot-panel";
 import { WaystonePanel, type WaystoneElements } from "./units/waystone-panel";
 import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
+import { evidenceInReach } from "./units/quest-state";
 import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { DepthsLootPanel, type DepthsLootElements } from "./units/depths-loot-panel";
@@ -1813,7 +1814,8 @@ export class WorldView {
   }
 
   /**
-   * Interact (E / gamepad Start): talk to a selected NPC; without one, swing the door in reach
+   * Interact (E / gamepad Start): inspect quest evidence in reach (#1019); talk to a selected NPC;
+   * without one, swing the door in reach
    * (#158), repair a damaged structure piece in reach (#305, free; moving stops it), or help a
    * lost night raid's aftermath in reach (#531);
    * otherwise open the quest dialog, which says whom to approach.
@@ -1829,6 +1831,12 @@ export class WorldView {
     const step = at ? this.#prepStep(projection, at) : null;
     if (step !== null) {
       this.queueIntent(() => ({ kind: "raid-prepare", step }));
+      return;
+    }
+    // Inspect the quest evidence in reach an active quest needs (#1019), even beside its giver.
+    const spot = at ? evidenceInReach(this.#quests.state.sheet, at) : null;
+    if (spot !== null) {
+      this.queueIntent(() => ({ kind: "inspect", spot }));
       return;
     }
     const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;

@@ -862,6 +862,17 @@ pub fn quest_view(quest: u32, progress: &[u8]) -> Result<JsValue, JsError> {
     to_js(&view)
 }
 
+/// The quest evidence (#1019) a player centred at `[x, y, z]` units would inspect now, or 0: the
+/// nearest spot within its reach that an active quest of `sheet` still needs (`mmorpg-client-model`).
+#[wasm_bindgen(js_name = evidenceInReach)]
+pub fn evidence_in_reach(sheet: Ts<QuestSheet>, x: i32, y: i32, z: i32) -> Result<u32, JsError> {
+    let sheet = core::QuestSheet::from(&sheet.to_rust()?);
+    Ok(
+        quest::evidence_in_reach(&hosted_content(), &sheet.entries, [x, y, z])
+            .map_or(0, core::EvidenceId::get),
+    )
+}
+
 /// One quest-tracker row: a quest heading (`objective` null) or one of its objectives.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[tsify(missing_as_null)]

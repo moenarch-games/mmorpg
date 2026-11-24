@@ -78,10 +78,10 @@ export type AbilityRecord = {
 /**
  * `target` is a creature template (kill), an item (collect, dropped by template `source`), an NPC (talk),
  * an area (explore), an item (retrieve, granted by swimming into area `source`, #274) or nothing
- * (victory: Captain Thorn beaten in the Redbrand Depths, target 0).
+ * (victory: Captain Thorn beaten in the Redbrand Depths, target 0) or a quest evidence spot (inspect, #1019).
  */
 export type QuestObjectiveRecord =
-  | { kind: "kill" | "talk" | "explore" | "victory"; target: number; count: number }
+  | { kind: "kill" | "talk" | "explore" | "victory" | "inspect"; target: number; count: number }
   | { kind: "collect" | "retrieve"; target: number; source: number; count: number };
 
 export type QuestRecord = {
@@ -116,7 +116,7 @@ export type ContentCatalog = {
 };
 
 const FORMAT = "mmorpg.catalog";
-const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "victory"] as const;
+const OBJECTIVE_KINDS = ["kill", "collect", "talk", "explore", "retrieve", "victory", "inspect"] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
 const USERS: readonly (ClassName | "creature")[] = [...CLASS_NAMES, "creature"];
@@ -149,8 +149,12 @@ function int(value: unknown, name: string, min: number, max: number): number {
   return value;
 }
 
-function list(value: unknown, name: string, maximum: number): readonly unknown[] {
-  if (!Array.isArray(value) || value.length > maximum) {
+/** An array of at most `maximum` entries, or of any length without one (content counts such as quests, Atlas 2.2.i882). */
+function list(value: unknown, name: string, maximum?: number): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    fail(`${name} must be an array`);
+  }
+  if (maximum !== undefined && value.length > maximum) {
     fail(`${name} must be an array of at most ${maximum} entries`);
   }
   return value;
@@ -327,7 +331,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     };
   });
   const npcsById = byId(npcs, "npc");
-  const quests = list(root.quests, "quests", 32).map((value, index): QuestRecord => {
+  const quests = list(root.quests, "quests").map((value, index): QuestRecord => {
     const name = `quest ${index}`;
     const record = object(value, [
       "id", "name", "text", "giver", "ender", "prerequisite", "objectives", "experience", "copper", "choices",
@@ -377,12 +381,12 @@ export function decodeCatalog(json: string): ContentCatalog {
       return id;
     });
     return {
-      id: int(record.id, `${name} id`, 1, 32),
+      id: int(record.id, `${name} id`, 1, 0xffff_ffff),
       name: text(record.name, `${name} name`),
       text: record.text,
       giver: npc(record.giver, "giver"),
       ender: npc(record.ender, "ender"),
-      prerequisite: record.prerequisite === null ? null : int(record.prerequisite, `${name} prerequisite`, 1, 32),
+      prerequisite: record.prerequisite === null ? null : int(record.prerequisite, `${name} prerequisite`, 1, 0xffff_ffff),
       objectives,
       experience: int(record.experience, `${name} experience`, 0, 0xffff_ffff),
       copper: int(record.copper, `${name} copper`, 0, 0xffff_ffff),

@@ -661,6 +661,14 @@ impl App {
                     // Skins the selected boar corpse in reach (#917).
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self
+                    .presentation
+                    .reachable_inspect(self.npc_context.quests.as_ref())
+                {
+                    // Inspects the quest evidence in reach an active quest needs (#1019), even
+                    // with the quest giver beside it selected.
+                    self.send_interaction(command);
+                    return true;
                 } else if let Some(EntityRef::Npc(npc)) =
                     self.presentation.latest().and_then(|s| s.viewer.target)
                 {
