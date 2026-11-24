@@ -90,7 +90,7 @@ pub struct Tile {
     pub always_near: bool,
     /// How far the skirts hang below the tile's edges, in metres.
     skirt: f64,
-    /// The far level's draws.
+    /// The far level's draws; empty in tiles built without them ([`Tiles::far_level`]).
     pub far: Vec<Draw>,
     /// The tile's road and patch overlay pieces on its near level (#424, #525).
     extras: Vec<(Layer, Arc<Geometry>)>,
@@ -105,7 +105,8 @@ pub struct Tiles {
     /// Row-major.
     pub tiles: Vec<Tile>,
     /// The far levels merged into square chunks of 2 and 4 tiles a side ([`Self::far_cover`]),
-    /// so the distant terrain costs a few dozen draws, not one per tile.
+    /// so the distant terrain costs a few dozen draws, not one per tile; empty in tiles built
+    /// without far levels.
     pub chunks: Vec<Vec<FarChunk>>,
     /// Prefixes the near levels' IDs and resource keys (`StaticScene::prefix`).
     prefix: String,
@@ -119,11 +120,14 @@ pub struct Tiles {
 
 impl Tiles {
     pub(crate) fn new(s: &Scenery, g: &TerrainGrid) -> Self {
-        Self::with_weights(s, g, ground::weights(s, g))
+        Self::with_weights(s, g, ground::weights(s, g), true)
     }
 
-    /// The tiles of `g` over the overlay `weights` [`ground::weights`] derived for it.
-    pub(crate) fn with_weights(s: &Scenery, g: &TerrainGrid, weights: Weights) -> Self {
+    /// The tiles of `g` over the overlay `weights` [`ground::weights`] derived for it. Without
+    /// `far`, no tile holds its far level and there are no [`Self::chunks`]: a client that
+    /// receives the far levels from where the scene was derived (#855) skips most of the cost,
+    /// and [`Self::far_level`] builds one on demand.
+    pub(crate) fn with_weights(s: &Scenery, g: &TerrainGrid, weights: Weights, far: bool) -> Self {
         let holes: Vec<_> = s
             .terrain_holes
             .iter()
@@ -177,18 +181,24 @@ impl Tiles {
                 let piece = pieces
                     .entry((row * columns + column, ground.layer))
                     .or_default();
-                let mut remap = BTreeMap::new();
-                for &i in tri {
-                    let index = *remap.entry(i).or_insert_with(|| {
-                        let i = i as usize;
-                        piece.p.push(geometry.p[i]);
-                        piece.n.push(geometry.n[i]);
-                        piece.colors.push(geometry.colors[i]);
-                        piece.uv.push(geometry.uv[i]);
-                        piece.tangents.push(geometry.tangents[i]);
-                        piece.alpha.push(geometry.alpha[i]);
-                        piece.p.len() as u32 - 1
-                    });
+                // A triangle's own corners, each copied once (#855: a map per triangle cost
+                // the page a third of this loop).
+                let mut remap: [(u32, u32); 3] = [(u32::MAX, 0); 3];
+                for (corner, &i) in tri.iter().enumerate() {
+                    let index = match remap[..corner].iter().find(|(from, _)| *from == i) {
+                        Some(&(_, to)) => to,
+                        None => {
+                            let at = i as usize;
+                            piece.p.push(geometry.p[at]);
+                            piece.n.push(geometry.n[at]);
+                            piece.colors.push(geometry.colors[at]);
+                            piece.uv.push(geometry.uv[at]);
+                            piece.tangents.push(geometry.tangents[at]);
+                            piece.alpha.push(geometry.alpha[at]);
+                            piece.p.len() as u32 - 1
+                        }
+                    };
+                    remap[corner] = (i, index);
                     piece.indices.push(index);
                 }
             }
@@ -257,14 +267,27 @@ impl Tiles {
             worn: worn(s, g),
             holes,
         };
-        for index in 0..built.tiles.len() {
-            built.tiles[index].far = built.far(index);
+        if far {
+            for index in 0..built.tiles.len() {
+                built.tiles[index].far = built.far(index);
+            }
+            built.chunks = CHUNK_SIDES
+                .iter()
+                .map(|&side| built.merge_far(side))
+                .collect();
         }
-        built.chunks = CHUNK_SIDES
-            .iter()
-            .map(|&side| built.merge_far(side))
-            .collect();
         built
+    }
+
+    /// Tile `index`'s far level: [`Tile::far`], or built now in tiles built without far levels.
+    #[must_use]
+    pub fn far_level(&self, index: usize) -> Vec<Draw> {
+        let built = &self.tiles[index].far;
+        if built.is_empty() {
+            self.far(index)
+        } else {
+            built.clone()
+        }
     }
 
     /// The overlay weights these tiles were built over.

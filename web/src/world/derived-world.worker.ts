@@ -5,10 +5,10 @@ import type { DerivedWorldMessage, DerivedWorldRequest } from "./derived-world";
  * Derives the presented world's scenery, static scene and grass away from the page (#855), in this worker's own
  * instance of the same `mmorpg-wasm` build, so every value equals the page's own derivation. The page sends the compiled
  * module first, then what its release-keyed derived-data cache held (terrain grids and the zone content's base parts, or
- * nulls). Answers four times: the zone content's costly base parts first (`hostedContentSeed`, which the page seeds
+ * nulls). Answers five times: the zone content's costly base parts first (`hostedContentSeed`, which the page seeds
  * instead of building them; null when this worker seeded the cached ones too), then the terrain grids and scenery
- * export, then the static scene's layout, buffers and skeleton (with the terrain's overlay weights), then the grass's
- * seed. The page ends the worker after the fourth.
+ * export, then the static scene's layout, buffers and skeleton (with the terrain's overlay weights), then the terrain
+ * tiles' far levels (which the page's tiles then skip), then the grass's seed. The page ends the worker after the fifth.
  */
 const scope = self as unknown as {
   onmessage: ((event: MessageEvent<DerivedWorldRequest>) => void) | null;
@@ -53,6 +53,8 @@ async function derive(module: WebAssembly.Module): Promise<void> {
     { kind: "scene", layout, vertices, indices, models, skeleton },
     [layout.buffer, vertices.buffer, indices.buffer, models.buffer, skeleton.buffer],
   );
+  const levels = generated.terrainFarLevels();
+  scope.postMessage({ kind: "far", prefix: generated.staticScenePrefix(), levels }, [levels.buffer]);
   const grass = generated.grassSeed();
   scope.postMessage({ kind: "grass", grass }, [grass.buffer]);
 }

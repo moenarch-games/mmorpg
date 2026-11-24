@@ -1,5 +1,6 @@
 /**
- * The zone content's costly base parts and the presented world's derived scenery, static scene and grass, built in a
+ * The zone content's costly base parts and the presented world's derived scenery, static scene, terrain far levels and
+ * grass, built in a
  * worker (#855) by its own instance of the same `mmorpg-wasm` build, so the page's instance seeds them instead of
  * blocking the page for seconds deriving them.
  * Every failure, or a browser without workers, reads as null: the page then derives as before.
@@ -28,24 +29,29 @@ export type DerivedScene = {
   skeleton: Uint8Array;
 };
 
+/** Every terrain tile's far level (`terrainFarLevels`) of the scene with `prefix` (`staticScenePrefix`). */
+export type DerivedFarLevels = { prefix: string; levels: Float32Array };
+
 export type DerivedWorldMessage =
   | { kind: "content"; seed: Int32Array | null }
   | ({ kind: "scenery" } & DerivedScenery)
   | ({ kind: "scene" } & DerivedScene)
+  | ({ kind: "far" } & DerivedFarLevels)
   | { kind: "grass"; grass: Uint8Array }
   | { kind: "failed"; message: string };
 
 /**
- * The worker's four answers, in order, each null once the worker failed or never ran. The worker starts once
+ * The worker's five answers, in order, each null once the worker failed or never ran. The worker starts once
  * `supplyCached` gave it the derived-data cache's terrain grids and content seed (each null on a miss). `content` is the
  * zone content's costly base parts (`LocalZone.hostedContentSeed`) as the worker built them, or null when it reused the
- * cached seed. `grass` is the grass's seed (`grassSeed`).
+ * cached seed. `far` is the terrain's far levels, `grass` the grass's seed (`grassSeed`).
  */
 export type DerivedWorld = {
   supplyCached(grids: Uint8Array | null, content: Int32Array | null): void;
   content: Promise<Int32Array | null>;
   scenery: Promise<DerivedScenery | null>;
   scene: Promise<DerivedScene | null>;
+  far: Promise<DerivedFarLevels | null>;
   grass: Promise<Uint8Array | null>;
 };
 
@@ -70,21 +76,27 @@ function createWorker(): DerivedWorldWorker | null {
 export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWorldWorker | null = createWorker): DerivedWorld {
   const worker = create();
   if (!worker) {
-    return { supplyCached: () => {}, content: Promise.resolve(null), scenery: Promise.resolve(null), scene: Promise.resolve(null), grass: Promise.resolve(null) };
+    return {
+      supplyCached: () => {}, content: Promise.resolve(null), scenery: Promise.resolve(null), scene: Promise.resolve(null),
+      far: Promise.resolve(null), grass: Promise.resolve(null),
+    };
   }
   let settleContent: (value: Int32Array | null) => void = () => {};
   let settleScenery: (value: DerivedScenery | null) => void = () => {};
   let settleScene: (value: DerivedScene | null) => void = () => {};
+  let settleFar: (value: DerivedFarLevels | null) => void = () => {};
   let settleGrass: (value: Uint8Array | null) => void = () => {};
   const content = new Promise<Int32Array | null>((resolve) => { settleContent = resolve; });
   const scenery = new Promise<DerivedScenery | null>((resolve) => { settleScenery = resolve; });
   const scene = new Promise<DerivedScene | null>((resolve) => { settleScene = resolve; });
+  const far = new Promise<DerivedFarLevels | null>((resolve) => { settleFar = resolve; });
   const grass = new Promise<Uint8Array | null>((resolve) => { settleGrass = resolve; });
   const fail = (message: string) => {
     console.warn(`Deriving the world in a worker failed; the page derives it instead: ${message}`);
     settleContent(null);
     settleScenery(null);
     settleScene(null);
+    settleFar(null);
     settleGrass(null);
     worker.terminate();
   };
@@ -96,6 +108,8 @@ export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWor
     } else if (data.kind === "scene") {
       const { layout, vertices, indices, models, skeleton } = data;
       settleScene({ layout, vertices, indices, models, skeleton });
+    } else if (data.kind === "far") {
+      settleFar({ prefix: data.prefix, levels: data.levels });
     } else if (data.kind === "grass") {
       settleGrass(data.grass);
       worker.terminate();
@@ -108,5 +122,5 @@ export function deriveWorld(module: WebAssembly.Module, create: () => DerivedWor
     fail(event.message);
   };
   worker.postMessage({ kind: "module", module });
-  return { supplyCached: (grids, content) => { worker.postMessage({ kind: "cached", grids, content }); }, content, scenery, scene, grass };
+  return { supplyCached: (grids, content) => { worker.postMessage({ kind: "cached", grids, content }); }, content, scenery, scene, far, grass };
 }

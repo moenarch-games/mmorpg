@@ -22,6 +22,12 @@ export type EntryPreview = { feet: [number, number, number]; centreY: number; fa
  */
 export const STATIC_PARTS = 5;
 
+/**
+ * Which of the world-build worker's later answers have reached the page (#855): the terrain's far levels, which the
+ * ground part waits for, and the grass's seed, which the grass part waits for.
+ */
+export type DerivedParts = { far: boolean; grass: boolean };
+
 /** What the prebuild drives: the world view's static build, its composed entry view and its prepare. */
 export interface PrebuildTarget<Entry> {
   /** Whether the static scene is complete. */

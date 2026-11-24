@@ -48,7 +48,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, entryPreview, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenGrassDerived, whenSceneDerived } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, entryPreview, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenFarDerived, whenGrassDerived, whenSceneDerived } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -1032,6 +1032,8 @@ function updateEntryButton(): void {
 
 /** Whether the world-build worker's static scene has reached the page (#855), so the prebuild can start. */
 let sceneDerived = false;
+/** Whether the worker's terrain far levels, packed after the scene, have reached the page (#855), for the ground part. */
+let farDerived = false;
 /** Whether the worker's grass, derived after the scene, has reached the page (#855), so the prebuild can finish. */
 let grassDerived = false;
 /** Where each local character is expected to enter, read once per visit to the selection screen (#855). */
@@ -1059,7 +1061,7 @@ function storedArea(characters: LocalCharacters, characterId: string): number | 
 function prebuildEntry(): void {
   const target = chosenWorld();
   if (!target || !sceneDerived || entryState.phase === "world" || joining || preparingWorld) { return; }
-  worldView.prebuild(target, target === world ? selectedEntry() : null, entryArtReady(), grassDerived);
+  worldView.prebuild(target, target === world ? selectedEntry() : null, entryArtReady(), { far: farDerived, grass: grassDerived });
 }
 
 /** The selected local character's expected entry (`entryPreview`), or null when it cannot be known. */
@@ -1707,8 +1709,11 @@ async function enterWorld(): Promise<void> {
   preparingWorld = true;
   try {
     // A click before the worker derived the static scene waits for it rather than building it on the page (#855), and
-    // builds what the prebuild left of it while the worker still derives the grass.
+    // builds what the prebuild left of it while the worker still packs the far levels and derives the grass; the ground
+    // waits for the far levels.
     await whenSceneDerived();
+    worldView.buildStaticBeforeGround(target);
+    await whenFarDerived();
     worldView.buildStaticBeforeGrass(target);
     await whenGrassDerived();
     const programsBefore = programCount();
@@ -2294,10 +2299,15 @@ void loadPageWorld().then((loaded) => {
   void WorldSound.open(soundManifest).then((sound) => { if (sound) { worldView.attachSound(sound); } });
   markStartup("view-loaded");
   world = loaded;
-  // The prebuild starts once the worker's static scene reached the page (#855), and finishes once its grass did.
+  // The prebuild starts once the worker's static scene reached the page (#855), builds the ground once its far levels
+  // did, and finishes once its grass did.
   void whenSceneDerived().then(() => {
     sceneDerived = true;
     markStartup("static-derived");
+    prebuildEntry();
+  });
+  void whenFarDerived().then(() => {
+    farDerived = true;
     prebuildEntry();
   });
   void whenGrassDerived().then(() => {
