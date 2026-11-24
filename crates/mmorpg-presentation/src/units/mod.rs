@@ -303,10 +303,6 @@ pub struct UnitPresenter {
     /// ladder is drawn lifted so its hands meet the rungs.
     rungs: Vec<crate::climbing::Rungs>,
     rung_lifts: BTreeMap<EntityRef, f64>,
-    /// The dressed climbable crag faces (#668), once the client draws the crag kit, and how far
-    /// each imported unit climbing one is drawn out of the box so its hands meet the rock.
-    crag_faces: crate::crag::Faces,
-    crag_pushes: BTreeMap<EntityRef, [f64; 2]>,
     ready: BTreeSet<Kind>,
     /// The client draws the residents' appearance presets on the Ranger (#418).
     residents: bool,
@@ -388,8 +384,6 @@ impl UnitPresenter {
             aligns: BTreeMap::new(),
             rungs,
             rung_lifts: BTreeMap::new(),
-            crag_faces: crate::crag::Faces::default(),
-            crag_pushes: BTreeMap::new(),
             ready: BTreeSet::new(),
             residents: false,
             equipment: None,
@@ -443,24 +437,6 @@ impl UnitPresenter {
     /// and their primitive stand-ins are not drawn.
     pub fn set_effect_kits(&mut self, drawn: bool) {
         self.kit_effects.set_drawn(drawn);
-    }
-
-    /// The crag kit's `crag-descriptor` JSON once the client draws the kit (#668), or `None`
-    /// while it does not: a climber holding a dressed climbable face is drawn out to the
-    /// modules' grip plane ([`crate::crag::Faces`]).
-    ///
-    /// # Errors
-    ///
-    /// For a malformed descriptor; the faces are then left undressed.
-    pub fn set_crag_descriptor(&mut self, json: Option<&str>) -> Result<(), String> {
-        self.crag_faces = crate::crag::Faces::default();
-        if let Some(json) = json {
-            let radius = f64::from(mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[0])
-                / f64::from(mmorpg_core::UNITS_PER_METRE);
-            let climbs = crate::crag::descriptor_climbs(json)?;
-            self.crag_faces = crate::crag::Faces::new(&self.scenery, &climbs, radius);
-        }
-        Ok(())
     }
 
     /// Shows or hides the development body overlay (#39): every unit's authoritative collision
@@ -558,7 +534,6 @@ impl UnitPresenter {
         self.sways.clear();
         self.aligns.clear();
         self.rung_lifts.clear();
-        self.crag_pushes.clear();
         self.deaths.clear();
         self.stuns.clear();
         self.hastes.clear();
@@ -1864,7 +1839,6 @@ impl UnitPresenter {
         self.recoils
             .retain(|e, impact| present.contains(e) && impact.live(seconds));
         self.rung_lifts.retain(|e, _| present.contains(e));
-        self.crag_pushes.retain(|e, _| present.contains(e));
         self.deaths.retain(|e, _| present.contains(e));
         self.stuns
             .retain(|e, &mut until| present.contains(e) && input.seconds < until);
@@ -2085,22 +2059,6 @@ impl UnitPresenter {
                         1. - (-input.dt / 0.12).exp()
                     };
                 let rung_lift = *rung_lift;
-                // On a face the crag kit dresses (#668) the drawn body stands off the module's
-                // grip plane rather than the box collider inside the rock.
-                let push_target = (traversal == mmorpg_core::TraversalView::Climbing)
-                    .then(|| self.crag_faces.stand_off(feet, f64::from(half[0])))
-                    .flatten()
-                    .unwrap_or([0.; 2]);
-                let crag_push = self.crag_pushes.entry(entity).or_default();
-                for axis in 0..2 {
-                    crag_push[axis] += (push_target[axis] - crag_push[axis])
-                        * if reduced {
-                            1.
-                        } else {
-                            1. - (-input.dt / 0.12).exp()
-                        };
-                }
-                let crag_push = *crag_push;
                 let (posture, face, bed) = self.social_cues(snapshot, unit, entity, yaw);
                 let durations = &self.durations;
                 let mut animation = self.playbacks.entry(entity).or_default().advance(
@@ -2215,11 +2173,7 @@ impl UnitPresenter {
                             + footing[axis]
                             + recoil[axis]
                             + drawn_bed[axis]
-                            + match axis {
-                                0 => crag_push[0],
-                                1 => rung_lift,
-                                _ => crag_push[1],
-                            }
+                            + if axis == 1 { rung_lift } else { 0. }
                     }),
                     ..root
                 };

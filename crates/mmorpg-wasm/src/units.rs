@@ -182,12 +182,6 @@ impl Units {
             });
     }
 
-    /// The crag kit's descriptor once the page draws it, `""` while it does not (#668).
-    pub fn set_crag_descriptor(&mut self, json: &str) -> Result<(), String> {
-        self.presenter
-            .set_crag_descriptor((!json.is_empty()).then_some(json))
-    }
-
     /// Whether the page draws the strike and spell effect bundles (#894).
     pub fn set_effect_kits(&mut self, drawn: bool) {
         self.presenter.set_effect_kits(drawn);

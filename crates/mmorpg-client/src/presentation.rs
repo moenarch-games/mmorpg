@@ -192,11 +192,7 @@ impl Presentation {
         if skinned::residents_drawable() {
             units_presenter.residents_ready();
         }
-        // The native build embeds the crag kit (#668): climbers on its faces meet its rock.
-        units_presenter
-            .set_crag_descriptor(Some(crate::nature::crag_descriptor()))
-            .expect("the embedded crag descriptor is valid");
-        // It embeds the strike and spell effects (#894) too.
+        // The native build embeds the strike and spell effects (#894) too.
         units_presenter.set_effect_kits(true);
         Ok(Self {
             shared_cat: None,

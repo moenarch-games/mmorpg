@@ -206,12 +206,6 @@ pub fn kit_entry(key: &str) -> Option<usize> {
         .map(|index| bundled + index)
 }
 
-/// The embedded crag kit's `crag-descriptor` (#668), whose climb metadata places climbers.
-#[must_use]
-pub fn crag_descriptor() -> &'static str {
-    crag_descriptor::DESCRIPTOR
-}
-
 /// Every entry's levels of detail from the embedded descriptors.
 #[must_use]
 pub fn lods() -> Vec<EntryLods> {

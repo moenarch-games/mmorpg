@@ -50,22 +50,9 @@ const MARSHAL_HOUSE: [&str; 5] = [
     "greyhaven.marshal-house.door",
 ];
 
-/// The crag kit entries the clients place (`mmorpg_presentation::crag::KIT_ENTRIES`): the box
-/// modules (#668) and the outcrops the world dressing places (#683).
-const CRAG: [&str; 18] = [
-    "crag.kit.cap-1",
-    "crag.kit.cap-2",
-    "crag.kit.cap-corner",
-    "crag.kit.corner-climb-1",
-    "crag.kit.corner-climb-2",
-    "crag.kit.corner-sheer-1",
-    "crag.kit.corner-sheer-2",
-    "crag.kit.face-climb-1",
-    "crag.kit.face-climb-2",
-    "crag.kit.face-climb-3",
-    "crag.kit.face-sheer-1",
-    "crag.kit.face-sheer-2",
-    "crag.kit.face-sheer-3",
+/// The crag kit entries the clients place (`mmorpg_presentation::crag::KIT_ENTRIES`): the
+/// outcrops the world dressing places (#683, #1195).
+const CRAG: [&str; 5] = [
     "crag.kit.outcrop-buttress-1",
     "crag.kit.outcrop-buttress-2",
     "crag.kit.outcrop-spire",

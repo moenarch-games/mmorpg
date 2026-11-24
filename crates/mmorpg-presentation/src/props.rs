@@ -1100,8 +1100,6 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
             } else {
                 Kit::Nature
             })
-        } else if crate::crag::dresses(s, p) {
-            Some(Kit::Crag)
         } else {
             crate::climbing::draws(p).then_some(Kit::Climbing)
         };
