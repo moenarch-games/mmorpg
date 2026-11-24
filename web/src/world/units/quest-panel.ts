@@ -4,7 +4,7 @@ import type { ContentCatalog, QuestRecord } from "../catalog";
 import { wasm } from "../../wasm";
 import { aftermathOpen } from "../raid-aid";
 import { forewarningLine } from "../raid-prep";
-import { dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
+import { defenceStatus, dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
 
 export type QuestElements = {
   /** The NPC dialog: quests offered, ready to turn in and in progress at one quest NPC. */
@@ -221,6 +221,8 @@ export class QuestPanel {
   /** The forewarning signal on an evening with raid signs nearby (#532), for rumours and the lookout's ask. */
   #forewarning: RaidSignal | null = null;
   #raidLookout: number | null = null;
+  /** A running defence's status line nearby (#1019), or null. */
+  #defence: string | null = null;
   /** Whether the zone clock reads night, when private-home residents only take turn-ins (#158). */
   #night = false;
 
@@ -231,6 +233,7 @@ export class QuestPanel {
     }
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
+    this.#defence = defenceStatus(snapshot.raid ?? null);
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;
     this.#raidReady = snapshot.raid?.warned === true || (snapshot.raid?.braced.length ?? 0) > 0;
     this.#aftermath = aftermathOpen(snapshot.raid);
@@ -297,16 +300,19 @@ export class QuestPanel {
   #renderTracker(catalog: ContentCatalog | null, sheet: QuestState["sheet"]): void {
     const rows = catalog && sheet ? trackerRows(sheet) : [];
     const changed = rows.map((row) => row.objective !== null && this.#state.highlighted(row.quest, row.objective));
-    const key = JSON.stringify([rows, changed]);
+    const defence = this.#defence;
+    const key = JSON.stringify([rows, changed, defence]);
     if (key === this.#trackerKey) {
       return;
     }
     this.#trackerKey = key;
+    // A running defence nearby (#1019), whoever started it, heads the tracker.
+    const status = defence === null ? [] : [element("span", defence, "quest-line defence-status")];
     if (rows.length === 0) {
-      this.#elements.tracker.replaceChildren("No active quests. Look for ! over quest givers and press E to talk.");
+      this.#elements.tracker.replaceChildren(...status, "No active quests. Look for ! over quest givers and press E to talk.");
       return;
     }
-    this.#elements.tracker.replaceChildren(...rows.map((row, index) => {
+    this.#elements.tracker.replaceChildren(...status, ...rows.map((row, index) => {
       const line = element("span", row.text, "quest-line");
       line.dataset.quest = String(row.quest);
       if (row.objective !== null) {

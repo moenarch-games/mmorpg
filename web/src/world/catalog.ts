@@ -82,11 +82,12 @@ export type AbilityRecord = {
  * The quest actions and credits of #1019: an item given to NPC `source` (use_item), an NPC led into area
  * `source` (escort), an NPC heard (interview), a creature template slain with the quest's loan
  * (defeat_with_loan) or hit by a boulder (crush), and a structure piece (demolish). A delivery (#1077) names the NPC
- * taking a load from load source `source` (deliver).
+ * taking a load from load source `source` (deliver). Farm defence (#1019): a construction site's structure piece (build),
+ * the NPC who starts a defence (defend) and an aid chore, 1 mend or 2 tend (aid).
  */
 export type QuestObjectiveRecord =
   | {
-      kind: "kill" | "talk" | "explore" | "victory" | "inspect" | "interview" | "defeat_with_loan" | "crush" | "demolish";
+      kind: "kill" | "talk" | "explore" | "victory" | "inspect" | "interview" | "defeat_with_loan" | "crush" | "demolish" | "build" | "defend" | "aid";
       target: number;
       count: number;
     }
@@ -139,6 +140,9 @@ const OBJECTIVE_KINDS = [
   "crush",
   "demolish",
   "deliver",
+  "build",
+  "defend",
+  "aid",
 ] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
@@ -413,6 +417,13 @@ export function decodeCatalog(json: string): ContentCatalog {
       }
       if (objective.source !== null) {
         fail(`${label} has a source only when it collects, retrieves, gives an item, escorts or delivers`);
+      }
+      // Farm defence (#1019): a defence starts at a known NPC; an aid chore is 1 mend or 2 tend.
+      if (kind === "defend" && !npcsById.has(target)) {
+        fail(`${label} names an unknown NPC`);
+      }
+      if (kind === "aid" && target !== 1 && target !== 2) {
+        fail(`${label} names an unknown aid chore`);
       }
       return { kind, target, count };
     });

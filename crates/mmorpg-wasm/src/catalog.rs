@@ -68,7 +68,9 @@ pub struct QuestExport {
 /// (`target` is an NPC led into area `source`), `interview` (`target` is an NPC),
 /// `defeat_with_loan` and `crush` (`target` is a creature template, slain with the quest's loan
 /// or hit by a boulder) or `demolish` (`target` is a structure piece), or `deliver` (#1077,
-/// `target` is the NPC taking a load from load source `source`). `questActionAt` picks the
+/// `target` is the NPC taking a load from load source `source`), or `build` (#1019, `target` is
+/// a construction site's structure piece), `defend` (`target` is the NPC who starts the
+/// defence) or `aid` (`target` is the chore: 1 mend, 2 tend). `questActionAt` picks the
 /// action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -97,6 +99,17 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Crush { template, .. } => ("crush", template.get(), None),
         QuestObjective::Demolish { piece } => ("demolish", piece.get(), None),
         QuestObjective::DeliverLoad { source, npc } => ("deliver", npc.get(), Some(source.get())),
+        // Construction, defence and aid (#1019).
+        QuestObjective::Build { piece } => ("build", piece.get(), None),
+        QuestObjective::Defend { npc } => ("defend", npc.get(), None),
+        QuestObjective::Aid { chore, .. } => (
+            "aid",
+            match chore {
+                mmorpg_core::AidChore::Mend => 1,
+                mmorpg_core::AidChore::Tend => 2,
+            },
+            None,
+        ),
     };
     ObjectiveExport {
         kind,

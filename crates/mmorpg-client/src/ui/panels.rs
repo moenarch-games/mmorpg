@@ -317,6 +317,16 @@ impl GameUi {
     }
 
     pub(super) fn quest_tracker(&self, ui: &mut egui::Ui, frame: &UiFrame<'_>) {
+        // A running defence nearby (#1019), whoever started it.
+        if let Some(line) = frame
+            .snapshot
+            .and_then(|snapshot| snapshot.raid.as_ref())
+            .and_then(|raid| Some((raid.phase, raid.standing?)))
+            .and_then(|(phase, standing)| quest::defence_status(phase, standing, frame.content))
+        {
+            ui.separator();
+            ui.label(RichText::new(line).color(Color32::from_rgb(255, 130, 80)));
+        }
         let Some(sheet) = &self.sheets.quests else {
             return;
         };

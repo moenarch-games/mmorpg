@@ -146,6 +146,29 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .map_or("the load", |spot| spot.name.as_str()),
             objective_npc(content, npc)
         ),
+        // Construction, defence and aid (#1019).
+        QuestObjective::Build { piece } => format!(
+            "Raise {}",
+            content
+                .pieces()
+                .iter()
+                .find(|candidate| candidate.id == piece)
+                .map(|piece| piece.name.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or("the structure")
+        ),
+        QuestObjective::Defend { .. } => {
+            let site = content.raid();
+            format!(
+                "Hold {} with {} of its people standing",
+                site.map_or("the farm", |site| site.name.as_str()),
+                site.map_or(1, mmorpg_core::RaidSite::hold)
+            )
+        }
+        QuestObjective::Aid { chore, .. } => match chore {
+            mmorpg_core::AidChore::Mend => "Breaches mended".to_owned(),
+            mmorpg_core::AidChore::Tend => "Wounded tended".to_owned(),
+        },
     }
 }
 
@@ -189,7 +212,8 @@ pub fn objective_view(
         | QuestObjective::Collect { .. }
         | QuestObjective::Retrieve { .. }
         | QuestObjective::DefeatWithLoan { .. }
-        | QuestObjective::Crush { .. } => {
+        | QuestObjective::Crush { .. }
+        | QuestObjective::Aid { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
         QuestObjective::Talk { .. }
@@ -201,6 +225,8 @@ pub fn objective_view(
         | QuestObjective::Interview { .. }
         | QuestObjective::Demolish { .. }
         | QuestObjective::DeliverLoad { .. }
+        | QuestObjective::Build { .. }
+        | QuestObjective::Defend { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -213,7 +239,9 @@ pub fn objective_view(
         | QuestObjective::Escort { .. }
         | QuestObjective::Interview { .. }
         | QuestObjective::Demolish { .. }
-        | QuestObjective::DeliverLoad { .. } => label.clone(),
+        | QuestObjective::DeliverLoad { .. }
+        | QuestObjective::Build { .. }
+        | QuestObjective::Defend { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -276,6 +304,22 @@ pub struct TrackerRow {
     pub objective: Option<u8>,
     /// The quest is complete, or the objective done.
     pub done: bool,
+}
+
+/// The HUD line of a running defence (#1019) at assault `phase` with `standing` of the raid
+/// site's civilians on their feet, as the raid signal carries them: "Millbrook Farm under
+/// attack: wave 2 of 3, 3 of 3 of its people standing (2 must stand)". `None` without a raid
+/// site.
+#[must_use]
+pub fn defence_status(phase: u8, standing: u8, content: &ZoneContent) -> Option<String> {
+    let site = content.raid()?;
+    Some(format!(
+        "{} under attack: wave {phase} of {}, {standing} of {} of its people standing ({} must stand)",
+        site.name,
+        mmorpg_core::raid::RAID_PHASES,
+        site.civilians.len(),
+        site.hold()
+    ))
 }
 
 /// The HUD tracker: each active quest followed by its objectives.
@@ -464,7 +508,7 @@ pub fn evidence_in_reach(
 
 /// The load (#1077) Interact lifts for a player centred at `centre` units with the active quests
 /// `entries`, seeing the set-down `loads`: its own set-down load in reach first, otherwise the
-/// nearest load source in reach that an open delivery of theirs names. `None` when there is
+/// nearest load source in reach that an open delivery or build (#1019) of theirs names. `None` when there is
 /// none, or while the player already carries one (`carrying`, Interact then sets it down unless
 /// a selected NPC takes it). The zone checks everything again.
 #[must_use]
@@ -504,6 +548,10 @@ pub fn lift_in_reach(
                 .flat_map(|quest| quest.objectives.iter().zip(entry.progress))
                 .filter_map(|(objective, progress)| match *objective {
                     QuestObjective::DeliverLoad { source, .. } if progress == 0 => Some(source),
+                    // A build's material (#1019).
+                    QuestObjective::Build { piece } if progress == 0 => {
+                        content.construction(piece).map(|site| site.source)
+                    }
                     _ => None,
                 })
         })
@@ -588,7 +636,8 @@ mod tests {
                     | QuestObjective::Collect { .. }
                     | QuestObjective::Retrieve { .. }
                     | QuestObjective::DefeatWithLoan { .. }
-                    | QuestObjective::Crush { .. } => {
+                    | QuestObjective::Crush { .. }
+                    | QuestObjective::Aid { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
                     QuestObjective::Talk { .. }
@@ -599,7 +648,9 @@ mod tests {
                     | QuestObjective::Escort { .. }
                     | QuestObjective::Interview { .. }
                     | QuestObjective::Demolish { .. }
-                    | QuestObjective::DeliverLoad { .. } => {
+                    | QuestObjective::DeliverLoad { .. }
+                    | QuestObjective::Build { .. }
+                    | QuestObjective::Defend { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

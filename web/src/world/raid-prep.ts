@@ -63,6 +63,11 @@ export function raidNoticeText(notice: RaidNotice): string {
       return "Greyhaven Guard: \"The barn stands. Being ready for them bought us the time.\"";
     case "fell":
       return "Greyhaven Guard: \"We were ready and it slowed them, but they broke into the barn all the same.\"";
+    // A defence's end (#1019): what Osric says of his people.
+    case "stood":
+      return "Farmer Osric Mill: \"They're falling back, and my people are standing. We held!\"";
+    case "overrun":
+      return "Farmer Osric Mill: \"Too many of my people are down. Once they're tended and the barn is whole, we try again.\"";
   }
 }
 

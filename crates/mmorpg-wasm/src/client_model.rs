@@ -951,6 +951,14 @@ pub fn tracker_rows(sheet: Ts<QuestSheet>) -> Result<JsValue, JsError> {
     to_js(&rows)
 }
 
+/// The HUD line of a running defence (#1019) at assault `phase` with `standing` civilians on
+/// their feet, as the raid signal carries them; the shared client model's text.
+#[wasm_bindgen(js_name = defenceStatus)]
+#[must_use]
+pub fn defence_status(phase: u8, standing: u8) -> Option<String> {
+    quest::defence_status(phase, standing, &hosted_content())
+}
+
 /// A projected quest NPC and whether it looks within reach.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
