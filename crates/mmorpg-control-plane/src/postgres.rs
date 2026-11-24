@@ -11,6 +11,10 @@
 //! the same schema, checked against these zone grants in one transaction.
 use crate::instance::{InstanceAuthority, InstanceDirectory, InstanceStoreError};
 use crate::party::{PartyAuthority, PartyDirectory, PartyStoreError};
+use crate::shared_directory::{
+    Apply, DirectoryError, DirectoryRow, KeptRow, Repair, SharedDirectory, StoredDirectory,
+    StoredRow, Written, repair,
+};
 use crate::{
     ControlPlaneError, EntityId, HandoffAuthority, HandoffPhase, HandoffRecord, HandoffTicket,
     HostId, TransferId, ZoneLease, settles_arrival, speaks_for,
@@ -32,6 +36,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_instances.sql"),
     include_str!("../migrations/0005_instance_boss_outcome.sql"),
     include_str!("../migrations/0006_serving_grants.sql"),
+    include_str!("../migrations/0007_directory_revisions.sql"),
 ];
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;
@@ -433,6 +438,30 @@ impl PostgresHandoffs {
         self.canceller.clone()
     }
 
+    /// Deletes up to `limit` handoff records that settled (committed or aborted) at least
+    /// `retention` ago, oldest first, and returns how many (#1146). Unsettled records are never
+    /// deleted. Within the retention a retried step of a settled transfer answers as before;
+    /// after it the transfer is unknown, as one never prepared. Transfer IDs are never reused,
+    /// and a character still pending in the store past the retention was never activated at
+    /// its destination, so treating it as never prepared hands it back to its source without
+    /// a second copy.
+    pub fn purge_settled(
+        &mut self,
+        retention: Duration,
+        limit: u32,
+    ) -> Result<u64, ControlPlaneError> {
+        let millis = i64::try_from(retention.as_millis()).map_err(unavailable)?;
+        self.client
+            .execute(
+                "DELETE FROM mmorpg_coordination.handoffs WHERE transfer_id IN (\
+                 SELECT transfer_id FROM mmorpg_coordination.handoffs \
+                 WHERE settled_at<=clock_timestamp()-$1::bigint*interval '1 millisecond' \
+                 ORDER BY settled_at LIMIT $2)",
+                &[&millis, &i64::from(limit)],
+            )
+            .map_err(unavailable)
+    }
+
     fn step<R>(
         &mut self,
         body: impl FnOnce(&mut Transaction<'_>) -> Result<R, ControlPlaneError>,
@@ -571,6 +600,7 @@ fn record_in(
     .transpose()
 }
 
+/// Moves a record to `phase`; a settled one records when it settled (#1146).
 fn set_phase(
     client: &mut impl GenericClient,
     transfer_id: TransferId,
@@ -578,8 +608,13 @@ fn set_phase(
 ) -> Result<(), ControlPlaneError> {
     client
         .execute(
-            "UPDATE mmorpg_coordination.handoffs SET phase=$2 WHERE transfer_id=$1",
-            &[&signed(transfer_id.get()), &phase_code(phase)],
+            "UPDATE mmorpg_coordination.handoffs SET phase=$2,\
+             settled_at=CASE WHEN $3 THEN clock_timestamp() END WHERE transfer_id=$1",
+            &[
+                &signed(transfer_id.get()),
+                &phase_code(phase),
+                &matches!(phase, HandoffPhase::Committed | HandoffPhase::Aborted),
+            ],
         )
         .map_err(unavailable)?;
     Ok(())
@@ -746,17 +781,160 @@ impl HandoffAuthority for PostgresHandoffs {
     }
 }
 
-/// The durable [`PartyAuthority`] (#404, ADR 0008): one row shared by the peer hosts, read,
-/// changed and rewritten under its row lock, so every host's operations are linearized.
-pub struct PostgresParties {
+/// A shared directory's row in PostgreSQL (#1146, [`crate::shared_directory`]): read without a
+/// lock, then locked (`FOR UPDATE`) and compare-and-set by revision only to write.
+pub struct PostgresRow {
     client: Client,
+    table: &'static str,
+}
+
+impl PostgresRow {
+    fn connect(
+        url: &str,
+        timeout: Duration,
+        table: &'static str,
+    ) -> Result<Self, DirectoryStoreError> {
+        Ok(Self {
+            client: PostgresZoneDirectory::connect(url, timeout)?.client,
+            table,
+        })
+    }
+}
+
+fn directory_backend(cause: impl fmt::Display) -> DirectoryError {
+    DirectoryError::Backend(cause.to_string())
+}
+
+/// A failed statement, with the server's message when it gave one.
+fn directory_sql(error: postgres::Error) -> DirectoryError {
+    match error.as_db_error() {
+        Some(cause) => DirectoryError::Backend(format!("{error}: {}", cause.message())),
+        None => directory_backend(error),
+    }
+}
+
+fn stored_row(
+    row: &Row,
+    revision: &str,
+    format: &str,
+    state: &str,
+) -> Result<Option<StoredRow>, DirectoryError> {
+    let Some(state) = row.get::<_, Option<Vec<u8>>>(state) else {
+        return Ok(None);
+    };
+    Ok(Some(StoredRow {
+        revision: u64::try_from(row.get::<_, i64>(revision)).map_err(directory_backend)?,
+        format: row.get(format),
+        state,
+    }))
+}
+
+impl DirectoryRow for PostgresRow {
+    fn peek(
+        &mut self,
+        issuer: Option<&ZoneLease>,
+        known: Option<u64>,
+    ) -> Result<(u64, Option<StoredRow>), DirectoryError> {
+        let known = known
+            .map(|revision| i64::try_from(revision).map_err(directory_backend))
+            .transpose()?;
+        let (zone, epoch, host) = match issuer {
+            Some(lease) => (
+                Some(i64::from(lease.zone_id.get())),
+                Some(i64::try_from(lease.epoch).map_err(directory_backend)?),
+                Some(lease.host_id.as_str()),
+            ),
+            None => (None, None, None),
+        };
+        // No lock: the issuer's grant is only checked here, and held through a write's commit
+        // by `write`.
+        let row = self
+            .client
+            .query_one(
+                &format!(
+                    "SELECT d.revision, d.format, \
+                     CASE WHEN d.revision IS NOT DISTINCT FROM $1 THEN NULL ELSE d.state END AS state, \
+                     floor(extract(epoch FROM now())*1000)::bigint AS now, \
+                     $2::bigint IS NULL OR EXISTS (SELECT 1 FROM mmorpg_coordination.zones z \
+                       WHERE z.zone_id=$2 AND z.epoch=$3 AND z.host_id=$4::text AND NOT z.retired \
+                       AND z.expires_at>clock_timestamp()) AS current \
+                     FROM mmorpg_coordination.{} d",
+                    self.table
+                ),
+                &[&known, &zone, &epoch, &host],
+            )
+            .map_err(directory_sql)?;
+        if !row.get::<_, bool>("current") {
+            return Err(DirectoryError::Fenced);
+        }
+        let now = u64::try_from(row.get::<_, i64>("now")).map_err(directory_backend)?;
+        Ok((now, stored_row(&row, "revision", "format", "state")?))
+    }
+
+    fn write(
+        &mut self,
+        issuer: Option<&ZoneLease>,
+        known: u64,
+        format: i16,
+        apply: &mut Apply<'_>,
+    ) -> Result<Written, DirectoryError> {
+        let mut transaction = self.client.transaction().map_err(directory_sql)?;
+        if let Some(lease) = issuer {
+            // Share-locks the grant until the commit, so it cannot change under the write.
+            ensure_current_in(&mut transaction, lease).map_err(|error| match error {
+                ControlPlaneError::Backend(cause) => DirectoryError::Backend(cause),
+                _ => DirectoryError::Fenced,
+            })?;
+        }
+        let row = transaction
+            .query_one(
+                &format!(
+                    "SELECT revision, format, state, floor(extract(epoch FROM now())*1000)::bigint AS now \
+                     FROM mmorpg_coordination.{} FOR UPDATE",
+                    self.table
+                ),
+                &[],
+            )
+            .map_err(directory_sql)?;
+        let current = stored_row(&row, "revision", "format", "state")?
+            .ok_or_else(|| directory_backend("the directory row has no state"))?;
+        let now = u64::try_from(row.get::<_, i64>("now")).map_err(directory_backend)?;
+        let revision = current.revision;
+        let moved = (revision != known).then_some(current);
+        let Some(state) = apply(now, moved)? else {
+            return Ok(Written::Unchanged(revision));
+        };
+        transaction
+            .execute(
+                &format!(
+                    "UPDATE mmorpg_coordination.{} SET previous_revision=revision, \
+                     previous_format=format, previous_state=state, \
+                     revision=revision+1, format=$1, state=$2",
+                    self.table
+                ),
+                &[&format, &state],
+            )
+            .map_err(directory_sql)?;
+        transaction.commit().map_err(directory_sql)?;
+        Ok(Written::Stored(revision + 1))
+    }
+}
+
+const PARTY_TABLE: &str = "party_directory";
+const INSTANCE_TABLE: &str = "instance_directory";
+
+/// The durable [`PartyAuthority`] (#404, ADR 0008): one row shared by the peer hosts. Polls that
+/// change nothing read only its revision, without a lock; a change is written under the row's
+/// lock, so every host's changes are linearized (#1146, [`crate::shared_directory`]).
+pub struct PostgresParties {
+    directory: SharedDirectory<PartyDirectory, PostgresRow>,
 }
 
 impl PostgresParties {
     /// Connects to `url`; `timeout` bounds connecting and every statement.
     pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
         Ok(Self {
-            client: PostgresZoneDirectory::connect(url, timeout)?.client,
+            directory: SharedDirectory::new(PostgresRow::connect(url, timeout, PARTY_TABLE)?),
         })
     }
 }
@@ -767,56 +945,21 @@ impl PartyAuthority for PostgresParties {
         issuer: Option<&ZoneLease>,
         body: &mut dyn FnMut(&mut PartyDirectory, u64),
     ) -> Result<(), PartyStoreError> {
-        let mut transaction = self.client.transaction().map_err(party_backend)?;
-        if let Some(lease) = issuer {
-            ensure_current_in(&mut transaction, lease).map_err(|error| match error {
-                ControlPlaneError::Backend(cause) => PartyStoreError::Backend(cause),
-                _ => PartyStoreError::Fenced,
-            })?;
-        }
-        let row = transaction
-            .query_one(
-                "SELECT state, floor(extract(epoch FROM now())*1000)::bigint \
-                 FROM mmorpg_coordination.party_directory FOR UPDATE",
-                &[],
-            )
-            .map_err(party_backend)?;
-        let stored: Vec<u8> = row.get(0);
-        let now: i64 = row.get(1);
-        let mut directory = if stored.is_empty() {
-            PartyDirectory::new()
-        } else {
-            PartyDirectory::decode(&stored)?
-        };
-        body(&mut directory, u64::try_from(now).map_err(party_backend)?);
-        let encoded = directory.encode();
-        if encoded != stored {
-            transaction
-                .execute(
-                    "UPDATE mmorpg_coordination.party_directory SET state=$1",
-                    &[&encoded],
-                )
-                .map_err(party_backend)?;
-        }
-        transaction.commit().map_err(party_backend)
+        Ok(self.directory.transact(issuer, body)?)
     }
 }
 
-fn party_backend(cause: impl fmt::Display) -> PartyStoreError {
-    PartyStoreError::Backend(cause.to_string())
-}
-
-/// The durable [`InstanceAuthority`] (#404, ADR 0009): one row shared by the peer hosts, read,
-/// changed and rewritten under its row lock, so every host's run admissions are linearized.
+/// The durable [`InstanceAuthority`] (#404, ADR 0009): one row shared by the peer hosts, read and
+/// written as [`PostgresParties`] does, so every host's run admissions are linearized.
 pub struct PostgresInstances {
-    client: Client,
+    directory: SharedDirectory<InstanceDirectory, PostgresRow>,
 }
 
 impl PostgresInstances {
     /// Connects to `url`; `timeout` bounds connecting and every statement.
     pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
         Ok(Self {
-            client: PostgresZoneDirectory::connect(url, timeout)?.client,
+            directory: SharedDirectory::new(PostgresRow::connect(url, timeout, INSTANCE_TABLE)?),
         })
     }
 }
@@ -827,44 +970,95 @@ impl InstanceAuthority for PostgresInstances {
         issuer: Option<&ZoneLease>,
         body: &mut dyn FnMut(&mut InstanceDirectory, u64),
     ) -> Result<(), InstanceStoreError> {
-        let mut transaction = self.client.transaction().map_err(instance_backend)?;
-        if let Some(lease) = issuer {
-            ensure_current_in(&mut transaction, lease).map_err(|error| match error {
-                ControlPlaneError::Backend(cause) => InstanceStoreError::Backend(cause),
-                _ => InstanceStoreError::Fenced,
-            })?;
-        }
-        let row = transaction
-            .query_one(
-                "SELECT state, floor(extract(epoch FROM now())*1000)::bigint \
-                 FROM mmorpg_coordination.instance_directory FOR UPDATE",
-                &[],
-            )
-            .map_err(instance_backend)?;
-        let stored: Vec<u8> = row.get(0);
-        let now: i64 = row.get(1);
-        let mut directory = if stored.is_empty() {
-            InstanceDirectory::new()
-        } else {
-            InstanceDirectory::decode(&stored)?
-        };
-        body(
-            &mut directory,
-            u64::try_from(now).map_err(instance_backend)?,
-        );
-        let encoded = directory.encode();
-        if encoded != stored {
-            transaction
-                .execute(
-                    "UPDATE mmorpg_coordination.instance_directory SET state=$1",
-                    &[&encoded],
-                )
-                .map_err(instance_backend)?;
-        }
-        transaction.commit().map_err(instance_backend)
+        Ok(self.directory.transact(issuer, body)?)
     }
 }
 
-fn instance_backend(cause: impl fmt::Display) -> InstanceStoreError {
-    InstanceStoreError::Backend(cause.to_string())
+/// The repair step for the shared directories (#1146, `MMORPG_PERSISTENCE_MODE=repair-directories`):
+/// one line per directory telling how it was left. A directory that does not decode gets its
+/// previous encoding back; with `reset`, one neither of whose encodings decodes starts empty.
+/// Fails on a directory it could not repair, after repairing the others.
+pub fn repair_directories(
+    client: &mut Client,
+    reset: bool,
+) -> Result<Vec<String>, DirectoryStoreError> {
+    let mut report = Vec::new();
+    let mut failed = Vec::new();
+    for outcome in [
+        repair_table::<PartyDirectory>(client, PARTY_TABLE, reset),
+        repair_table::<InstanceDirectory>(client, INSTANCE_TABLE, reset),
+    ] {
+        match outcome {
+            Ok(line) => report.push(line),
+            Err(error) => failed.push(error.to_string()),
+        }
+    }
+    if failed.is_empty() {
+        Ok(report)
+    } else {
+        Err(backend(format!(
+            "{}{}",
+            report
+                .iter()
+                .map(|line| format!("{line}; "))
+                .collect::<String>(),
+            failed.join("; ")
+        )))
+    }
+}
+
+fn repair_table<D: StoredDirectory>(
+    client: &mut Client,
+    table: &'static str,
+    reset: bool,
+) -> Result<String, DirectoryError> {
+    let mut transaction = client.transaction().map_err(directory_sql)?;
+    let row = transaction
+        .query_one(
+            &format!(
+                "SELECT revision, format, state, previous_revision, previous_format, previous_state \
+                 FROM mmorpg_coordination.{table} FOR UPDATE"
+            ),
+            &[],
+        )
+        .map_err(directory_sql)?;
+    let mut kept = KeptRow {
+        current: stored_row(&row, "revision", "format", "state")?
+            .ok_or_else(|| directory_backend("the directory row has no state"))?,
+        previous: match row.get::<_, Option<i64>>("previous_revision") {
+            Some(_) => stored_row(
+                &row,
+                "previous_revision",
+                "previous_format",
+                "previous_state",
+            )?,
+            None => None,
+        },
+    };
+    let outcome = repair::<D>(&mut kept, reset)?;
+    if outcome != Repair::Healthy {
+        transaction
+            .execute(
+                &format!("UPDATE mmorpg_coordination.{table} SET revision=$1, format=$2, state=$3"),
+                &[
+                    &i64::try_from(kept.current.revision).map_err(directory_backend)?,
+                    &kept.current.format,
+                    &kept.current.state,
+                ],
+            )
+            .map_err(directory_sql)?;
+    }
+    transaction.commit().map_err(directory_sql)?;
+    let revision = kept.current.revision;
+    Ok(match outcome {
+        Repair::Healthy => format!("the {} decodes at revision {revision}", D::NAME),
+        Repair::Restored { previous_revision } => format!(
+            "the {} did not decode; revision {revision} restores revision {previous_revision}",
+            D::NAME
+        ),
+        Repair::Reset => format!(
+            "the {} did not decode, nor did its previous revision; revision {revision} is empty",
+            D::NAME
+        ),
+    })
 }

@@ -4,7 +4,7 @@ use mmorpg_control_plane::{
     party::{InviteTarget, PartyAuthority, PartyRosterEntry, PartyStoreError},
     postgres::{
         DirectoryStoreError, PostgresHandoffs, PostgresParties, PostgresZoneDirectory,
-        ensure_writer_in, migrate,
+        ensure_writer_in, migrate, repair_directories,
     },
 };
 use mmorpg_core::{CharacterId, ZoneId};
@@ -198,6 +198,160 @@ fn postgres_handoffs_are_fenced_idempotent_and_decided_at_acceptance() {
         handoffs.commit(third, successor.lease()).unwrap(),
         HandoffPhase::Committed
     );
+
+    // #1146: settled records stay for their retention, then go; unsettled ones never do.
+    handoffs
+        .purge_settled(Duration::from_secs(3600), 1_000)
+        .unwrap();
+    assert_eq!(
+        handoffs.commit(transfer, successor.lease()).unwrap(),
+        HandoffPhase::Committed,
+        "a retried step of a settled transfer answers as before"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    assert!(handoffs.purge_settled(Duration::from_millis(1), 1).unwrap() <= 1);
+    handoffs
+        .purge_settled(Duration::from_millis(1), 1_000)
+        .unwrap();
+    for settled in [transfer, again.transfer_id, third] {
+        assert_eq!(handoffs.record(settled).unwrap(), None);
+    }
+    assert_eq!(
+        handoffs.commit(transfer, successor.lease()),
+        Err(ControlPlaneError::UnknownTransfer(transfer))
+    );
+    assert_eq!(
+        handoffs
+            .record(TransferId::new(transfer.get() - 3))
+            .unwrap()
+            .unwrap()
+            .phase,
+        HandoffPhase::Prepared,
+        "an unsettled record stays"
+    );
+}
+
+/// #1146: a poll that changes nothing reads the shared directory without its lock, so it goes on
+/// while another transaction holds the row; a change waits for the lock. A row this build cannot
+/// decode is reported, left alone and repaired from its previous encoding.
+#[test]
+fn postgres_directories_read_without_a_lock_and_repair_an_undecodable_row() {
+    let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
+        return;
+    };
+    let mut client = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    migrate(&mut client).unwrap();
+    client
+        .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a44_5445_5354_i64])
+        .unwrap();
+    let first: i64 = client
+        .query_one(
+            "SELECT coalesce(max(zone_id),1000)+1 FROM mmorpg_coordination.zones",
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    let zone = ZoneId::new(u32::try_from(first).unwrap());
+    let mut zones = PostgresZoneDirectory::connect(&url, Duration::from_secs(5)).unwrap();
+    let grant = zones
+        .acquire(
+            zone,
+            HostId::new("west").unwrap(),
+            0,
+            Duration::from_secs(30),
+        )
+        .unwrap();
+    let lease = grant.lease().clone();
+    let mut host = PostgresParties::connect(&url, Duration::from_millis(500)).unwrap();
+    let aria = CharacterId::new(format!("aria-{first}")).unwrap();
+    let roster = [PartyRosterEntry {
+        character: aria.clone(),
+        player: 1,
+        name: "Aria".into(),
+    }];
+    let sync = |directory: &mut mmorpg_control_plane::party::PartyDirectory, now: u64| {
+        directory.sync_zone(zone, &roster, now);
+    };
+    host.transact(Some(&lease), &mut |directory, now| sync(directory, now))
+        .unwrap();
+    let revision = |client: &mut postgres::Client| -> i64 {
+        client
+            .query_one(
+                "SELECT revision FROM mmorpg_coordination.party_directory",
+                &[],
+            )
+            .unwrap()
+            .get(0)
+    };
+    let written = revision(&mut client);
+
+    let mut holder = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    let mut locked = holder.transaction().unwrap();
+    locked
+        .execute(
+            "SELECT 1 FROM mmorpg_coordination.party_directory FOR UPDATE",
+            &[],
+        )
+        .unwrap();
+    for _ in 0..3 {
+        host.transact(Some(&lease), &mut |directory, now| sync(directory, now))
+            .expect("an unchanged poll takes no lock");
+    }
+    let change = host.transact(Some(&lease), &mut |directory, now| {
+        directory.sync_zone(zone, &[], now);
+    });
+    assert!(
+        matches!(change, Err(PartyStoreError::Backend(_))),
+        "a change waits for the lock: {change:?}"
+    );
+    locked.rollback().unwrap();
+    assert_eq!(revision(&mut client), written, "nothing was written");
+
+    // A damaged encoding (a later write's, kept beside the good one) stops every host's
+    // transactions with an error naming it, and no host overwrites it.
+    host.transact(Some(&lease), &mut |directory, now| {
+        directory.sync_zone(zone, &[], now);
+    })
+    .unwrap();
+    client
+        .execute(
+            "UPDATE mmorpg_coordination.party_directory SET previous_revision=revision, \
+             previous_format=format, previous_state=state, revision=revision+1, state='\\x010203'",
+            &[],
+        )
+        .unwrap();
+    let damaged = revision(&mut client);
+    let mut other = PostgresParties::connect(&url, Duration::from_secs(5)).unwrap();
+    for directory in [&mut host, &mut other] {
+        let error = directory
+            .transact(Some(&lease), &mut |directory, now| sync(directory, now))
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("party directory (revision {damaged}, format 1)")),
+            "{error}"
+        );
+    }
+    assert_eq!(revision(&mut client), damaged);
+    let report = repair_directories(&mut client, false).unwrap();
+    assert!(
+        report[0].contains(&format!("restores revision {}", damaged - 1)),
+        "{report:?}"
+    );
+    assert!(
+        report[1].contains("instance directory decodes"),
+        "{report:?}"
+    );
+    let mut view = None;
+    other
+        .transact(Some(&lease), &mut |directory, now| {
+            sync(directory, now);
+            view = Some(directory.view(&aria, 0));
+        })
+        .unwrap();
+    assert!(view.is_some());
+    zones.retire(&lease).unwrap();
 }
 
 /// Two hosts share one party directory (#404): a party formed on one survives its member's
