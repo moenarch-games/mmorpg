@@ -2,6 +2,7 @@ import type { Axis } from "../command-wire";
 import { sameEntity, type EntityRef } from "../entity-ref";
 import type { ZoneSnapshot } from "../replication";
 import type { HeldIntent } from "../world/orbit-camera";
+import { zoneConstants } from "../zone-constants";
 import { isReleasedAction, type GameAction, type HoldPhase, type ReleasedAction } from "./game-controls";
 
 /**
@@ -131,9 +132,6 @@ export type TouchContext = {
   npc: EntityRef | null;
 };
 
-/** Reach in zone units, mirroring `mmorpg-core` (the zone still checks every intent). */
-export const LOOT_REACH_UNITS = 300;
-export const NPC_REACH_UNITS = 500;
 /** Opponents this close (30 m) bring up the combat buttons. */
 export const COMBAT_NEAR_UNITS = 3_000;
 
@@ -166,10 +164,13 @@ export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContext
   if (snapshot.viewer.dead) {
     return { combat: false, dead: true, weaponDrawn: snapshot.viewer.weaponDrawn, interact: null, npc: null };
   }
+  // The zone's reaches (#1159): looting, and talking to or trading with an NPC; the zone checks every intent.
+  const reach = zoneConstants();
+  const npcReach = Math.max(reach.questReachUnits, reach.vendorReachUnits);
   const corpse = others.some((entity) => entity.kind === "creature" && entity.flags.lootable && !entity.flags.tappedByOther
-    && distance(entity.position) <= LOOT_REACH_UNITS);
+    && distance(entity.position) <= reach.lootReachUnits);
   const npc = others
-    .filter((entity) => entity.kind === "npc" && distance(entity.position) <= NPC_REACH_UNITS)
+    .filter((entity) => entity.kind === "npc" && distance(entity.position) <= npcReach)
     .sort((left, right) => distance(left.position) - distance(right.position) || left.entityId - right.entityId)[0];
   const npcRef: EntityRef | null = npc ? { kind: "npc", id: npc.entityId } : null;
   const interact: InteractKind | null = corpse ? "loot"

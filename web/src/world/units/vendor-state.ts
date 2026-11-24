@@ -1,12 +1,10 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ErrorCode, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, VendorOffer } from "../catalog";
+import { zoneConstants } from "../../zone-constants";
 import type { BagState } from "./bag-state";
 
-/** The zone's inclusive XZ reach to a vendor's feet (5 m); a presentation hint, the zone decides. */
-export const VENDOR_REACH_UNITS = 500;
-
-/** The nearest projected vendor NPC and whether it looks within reach. */
+/** The nearest projected vendor NPC and whether it looks within the zone's vendor reach (a hint; the zone decides). */
 export type NearbyVendor = { npc: number; name: string; inReach: boolean; offers: readonly VendorOffer[] };
 
 /** Honors explicit NPC selection; otherwise chooses the nearest vendor. The zone checks reach. */
@@ -37,7 +35,7 @@ export function nearestVendor(snapshot: ZoneSnapshot, catalog: ContentCatalog): 
     npc: nearest.npc,
     name: catalog.npcs.get(nearest.npc)?.name ?? "Vendor",
     // Projected NPC feet stand on y = 0 while the viewer's record is its body centre, so compare XZ only.
-    inReach: nearest.distance <= VENDOR_REACH_UNITS,
+    inReach: nearest.distance <= zoneConstants().vendorReachUnits,
     offers: vendor?.offers ?? [],
   };
 }

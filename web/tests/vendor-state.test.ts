@@ -3,9 +3,12 @@ import type { EntityRef } from "../src/entity-ref";
 import type { EntityState, ErrorCode, InventorySlot, Vector3, ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { BagState } from "../src/world/units/bag-state";
-import { nearestVendor, VENDOR_REACH_UNITS, VendorState } from "../src/world/units/vendor-state";
+import { nearestVendor, VendorState } from "../src/world/units/vendor-state";
+import { zoneConstants } from "../src/zone-constants";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
+
+const VENDOR_REACH_UNITS = zoneConstants().vendorReachUnits;
 
 // The test catalog's vendor (NPC 3) offers the Worn Dagger for 9 copper; NPC 6 is a guard.
 const catalog = decodeCatalog(JSON.stringify(catalogJson()));

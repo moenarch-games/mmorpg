@@ -172,9 +172,6 @@ export function hazeMix(style: EnvironmentStyle, distanceMetres: number): number
   return mix;
 }
 
-/** A 20-minute day in real seconds (`mmorpg_presentation::clock::PAGES_DAY_SECONDS`); the zone clock is the shared `clock`. */
-export const DAY_SECONDS = 20 * 60;
-
 /** A periodic presentation clock; zero is noon, half a cycle is midnight. */
 function cycle(dayFraction: number): { daylight: number; dusk: number; angle: number } {
   const fraction = Number.isFinite(dayFraction) ? dayFraction - Math.floor(dayFraction) : 0;
