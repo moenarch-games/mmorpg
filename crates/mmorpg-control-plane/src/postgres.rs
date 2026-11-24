@@ -16,7 +16,8 @@ use crate::{
     HostId, TransferId, ZoneLease, settles_arrival, speaks_for,
 };
 use mmorpg_core::ZoneId;
-use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Row, Transaction};
+use mmorpg_postgres::{Canceller, Target};
+use postgres::{Client, GenericClient, Row, Transaction};
 use std::{
     error::Error,
     fmt,
@@ -30,6 +31,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_parties.sql"),
     include_str!("../migrations/0004_instances.sql"),
     include_str!("../migrations/0005_instance_boss_outcome.sql"),
+    include_str!("../migrations/0006_serving_grants.sql"),
 ];
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub const SCHEMA_VERSION: i32 = MIGRATIONS.len() as i32;
@@ -101,35 +103,34 @@ pub struct StoredAssignment {
 
 pub struct PostgresZoneDirectory {
     client: Client,
+    canceller: Canceller,
 }
 impl PostgresZoneDirectory {
+    /// Connects to `url`, with TLS when its `sslmode` asks for it, and refuses
+    /// a database whose directory schema is not this build's: serving logins
+    /// never migrate (#1142).
     pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
         if timeout.is_zero() {
             return Err(DirectoryStoreError::InvalidDuration);
         }
-        let mut config: Config = url.parse().map_err(backend)?;
-        config.connect_timeout(timeout);
+        let mut target = Target::parse(url).map_err(backend)?;
+        target.config_mut().connect_timeout(timeout);
         // The server-side statement timeout cannot end a request to a peer that
         // stopped answering; without this a renewal blocks for good (#1097).
-        config.tcp_user_timeout(timeout);
-        let mut client = config.connect(NoTls).map_err(backend)?;
+        target.config_mut().tcp_user_timeout(timeout);
+        let mmorpg_postgres::Connection {
+            mut client,
+            canceller,
+        } = target.connect().map_err(backend)?;
         let millis = timeout.as_millis().max(1);
         client
             .batch_execute(&format!(
                 "SET statement_timeout={millis}; SET lock_timeout={millis}"
             ))
             .map_err(backend)?;
-        let version: Option<i32> = client
-            .query_one(
-                "SELECT max(version) FROM mmorpg_coordination.migrations",
-                &[],
-            )
-            .map_err(backend)?
-            .get(0);
-        if version != Some(SCHEMA_VERSION) {
-            return Err(backend("unsupported directory schema"));
-        }
-        Ok(Self { client })
+        mmorpg_postgres::require_schema(&mut client, "mmorpg_coordination", SCHEMA_VERSION)
+            .map_err(backend)?;
+        Ok(Self { client, canceller })
     }
     /// Records the retirement of `expected` only once it has expired by the
     /// database clock; `false` while it is still valid (#1097). Expiry proves
@@ -148,8 +149,8 @@ impl PostgresZoneDirectory {
         Ok(changed == 1)
     }
     #[must_use]
-    pub fn cancel_token(&self) -> CancelToken {
-        self.client.cancel_token()
+    pub fn canceller(&self) -> Canceller {
+        self.canceller.clone()
     }
     pub fn acquire(
         &mut self,
@@ -224,7 +225,9 @@ pub fn migrate(client: &mut Client) -> Result<(), DirectoryStoreError> {
         .get(0);
     let applied = version.unwrap_or(0);
     if !(0..=SCHEMA_VERSION).contains(&applied) {
-        return Err(backend("unsupported directory schema"));
+        return Err(backend(format!(
+            "directory schema is at version {applied}, newer than this build's {SCHEMA_VERSION}"
+        )));
     }
     let applied = usize::try_from(applied).map_err(backend)?;
     for (version, migration) in (1_i32..).zip(MIGRATIONS).skip(applied) {
@@ -414,19 +417,20 @@ fn backend(cause: impl fmt::Display) -> DirectoryStoreError {
 /// [`crate::HandoffRegistry`].
 pub struct PostgresHandoffs {
     client: Client,
+    canceller: Canceller,
 }
 
 impl PostgresHandoffs {
     /// Connects to `url`; `timeout` bounds connecting and every statement.
     pub fn connect(url: &str, timeout: Duration) -> Result<Self, DirectoryStoreError> {
-        Ok(Self {
-            client: PostgresZoneDirectory::connect(url, timeout)?.client,
-        })
+        let PostgresZoneDirectory { client, canceller } =
+            PostgresZoneDirectory::connect(url, timeout)?;
+        Ok(Self { client, canceller })
     }
 
     #[must_use]
-    pub fn cancel_token(&self) -> CancelToken {
-        self.client.cancel_token()
+    pub fn canceller(&self) -> Canceller {
+        self.canceller.clone()
     }
 
     fn step<R>(

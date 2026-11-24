@@ -72,6 +72,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn serve_configured_host() -> Result<(), Box<dyn Error>> {
+    // The explicit migration step (#1142): applies every PostgreSQL schema with its own
+    // login and exits, before any serving configuration is read.
+    #[cfg(feature = "postgres")]
+    if env::var("MMORPG_PERSISTENCE_MODE").as_deref() == Ok("migrate") {
+        mmorpg_game_server::persistence::migrate_postgres_schemas()
+            .await
+            .map_err(|cause| ConfigError(cause.to_string()))?;
+        return Ok(());
+    }
     let zone_ids = parse_zone_ids(&read_string("MMORPG_ZONE_IDS", DEFAULT_ZONE_IDS)?)?;
     let port = read_number("MMORPG_PORT", DEFAULT_PORT)?;
     let status_port = read_number("MMORPG_STATUS_PORT", DEFAULT_HOST_STATUS_PORT)?;

@@ -436,10 +436,10 @@ impl PostgresJournal {
     pub(super) fn set_cancellation(&mut self, cancelled: Arc<AtomicBool>) {
         self.cancelled = cancelled;
     }
-    pub(super) fn cancel_tokens(&self) -> Vec<::postgres::CancelToken> {
-        let mut tokens = vec![self.entries.cancel_token()];
+    pub(super) fn cancellers(&self) -> Vec<mmorpg_postgres::Canceller> {
+        let mut tokens = vec![self.entries.canceller()];
         if let Some(replication) = &self.replication {
-            tokens.extend(replication.cancel_tokens());
+            tokens.extend(replication.cancellers());
         }
         tokens
     }
@@ -934,7 +934,7 @@ mod tests {
         let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
             return;
         };
-        let mut coordinator = Client::connect(&url, postgres::NoTls).unwrap();
+        let mut coordinator = mmorpg_postgres::connect(&url).unwrap();
         migrate(&mut coordinator).unwrap();
         migrate(&mut coordinator).unwrap();
         coordinator

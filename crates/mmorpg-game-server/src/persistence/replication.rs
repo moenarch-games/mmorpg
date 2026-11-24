@@ -12,7 +12,8 @@
 //! Global progression queries use the confirmed standby, because local primary
 //! visibility can precede the completion of this acknowledgement barrier.
 use mmorpg_characters::StoreError;
-use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Transaction};
+use mmorpg_postgres::{Canceller, Connection, Target};
+use postgres::{Client, GenericClient, Transaction};
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -27,6 +28,7 @@ struct ClusterIdentity {
 
 pub(super) struct ReplicaBarrier {
     primary: Client,
+    cancellers: [Canceller; 2],
     standby: Client,
     identity: ClusterIdentity,
     timeout: Duration,
@@ -41,8 +43,8 @@ impl ReplicaBarrier {
         if timeout.is_zero() {
             return Err(failure("replication confirmation timeout must be positive"));
         }
-        let mut primary = connect(primary_url, timeout)?;
-        let mut standby = connect(standby_url, timeout)?;
+        let (mut primary, primary_canceller) = connect(primary_url, timeout)?;
+        let (mut standby, standby_canceller) = connect(standby_url, timeout)?;
         let primary_identity = identity(&mut primary, false)?;
         let standby_identity = identity(&mut standby, true)?;
         if primary_identity != standby_identity {
@@ -52,6 +54,7 @@ impl ReplicaBarrier {
         }
         Ok(Self {
             primary,
+            cancellers: [primary_canceller, standby_canceller],
             standby,
             identity: primary_identity,
             timeout,
@@ -61,8 +64,8 @@ impl ReplicaBarrier {
     /// The owner can cancel in-flight SQL as well as setting the cooperative
     /// cancellation flag. A failed/cancelled barrier leaves the commit uncertain;
     /// it is never permission to publish or continue advancing the simulation.
-    pub(super) fn cancel_tokens(&self) -> [CancelToken; 2] {
-        [self.primary.cancel_token(), self.standby.cancel_token()]
+    pub(super) fn cancellers(&self) -> [Canceller; 2] {
+        self.cancellers.clone()
     }
 
     pub(super) fn ensure_standby_snapshot(
@@ -135,17 +138,20 @@ impl ReplicaBarrier {
     }
 }
 
-fn connect(url: &str, timeout: Duration) -> Result<Client, StoreError> {
-    let mut config: Config = url.parse().map_err(sql)?;
-    config.connect_timeout(timeout);
-    let mut client = config.connect(NoTls).map_err(sql)?;
+fn connect(url: &str, timeout: Duration) -> Result<(Client, Canceller), StoreError> {
+    let mut target = Target::parse(url).map_err(sql)?;
+    target.config_mut().connect_timeout(timeout);
+    let Connection {
+        mut client,
+        canceller,
+    } = target.connect().map_err(sql)?;
     let millis = timeout.as_millis().max(1);
     client
         .batch_execute(&format!(
             "SET statement_timeout={millis}; SET lock_timeout={millis}"
         ))
         .map_err(sql)?;
-    Ok(client)
+    Ok((client, canceller))
 }
 
 fn identity(client: &mut impl GenericClient, standby: bool) -> Result<ClusterIdentity, StoreError> {
@@ -213,7 +219,7 @@ mod tests {
                 let _ = self.0.batch_execute("SELECT pg_wal_replay_resume()");
             }
         }
-        let mut paused = PausedReplay(connect(&standby, Duration::from_secs(5)).unwrap());
+        let mut paused = PausedReplay(connect(&standby, Duration::from_secs(5)).unwrap().0);
         paused
             .0
             .batch_execute("SELECT pg_wal_replay_pause()")

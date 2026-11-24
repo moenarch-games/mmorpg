@@ -233,7 +233,7 @@ mod tests {
         let bucket = std::env::var("MMORPG_CHECKPOINT_S3_BUCKET").unwrap();
         let setup = primary.clone();
         let fence = tokio::task::spawn_blocking(move || {
-            let mut client = ::postgres::Client::connect(&setup, ::postgres::NoTls).unwrap();
+            let mut client = mmorpg_postgres::connect(&setup).unwrap();
             migrate(&mut client).unwrap();
             client
                 .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a4a_5445_5354_i64])

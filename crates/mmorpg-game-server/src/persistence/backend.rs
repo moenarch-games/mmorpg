@@ -7,13 +7,14 @@ use super::{
     postgres::{self, StreamFence},
     replication::ReplicaBarrier,
 };
-use ::postgres::{Client, Config, NoTls};
+use ::postgres::Client;
 use mmorpg_characters::{Committed, PostgresEntries, StoreError};
 use mmorpg_control_plane::{
     HostId, LocalZonePermit,
     postgres::{self as directory, UnconfirmedZoneGrant},
 };
 use mmorpg_core::{CharacterId, ZoneId};
+use mmorpg_postgres::{Canceller, Connection, Target};
 use std::{
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
@@ -45,6 +46,7 @@ impl ConfirmedZoneGrant {
 
 pub(crate) struct GlobalBackend {
     coordinator: Client,
+    coordinator_canceller: Canceller,
     replication: ReplicaBarrier,
     profiles: PostgresEntries,
     cancelled: Arc<AtomicBool>,
@@ -55,9 +57,12 @@ impl GlobalBackend {
         if config.timeout.is_zero() {
             return Err(error("global backend timeout must be positive"));
         }
-        let mut connection: Config = config.coordinator_primary_url.parse().map_err(error)?;
-        connection.connect_timeout(config.timeout);
-        let mut coordinator = connection.connect(NoTls).map_err(error)?;
+        let mut target = Target::parse(&config.coordinator_primary_url).map_err(error)?;
+        target.config_mut().connect_timeout(config.timeout);
+        let Connection {
+            client: mut coordinator,
+            canceller: coordinator_canceller,
+        } = target.connect().map_err(error)?;
         let millis = config.timeout.as_millis().max(1);
         coordinator
             .batch_execute(&format!(
@@ -66,12 +71,18 @@ impl GlobalBackend {
             .map_err(error)?;
         // Connection never performs schema changes. Operators explicitly run
         // the directory/journal migrations with the independently privileged role.
-        let versions = coordinator.query_one("SELECT (SELECT max(version) FROM mmorpg_coordination.migrations),(SELECT max(version) FROM mmorpg_persistence.migrations)", &[]).map_err(error)?;
-        if versions.get::<_, Option<i32>>(0) != Some(directory::SCHEMA_VERSION)
-            || versions.get::<_, Option<i32>>(1) != Some(postgres::SCHEMA_VERSION)
-        {
-            return Err(error("unsupported global backend schema"));
-        }
+        mmorpg_postgres::require_schema(
+            &mut coordinator,
+            "mmorpg_coordination",
+            directory::SCHEMA_VERSION,
+        )
+        .map_err(error)?;
+        mmorpg_postgres::require_schema(
+            &mut coordinator,
+            "mmorpg_persistence",
+            postgres::SCHEMA_VERSION,
+        )
+        .map_err(error)?;
         let mut replication = ReplicaBarrier::connect(
             &config.coordinator_primary_url,
             &config.coordinator_standby_url,
@@ -81,6 +92,7 @@ impl GlobalBackend {
         let profiles = PostgresEntries::connect(&config.character_standby_url, config.timeout)?;
         Ok(Self {
             coordinator,
+            coordinator_canceller,
             replication,
             profiles,
             cancelled: Arc::new(AtomicBool::new(false)),
@@ -90,12 +102,12 @@ impl GlobalBackend {
     pub(super) fn set_cancellation(&mut self, flag: Arc<AtomicBool>) {
         self.cancelled = flag;
     }
-    pub(super) fn cancel_tokens(&self) -> Vec<::postgres::CancelToken> {
+    pub(super) fn cancellers(&self) -> Vec<mmorpg_postgres::Canceller> {
         let mut tokens = vec![
-            self.coordinator.cancel_token(),
-            self.profiles.cancel_token(),
+            self.coordinator_canceller.clone(),
+            self.profiles.canceller(),
         ];
-        tokens.extend(self.replication.cancel_tokens());
+        tokens.extend(self.replication.cancellers());
         tokens
     }
     pub(crate) fn assignment(
@@ -330,7 +342,7 @@ mod tests {
         ) else {
             return;
         };
-        let mut admin = Client::connect(&primary, NoTls).unwrap();
+        let mut admin = mmorpg_postgres::connect(&primary).unwrap();
         postgres::migrate(&mut admin).unwrap();
         admin
             .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a4a_5445_5354_i64])

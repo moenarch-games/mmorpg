@@ -307,6 +307,21 @@ fn zone_id(id: &MatchId) -> std::result::Result<ZoneId, String> {
         .map_err(message)
 }
 
+/// The explicit migration step (`MMORPG_PERSISTENCE_MODE=migrate`, #1142): applies
+/// every schema a PostgreSQL host reads (zone directory, characters, journal)
+/// through `MMORPG_MIGRATION_DATABASE_URL`, a login allowed to change schemas.
+/// Serving hosts never migrate; they refuse a database at another version.
+pub async fn migrate_postgres_schemas() -> Result<()> {
+    let url = required("MMORPG_MIGRATION_DATABASE_URL")?;
+    tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
+        let mut client = mmorpg_postgres::connect(&url).map_err(message)?;
+        super::postgres::migrate(&mut client).map_err(message)
+    })
+    .await??;
+    eprintln!("PostgreSQL migrations applied (zone directory, characters, journal).");
+    Ok(())
+}
+
 /// Explicit opt-in application composition. The storage roles/standby and S3
 /// destination come from environment configuration; there is no local fallback.
 pub async fn serve_postgres_character_host(
@@ -318,15 +333,7 @@ pub async fn serve_postgres_character_host(
 ) -> Result<()> {
     let mode = required("MMORPG_PERSISTENCE_MODE")?;
     if mode == "migrate" {
-        let url = required("MMORPG_MIGRATION_DATABASE_URL")?;
-        tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
-            let mut client =
-                ::postgres::Client::connect(&url, ::postgres::NoTls).map_err(message)?;
-            super::postgres::migrate(&mut client).map_err(message)
-        })
-        .await??;
-        eprintln!("PostgreSQL persistence migrations applied.");
-        return Ok(());
+        return migrate_postgres_schemas().await;
     }
     let unique: BTreeSet<_> = zones.iter().copied().collect();
     if zones.is_empty() || unique.len() != zones.len() {

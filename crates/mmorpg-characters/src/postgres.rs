@@ -8,7 +8,7 @@
 //! hosts serialize — also for a character that has no row yet — and a failed
 //! update leaves the row as it was. Every statement is bounded by the
 //! connection's statement and lock timeouts and can be cancelled from another
-//! thread through [`PostgresEntries::cancel_token`].
+//! thread through [`PostgresEntries::canceller`].
 //!
 //! The schema is versioned by [`MIGRATIONS`]; [`migrate`] applies them with a
 //! privileged role, and [`PostgresEntries::connect`] refuses a database whose
@@ -27,7 +27,8 @@ use std::cell::RefCell;
 use std::time::Duration;
 
 use mmorpg_core::CharacterId;
-use postgres::{CancelToken, Client, Config, GenericClient, NoTls, Transaction};
+use mmorpg_postgres::{Canceller, Target};
+use postgres::{Client, GenericClient, Transaction};
 
 use crate::{CharacterStore, EntryBackend, EntryChange, StoreError};
 
@@ -43,33 +44,32 @@ const MIGRATION_LOCK: i64 = 0x4d4d_4348_4d49_4752; // "MMCHMIGR"
 
 pub struct PostgresEntries {
     client: RefCell<Client>,
+    canceller: Canceller,
 }
 
 impl PostgresEntries {
-    /// Connects to `url` (a libpq URL or key/value string). `timeout` bounds
-    /// connecting and every later statement and lock wait.
+    /// Connects to `url` (a libpq URL or key/value string), with TLS when its
+    /// `sslmode` asks for it. `timeout` bounds connecting and every later
+    /// statement and lock wait. Never migrates: a database whose schema is not
+    /// this build's is refused.
     pub fn connect(url: &str, timeout: Duration) -> Result<Self, StoreError> {
-        let mut config: Config = url.parse().map_err(backend)?;
-        config.connect_timeout(timeout);
-        let mut client = config.connect(NoTls).map_err(backend)?;
+        let mut target = Target::parse(url).map_err(backend)?;
+        target.config_mut().connect_timeout(timeout);
+        let mmorpg_postgres::Connection {
+            mut client,
+            canceller,
+        } = target.connect().map_err(backend)?;
         let millis = timeout.as_millis().max(1);
         client
             .batch_execute(&format!(
                 "SET statement_timeout = {millis}; SET lock_timeout = {millis}"
             ))
             .map_err(backend)?;
-        let version: Option<i32> = client
-            .query_one("SELECT max(version) FROM mmorpg_characters.migrations", &[])
-            .map_err(backend)?
-            .get(0);
-        if version != Some(SCHEMA_VERSION) {
-            return Err(StoreError::Backend(format!(
-                "character schema is at version {}, this build needs {SCHEMA_VERSION}",
-                version.unwrap_or(0)
-            )));
-        }
+        mmorpg_postgres::require_schema(&mut client, "mmorpg_characters", SCHEMA_VERSION)
+            .map_err(backend)?;
         Ok(Self {
             client: RefCell::new(client),
+            canceller,
         })
     }
 
@@ -108,8 +108,8 @@ impl PostgresEntries {
 
     /// Cancels the statement this backend is running, from any thread.
     #[must_use]
-    pub fn cancel_token(&self) -> CancelToken {
-        self.client.borrow().cancel_token()
+    pub fn canceller(&self) -> Canceller {
+        self.canceller.clone()
     }
 }
 
@@ -251,6 +251,12 @@ impl From<postgres::Error> for Failure {
             Some(db) => format!("{error}: {}", db.message()),
             None => error.to_string(),
         })
+    }
+}
+
+impl From<mmorpg_postgres::ConnectError> for Failure {
+    fn from(error: mmorpg_postgres::ConnectError) -> Self {
+        Self(error.to_string())
     }
 }
 
