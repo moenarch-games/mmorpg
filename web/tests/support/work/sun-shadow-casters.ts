@@ -58,9 +58,13 @@ export function body(): { model: THREE.Group; triangles: number } {
   return { model, triangles: triangles(geometry) };
 }
 
-/** Per cascade (near, middle, far), the share of the body's triangles its shadow proxies draw, in percent. */
-export function unitShadowTrianglePercent(): number[] {
+/**
+ * Per cascade (near, middle, far), the share of the body's triangles its shadow proxies draw, in percent, once their
+ * simplified levels arrived (#1122: in a worker).
+ */
+export async function unitShadowTrianglePercent(): Promise<number[]> {
   const { model, triangles: full } = body();
   const merged = mergeUnitMeshes(model, new Set());
+  await merged.shadowLevels;
   return [0, 1, 2].map((cascade) => Math.round((100 * merged.shadows.reduce((sum, proxy) => sum + triangles(shadowGeometry(proxy, cascade)), 0)) / full));
 }
