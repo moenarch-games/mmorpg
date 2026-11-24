@@ -98,8 +98,9 @@ impl fmt::Display for VendorStockError {
 
 impl Error for VendorStockError {}
 
-/// Copper any vendor pays for one unit of a catalog item; zero for unknown
-/// items. Every catalog item is sellable.
+/// Copper any vendor pays for one unit of a catalog item; zero for unknown items. Every catalog
+/// item is sellable except the quest supplies and lent trial arms (#1019, items 36 to 41): a
+/// vendor refuses those, so accepting, selling and abandoning a quest never mints copper.
 #[must_use]
 pub const fn sell_price(item: ItemId) -> u32 {
     match item.get() {
@@ -120,8 +121,6 @@ pub const fn sell_price(item: ItemId) -> u32 {
         30 => 10,
         // The smith's great weapons (#1073).
         32..=35 => 15,
-        // The trial arms and quest supplies (#1019): worth a token copper, never a loan's value.
-        36..=41 => 1,
         _ => 0,
     }
 }
@@ -212,6 +211,8 @@ pub enum VendorTradeError {
     NotEnoughMoney,
     /// Crediting the sale would overflow the copper balance.
     MoneyOverflow,
+    /// The item has no sale value: a quest's supply or lent arms (#1019).
+    NotSellable,
     Inventory(InventoryError),
 }
 
@@ -220,6 +221,7 @@ impl fmt::Display for VendorTradeError {
         match self {
             Self::NotEnoughMoney => formatter.write_str("not enough copper"),
             Self::MoneyOverflow => formatter.write_str("the sale would overflow copper"),
+            Self::NotSellable => formatter.write_str("vendors do not buy that item"),
             Self::Inventory(error) => error.fmt(formatter),
         }
     }
@@ -257,8 +259,9 @@ pub fn settle_purchase(
     Ok(())
 }
 
-/// Sells `quantity` units from one bag slot at their sale value; overflow
-/// refuses rather than saturating, leaving bag and copper unchanged.
+/// Sells `quantity` units from one bag slot at their sale value; an item without one
+/// ([`sell_price`] zero) is refused, and overflow refuses rather than saturating, leaving bag
+/// and copper unchanged.
 pub fn settle_sale(
     inventory: &mut Inventory,
     copper: &mut u32,
@@ -269,6 +272,9 @@ pub fn settle_sale(
     let sold = bag
         .remove(slot, quantity)
         .map_err(VendorTradeError::Inventory)?;
+    if sell_price(sold.item()) == 0 {
+        return Err(VendorTradeError::NotSellable);
+    }
     let value = u64::from(sell_price(sold.item())) * u64::from(sold.quantity());
     let balance =
         u32::try_from(u64::from(*copper) + value).map_err(|_| VendorTradeError::MoneyOverflow)?;
@@ -352,6 +358,7 @@ impl ZoneSimulation {
                 Some(ErrorCode::MissingMaterials)
             }
             Err(VendorTradeError::MoneyOverflow) => Some(ErrorCode::MoneyOverflow),
+            Err(VendorTradeError::NotSellable) => Some(ErrorCode::NotSellable),
             Err(VendorTradeError::Inventory(InventoryError::NoCapacity)) => {
                 Some(ErrorCode::InventoryFull)
             }
@@ -376,9 +383,11 @@ mod tests {
     use crate::ITEM_CATALOG;
 
     #[test]
-    fn every_catalog_item_is_sellable_and_every_offer_costs_more() {
+    fn every_catalog_item_but_the_quest_supplies_is_sellable_and_every_offer_costs_more() {
         for item in ITEM_CATALOG {
-            assert!(sell_price(item.id) > 0, "{} has no sale value", item.name);
+            // The quest supplies and lent trial arms (#1019) are worth nothing to a vendor.
+            let supply = (36..=41).contains(&item.id.get());
+            assert_eq!(sell_price(item.id) == 0, supply, "{}", item.name);
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);
         assert_eq!(sell_price(ItemId::new(99)), 0);

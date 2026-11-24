@@ -141,6 +141,9 @@ pub enum ErrorCode {
     /// An escort failed (#1019): the player strayed too far, fell or gave the quest up; the NPC
     /// is back at its post.
     EscortLost,
+    /// A vendor does not buy a quest's supplies or lent arms (#1019): finishing or abandoning
+    /// the quest hands them back.
+    NotSellable,
 }
 
 /// One feedback event addressed to a player.

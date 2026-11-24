@@ -286,6 +286,7 @@ mirror!(
         Distrusted,
         NpcBusy,
         EscortLost,
+        NotSellable,
     }
 );
 mirror!(

@@ -73,6 +73,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   distrusted: "They will not hear you. Bring a party member they trust to stand beside you, or earn a recommendation first.",
   "npc-busy": "Someone else is already escorting them.",
   "escort-lost": "The escort is lost: you went too far ahead or fell. Find them at their post and try again.",
+  "not-sellable": "Vendors will not buy quest supplies or lent arms. Finish or abandon the quest to hand them back.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

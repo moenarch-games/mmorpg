@@ -158,6 +158,7 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::Distrusted => "They will not hear you. Bring a party member they trust to stand beside you, or earn a recommendation first.".into(),
         ErrorCode::NpcBusy => "Someone else is already escorting them.".into(),
         ErrorCode::EscortLost => "The escort is lost: you went too far ahead or fell. Find them at their post and try again.".into(),
+        ErrorCode::NotSellable => "Vendors will not buy quest supplies or lent arms. Finish or abandon the quest to hand them back.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
