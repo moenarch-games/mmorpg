@@ -705,6 +705,28 @@ impl ZoneSimulation {
         }
     }
 
+    /// **Review only** (the browser's `redbrand-thorn` review scenario, #404): brings this
+    /// depths zone's standing boss down to at most `health`, so a reviewer reaches his adds and
+    /// loot prompt in a short fight. No host calls it for a real run. Returns whether the boss
+    /// was standing.
+    pub fn weaken_boss_for_review(&mut self, health: u32) -> bool {
+        let Some(boss) = self
+            .content
+            .depths_site()
+            .and_then(|site| site.boss.as_ref())
+            .map(|boss| boss.creature)
+        else {
+            return false;
+        };
+        match self.creatures.get_mut(&boss) {
+            Some(creature) if creature.is_alive() => {
+                creature.health = creature.health.min(health);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The report a host records in the run directory, once there is a boss outcome.
     #[must_use]
     pub fn boss_report(&self) -> Option<BossReport> {
