@@ -1,0 +1,63 @@
+{
+  "about": "Native-vs-WASM physical parity sessions (#1150), played by crates/mmorpg-wasm/tests/sight_parity.rs and web/tests/sight-parity.test.ts. world is a review scenario's name, action-lab (with lab) or greyhaven (with characters entered at the spawn plaza); player indexes the scenario character or the characters; command is a WorldCommand.",
+  "sessions": [
+    {
+      "name": "boulder-trap",
+      "about": "A Warden walks north off the rise above the Redbrand camp, shoulders the boulder trap downhill and fights Redbrand Bandit 401 hand to hand.",
+      "world": "boulder-trap",
+      "characters": [],
+      "ticks": 320,
+      "steps": [
+        { "tick": 0, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 32768 } },
+        { "tick": 25, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 32768 } },
+        { "tick": 26, "player": 0, "command": { "kind": "select-target", "target": { "kind": "creature", "id": 401 } } },
+        { "tick": 40, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 70, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 100, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 130, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 160, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 190, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 220, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 250, "player": 0, "command": { "kind": "swing", "facing": 32768 } },
+        { "tick": 280, "player": 0, "command": { "kind": "swing", "facing": 32768 } }
+      ]
+    },
+    {
+      "name": "wolf-pack",
+      "about": "A level 8 Arcanist climbs the Wolfrun Climb's cutting from the Action Lab's landing into the woods, breathes frost on Timber Wolf 121 and fights it to the death with the staff.",
+      "world": "action-lab",
+      "lab": { "class": "arcanist", "level": 8 },
+      "characters": [],
+      "ticks": 1000,
+      "steps": [
+        { "tick": 0, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 49152 } },
+        { "tick": 45, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 0 } },
+        { "tick": 400, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 49152 } },
+        { "tick": 775, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 36130 } },
+        { "tick": 805, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 36130 } },
+        { "tick": 806, "player": 0, "command": { "kind": "select-target", "target": { "kind": "creature", "id": 121 } } },
+        { "tick": 810, "player": 0, "command": { "kind": "use-ability", "ability": 21, "target": null, "facing": 36130 } },
+        { "tick": 860, "player": 0, "command": { "kind": "swing", "facing": 36130 } },
+        { "tick": 900, "player": 0, "command": { "kind": "swing", "facing": 36130 } },
+        { "tick": 940, "player": 0, "command": { "kind": "swing", "facing": 36130 } }
+      ]
+    },
+    {
+      "name": "greyhaven-crowd",
+      "about": "Two Wardens at the spawn plaza walk into each other head on and slide round, then the second walks into the first from behind.",
+      "world": "greyhaven",
+      "characters": [
+        { "id": "parity-1", "class": 0, "sex": 0 },
+        { "id": "parity-2", "class": 0, "sex": 1 }
+      ],
+      "ticks": 200,
+      "steps": [
+        { "tick": 0, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 16384 } },
+        { "tick": 0, "player": 1, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 49152 } },
+        { "tick": 40, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 16384 } },
+        { "tick": 60, "player": 1, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 15556 } },
+        { "tick": 160, "player": 1, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 15556 } }
+      ]
+    }
+  ]
+}
