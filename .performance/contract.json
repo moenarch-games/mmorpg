@@ -416,6 +416,53 @@
       ]
     },
     {
+      "id": "departure-poll",
+      "description": "A handoff host's departure polls (#1152), 16 of them: departures toward each destination host run in order beside the others, and one failed connect ends an unreachable destination's departures for the poll, which then backs off by polls; so its players cost at most one connect a poll however many wait, while a reachable destination's cost one each.",
+      "dimensions": {
+        "waiting": { "description": "players due toward a destination host whose connects all fail" },
+        "reachable": { "description": "players due toward a destination host that answers, in the first poll" }
+      },
+      "scalePoints": [
+        { "waiting": 4, "reachable": 4 },
+        { "waiting": 64, "reachable": 4 },
+        { "waiting": 512, "reachable": 4 },
+        { "waiting": 64, "reachable": 64 }
+      ],
+      "metrics": [
+        {
+          "name": "unreachable_connects",
+          "unit": "connects",
+          "signal": "operation-count",
+          "notes": "Connects toward the unreachable destination over all 16 polls: polls 1, 2, 4, 8 and 16 (handoff_schedule::DepartureSchedule::connects); crates/mmorpg-game-server/examples/departure_poll_work.rs.",
+          "budget": { "max": 5 },
+          "growth": [
+            { "dimension": "waiting", "bound": "constant" },
+            { "dimension": "reachable", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "largest_poll_unreachable_connects",
+          "unit": "connects",
+          "signal": "operation-count",
+          "notes": "The most connects one poll made toward the unreachable destination.",
+          "budget": { "max": 1 },
+          "growth": [
+            { "dimension": "waiting", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "reachable_connects",
+          "unit": "connects",
+          "signal": "operation-count",
+          "notes": "Connects toward the reachable destination: one per departing player, whatever waits for the unreachable one.",
+          "growth": [
+            { "dimension": "waiting", "bound": "constant" },
+            { "dimension": "reachable", "bound": "linear" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {

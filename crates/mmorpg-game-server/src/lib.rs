@@ -24,6 +24,7 @@ pub use dev_host::{
 mod fenced_runtime;
 pub mod handoff;
 pub mod handoff_host;
+pub mod handoff_schedule;
 pub mod instance;
 pub mod party;
 pub mod transfer_link;
