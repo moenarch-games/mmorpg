@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { SHADOW_ONLY } from "../static-batches";
-import { closedSurface, shadowLevels, UNIT_SHADOW_LEVELS } from "../shadow-lod";
+import { bakeShadowLevels } from "../shadow-bake";
+import { closedSurface, UNIT_SHADOW_LEVELS } from "../shadow-lod";
 
 /**
  * Merges a unit model's meshes into one `SkinnedMesh` per material class (#615): a Quaternius or Ranger unit is 10–23
@@ -132,20 +133,23 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
     shadows.double = [];
   }
   const proxies: THREE.SkinnedMesh[] = [];
+  const levels: Promise<void>[] = [];
+  const unit: MergedUnit = { meshes: merged.map(({ mesh }) => mesh), shadows: proxies, skeleton, shadowLevels: Promise.resolve(), released: false };
   for (const side of ["single", "double"] as const) {
     const shapes = shadows[side];
     if (shapes.length === 0) { continue; }
     const full = mergeGeometries(shapes);
     for (const shape of shapes) { shape.dispose(); }
     if (!full) { throw new Error("A unit's shadow casters failed to merge."); }
-    // Per sun cascade a simplified proxy (#1083): the near one about a third of the triangles, the far ones a tenth.
-    const levels = shadowLevels(full, UNIT_SHADOW_LEVELS);
-    const geometry = levels[0] ?? full;
     // Drawn only by the shadow views: the main pass skips its invisible material (see `SHADOW_ONLY`).
-    const proxy = new THREE.SkinnedMesh(geometry, SHADOW_ONLY[side]);
+    const proxy = new THREE.SkinnedMesh(full, SHADOW_ONLY[side]);
     proxy.name = `shadow:${side}`;
     proxy.userData.shadowOnly = true;
-    if (levels.some((level) => level !== geometry)) { proxy.userData.shadowGeometry = levels; }
+    // Per sun cascade a simplified proxy (#1083): the near one about a third of the triangles, the far ones a tenth.
+    // Simplified in a worker (#1122): until its levels arrive, the proxy casts its full shape.
+    levels.push(bakeShadowLevels(full, UNIT_SHADOW_LEVELS).then((shadow) => {
+      if (shadow && !unit.released) { proxy.userData.shadowGeometry = shadow; }
+    }));
     proxy.bind(skeleton, new THREE.Matrix4());
     model.add(proxy);
     proxies.push(proxy);
@@ -158,7 +162,8 @@ export function mergeUnitMeshes(model: THREE.Object3D, keep: ReadonlySet<THREE.O
       mesh.skeleton = skeleton;
     }
   }
-  return { meshes: merged.map(({ mesh }) => mesh), shadows: proxies, skeleton };
+  unit.shadowLevels = Promise.all(levels).then(() => {});
+  return unit;
 }
 
 /**
@@ -179,8 +184,13 @@ function shadowShape(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   return shape;
 }
 
-/** A unit's merged meshes, its shadow proxies (one per sidedness) and its shared joint palette, which it frees when dropped. */
-export type MergedUnit = { meshes: THREE.SkinnedMesh[]; shadows: THREE.SkinnedMesh[]; skeleton: THREE.Skeleton };
+/**
+ * A unit's merged meshes, its shadow proxies (one per sidedness) and its shared joint palette, which it frees when
+ * dropped (`released`). `shadowLevels` settles once the proxies' simplified levels arrived (#1122).
+ */
+export type MergedUnit = {
+  meshes: THREE.SkinnedMesh[]; shadows: THREE.SkinnedMesh[]; skeleton: THREE.Skeleton; shadowLevels: Promise<void>; released: boolean;
+};
 
 /** The material class a mesh merges in, or null when it stays its own draw. */
 function mergeKey(mesh: THREE.Mesh): string | null {
@@ -450,6 +460,8 @@ function bindGeometry(mesh: THREE.Mesh, bind: THREE.Matrix4, joints: number[] | 
  * and stays.
  */
 export function releaseUnit(model: THREE.Object3D, merged: MergedUnit): void {
+  // Levels arriving later are not attached (and so never uploaded).
+  merged.released = true;
   // With the shadow proxies' simplified levels (#1083), each once.
   const geometries = new Set([...merged.meshes, ...merged.shadows].map((mesh) => mesh.geometry));
   for (const proxy of merged.shadows) {

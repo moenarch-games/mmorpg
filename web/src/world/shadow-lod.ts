@@ -1,27 +1,27 @@
 import * as THREE from "three";
-import { MeshoptSimplifier } from "meshoptimizer/simplifier";
+import { indexLevels, simplifiedIndex, simplifierReady, type ShadowLevel } from "./shadow-lod-indices";
 
 /**
  * Shadow levels of detail (#1083): cheaper geometry the sun cascades draw in place of a caster's own (three-lighting's
  * `userData.shadowGeometry`). A shadow is a silhouette a few texels wide, so a simplified index over the same vertices
  * (meshoptimizer, which collapses edges onto existing vertices) casts the same shadow at a fraction of the triangles:
- * a skinned proxy keeps its joints and weights, a masked one its UVs.
+ * a skinned proxy keeps its joints and weights, a masked one its UVs. Units' proxies are simplified in a worker
+ * (`shadow-bake.ts`, #1122); kit levels here, when their kit is built.
  */
+
+export type { ShadowLevel } from "./shadow-lod-indices";
 
 let ready = false;
 /** Resolves once the simplifier's WebAssembly is compiled; until then {@link simplifiedShadow} returns null. */
-export const shadowLodReady: Promise<void> = MeshoptSimplifier.ready.then(() => { ready = true; });
-
-/** A shadow level: about `ratio` of the triangles, within `error` of the extent (meshoptimizer's relative error). */
-export type ShadowLevel = { ratio: number; error: number };
+export const shadowLodReady: Promise<void> = simplifierReady.then(() => { ready = true; });
 
 /** Skinned units' proxies: in the near cascade about a third (within 0.5 % of the body), farther a tenth (2 %). */
 export const UNIT_SHADOW_LEVELS: readonly ShadowLevel[] = [{ ratio: 0.3, error: 0.005 }, { ratio: 0.1, error: 0.02 }];
 /** A kit entry's coarsest level in the cascades past it: about a third of its triangles, within 2 % of its extent. */
 export const KIT_FAR_SHADOW: ShadowLevel = { ratio: 0.35, error: 0.02 };
 
-/** `geometry`'s positions as tightly packed floats, as the simplifier reads them. */
-function packedPositions(geometry: THREE.BufferGeometry): Float32Array {
+/** `geometry`'s positions as tightly packed floats, as the simplifier reads them (its own array when already so). */
+export function packedPositions(geometry: THREE.BufferGeometry): Float32Array {
   const position = geometry.getAttribute("position");
   if (position instanceof THREE.BufferAttribute && position.array instanceof Float32Array && position.itemSize === 3 && !position.normalized) {
     return position.array;
@@ -31,20 +31,18 @@ function packedPositions(geometry: THREE.BufferGeometry): Float32Array {
   return out;
 }
 
-/**
- * A geometry sharing `geometry`'s attributes with a simplified index (`level`), or null when the simplifier is not
- * ready, the geometry is not indexed triangles, or simplifying removes less than a tenth of its triangles.
- */
-export function simplifiedShadow(geometry: THREE.BufferGeometry, level: ShadowLevel): THREE.BufferGeometry | null {
+/** `geometry`'s triangle index as the simplifier reads it, or null when it is not one indexed triangle list. */
+export function simplifiableIndex(geometry: THREE.BufferGeometry): Uint32Array | null {
   const index = geometry.index;
-  if (!ready || !index || index.count < 3 || geometry.groups.length > 1) { return null; }
-  const indices = index.array instanceof Uint32Array ? index.array : Uint32Array.from(index.array);
-  const target = Math.max(3, Math.floor((index.count * level.ratio) / 3) * 3);
-  const [simplified] = MeshoptSimplifier.simplify(indices, packedPositions(geometry), 3, target, level.error);
-  if (simplified.length === 0 || simplified.length > index.count * 0.9) { return null; }
+  if (!index || index.count < 3 || geometry.groups.length > 1) { return null; }
+  return index.array instanceof Uint32Array ? index.array : Uint32Array.from(index.array);
+}
+
+/** A geometry sharing `geometry`'s attributes and bounds, drawing `index`. */
+export function withShadowIndex(geometry: THREE.BufferGeometry, index: Uint32Array): THREE.BufferGeometry {
   const shadow = new THREE.BufferGeometry();
   for (const [name, attribute] of Object.entries(geometry.attributes)) { shadow.setAttribute(name, attribute); }
-  shadow.setIndex(new THREE.BufferAttribute(simplified, 1));
+  shadow.setIndex(new THREE.BufferAttribute(index, 1));
   shadow.boundingSphere = geometry.boundingSphere;
   shadow.boundingBox = geometry.boundingBox;
   shadow.name = `${geometry.name}:shadow-lod`;
@@ -52,17 +50,31 @@ export function simplifiedShadow(geometry: THREE.BufferGeometry, level: ShadowLe
 }
 
 /**
+ * A geometry sharing `geometry`'s attributes with a simplified index (`level`), or null when the simplifier is not
+ * ready, the geometry is not indexed triangles, or simplifying removes less than a tenth of its triangles.
+ */
+export function simplifiedShadow(geometry: THREE.BufferGeometry, level: ShadowLevel): THREE.BufferGeometry | null {
+  const indices = simplifiableIndex(geometry);
+  if (!ready || !indices) { return null; }
+  const simplified = simplifiedIndex(indices, packedPositions(geometry), level.ratio, level.error);
+  return simplified ? withShadowIndex(geometry, simplified) : null;
+}
+
+/** Per level the geometry drawing `indices` ({@link indexLevels}): a null level repeats the one before, the first `geometry`. */
+export function levelGeometries(geometry: THREE.BufferGeometry, indices: readonly (Uint32Array | null)[]): THREE.BufferGeometry[] {
+  let from = geometry;
+  return indices.map((index) => (from = index ? withShadowIndex(geometry, index) : from));
+}
+
+/**
  * Per level (cascade, nearest first) the geometry a caster draws, each simplified from the one before (cheaper than
- * from the full mesh); a level that does not simplify repeats the previous one, the first `geometry` itself.
+ * from the full mesh); a level that does not simplify repeats the previous one, the first `geometry` itself. On the
+ * calling thread: units use `bakeShadowLevels` instead.
  */
 export function shadowLevels(geometry: THREE.BufferGeometry, levels: readonly ShadowLevel[]): THREE.BufferGeometry[] {
-  const out: THREE.BufferGeometry[] = [];
-  let from = geometry;
-  for (const level of levels) {
-    from = simplifiedShadow(from, { ratio: (level.ratio * triangles(geometry)) / Math.max(1, triangles(from)), error: level.error }) ?? from;
-    out.push(from);
-  }
-  return out;
+  const indices = simplifiableIndex(geometry);
+  if (!ready || !indices) { return levels.map(() => geometry); }
+  return levelGeometries(geometry, indexLevels(indices, packedPositions(geometry), levels));
 }
 
 /** Triangles `geometry` draws. */

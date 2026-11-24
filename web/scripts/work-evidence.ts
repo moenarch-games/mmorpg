@@ -35,7 +35,7 @@ function at(point: Point, dimension: string): number {
 
 await shadowLodReady;
 const { scene } = await greyhavenScenery();
-const [nearShadow, middleShadow, farShadow] = unitShadowTrianglePercent();
+const [nearShadow, middleShadow, farShadow] = await unitShadowTrianglePercent();
 
 const MEASUREMENTS: Record<string, Measure> = {
   "world-frame": (point) => {
