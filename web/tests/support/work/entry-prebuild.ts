@@ -1,22 +1,25 @@
-import { EntryPrebuild, type PrebuildTarget } from "../../../src/world/entry-prebuild";
+import { EntryPrebuild, STATIC_PARTS, type PrebuildTarget } from "../../../src/world/entry-prebuild";
 
 // The `entry-prebuild` measurement (#855, #1120): `web/tests/entry-prebuild.test.ts` asserts its bounds and
 // `web/scripts/work-evidence.ts` emits it as work evidence. The target below counts what `WorldView`'s prebuild target
 // does: parts built, compose rounds and prepares, and the static builds a first world frame would run
 // (`#inputStage` builds the remaining parts).
 
-export const STATIC_PARTS = 4;
+export { STATIC_PARTS };
 
 type Entry = { at: number };
 
-export function harness(composeRoundsToSettle = 2) {
+/** `grassDerived`: whether the grass's seed has reached the page, which the last static part (the grass) waits for. */
+export function harness(composeRoundsToSettle = 2, grassDerived = true) {
   const slices: (() => void)[] = [];
   const counts = { parts: 0, composes: 0, prepares: 0, frameStaticBuilds: 0, preparedAt: [] as number[] };
   let built = 0;
   let roots = 0;
   let streamed = 0;
+  let grass = grassDerived;
   const target: PrebuildTarget<Entry> = {
     staticBuilt: () => built >= STATIC_PARTS,
+    staticPartReady: () => built !== STATIC_PARTS - 1 || grass,
     buildStaticPart: () => { built += 1; counts.parts += 1; },
     compose: () => { counts.composes += 1; streamed += 1; return streamed % composeRoundsToSettle === 0; },
     prepareKey: () => String(roots),
@@ -44,7 +47,7 @@ export function harness(composeRoundsToSettle = 2) {
   const frame = () => {
     if (built < STATIC_PARTS) { counts.frameStaticBuilds += 1; built = STATIC_PARTS; }
   };
-  return { prebuild, idle, frame, counts, slices, addRoot: () => { roots += 1; } };
+  return { prebuild, idle, frame, counts, slices, addRoot: () => { roots += 1; }, deriveGrass: () => { grass = true; } };
 }
 
 /**

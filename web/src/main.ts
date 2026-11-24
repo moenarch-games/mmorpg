@@ -48,7 +48,7 @@ import {
 } from "./character-roster";
 import type { LocalWorld } from "./world/local-world";
 import { LocalCharacters, VisitStorage } from "./world/local-characters";
-import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, entryPreview, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenStaticSceneDerived } from "./world/wasm-runtime";
+import { actionLabDefinitions, committedArea, committedLevel, committedPhysique, createScenarioWorld, customizePhysique, entryPreview, importedRestClip, labExperiments, loadLocalWorld, physiqueModel, physiqueModifiers, prewarmLocalZone, presentZone, soundManifest, whenGrassDerived, whenSceneDerived } from "./world/wasm-runtime";
 import { loadPendingPhysique, neutralPhysique, PhysiqueEditor, physiqueLook, savePendingPhysique, type PhysiqueModel } from "./physique";
 import { WorldSound } from "./world/world-sound";
 import { ActionLabPanel, labQuery } from "./world/action-lab";
@@ -1031,7 +1031,9 @@ function updateEntryButton(): void {
 }
 
 /** Whether the world-build worker's static scene has reached the page (#855), so the prebuild can start. */
-let staticSceneDerived = false;
+let sceneDerived = false;
+/** Whether the worker's grass, derived after the scene, has reached the page (#855), so the prebuild can finish. */
+let grassDerived = false;
 /** Where each local character is expected to enter, read once per visit to the selection screen (#855). */
 const entryPreviews = new Map<string, EntryPreview>();
 /**
@@ -1056,8 +1058,8 @@ function storedArea(characters: LocalCharacters, characterId: string): number | 
  */
 function prebuildEntry(): void {
   const target = chosenWorld();
-  if (!target || !staticSceneDerived || entryState.phase === "world" || joining || preparingWorld) { return; }
-  worldView.prebuild(target, target === world ? selectedEntry() : null, entryArtReady());
+  if (!target || !sceneDerived || entryState.phase === "world" || joining || preparingWorld) { return; }
+  worldView.prebuild(target, target === world ? selectedEntry() : null, entryArtReady(), grassDerived);
 }
 
 /** The selected local character's expected entry (`entryPreview`), or null when it cannot be known. */
@@ -1704,8 +1706,11 @@ async function enterWorld(): Promise<void> {
   // shows (#547); the canvas keeps its last selection frame meanwhile.
   preparingWorld = true;
   try {
-    // A click before the worker derived the static scene waits for it rather than building it on the page (#855).
-    await whenStaticSceneDerived();
+    // A click before the worker derived the static scene waits for it rather than building it on the page (#855), and
+    // builds what the prebuild left of it while the worker still derives the grass.
+    await whenSceneDerived();
+    worldView.buildStaticBeforeGrass(target);
+    await whenGrassDerived();
     const programsBefore = programCount();
     await worldView.prepare(target, worldInput(), viewerLook(), performance.now());
     // What the selection screen's prebuild left for the joined projection: the units' programs, ideally (#855).
@@ -2289,10 +2294,14 @@ void loadPageWorld().then((loaded) => {
   void WorldSound.open(soundManifest).then((sound) => { if (sound) { worldView.attachSound(sound); } });
   markStartup("view-loaded");
   world = loaded;
-  // The prebuild starts once the worker's static scene reached the page (#855).
-  void whenStaticSceneDerived().then(() => {
-    staticSceneDerived = true;
+  // The prebuild starts once the worker's static scene reached the page (#855), and finishes once its grass did.
+  void whenSceneDerived().then(() => {
+    sceneDerived = true;
     markStartup("static-derived");
+    prebuildEntry();
+  });
+  void whenGrassDerived().then(() => {
+    grassDerived = true;
     prebuildEntry();
   });
   refreshSelectionPresentation();

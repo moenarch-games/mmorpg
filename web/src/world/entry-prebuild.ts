@@ -15,10 +15,19 @@
  */
 export type EntryPreview = { feet: [number, number, number]; centreY: number; facing: number; tick: bigint };
 
+/**
+ * The static scene's parts (`WorldView`), one per idle slice: the page's module realizing its seeded scene (its terrain
+ * tiles), the decoded scene, the batches its groups stream into, the ground and the grass. The grass comes last: its
+ * seed reaches the page after the scene's.
+ */
+export const STATIC_PARTS = 5;
+
 /** What the prebuild drives: the world view's static build, its composed entry view and its prepare. */
 export interface PrebuildTarget<Entry> {
   /** Whether the static scene is complete. */
   staticBuilt(): boolean;
+  /** Whether the next static part's input has reached the page; until then the prebuild waits, unsettled. */
+  staticPartReady(): boolean;
   /** Builds the next part of the static scene. */
   buildStaticPart(): void;
   /** One compose round of the view at `entry`; true once nothing more streams in around it. */
@@ -76,7 +85,7 @@ export class EntryPrebuild<Entry> {
 
   /**
    * Prebuilds toward `entry` (keyed by `entryKey`; null builds only the static scene), preparing its view once `prepare`
-   * allows it. Cheap to call again with the same arguments.
+   * allows it. Cheap to call again with the same arguments; call again once a waiting static part's input arrived.
    */
   request(entry: Entry | null, entryKey: string | null, prepare: boolean): void {
     this.#active = true;
@@ -106,7 +115,10 @@ export class EntryPrebuild<Entry> {
     this.#prepares = 0;
   }
 
-  /** Whether the requested entry's view is composed, and prepared if allowed, so the prebuild has nothing left to do. */
+  /**
+   * Whether the requested entry's view is composed, and prepared if allowed, so the prebuild has nothing left to do; not
+   * while a static part waits for its input.
+   */
   get settled(): boolean {
     return this.#pending() === null && !this.#preparing;
   }
@@ -116,8 +128,8 @@ export class EntryPrebuild<Entry> {
     return this.#entryKey !== null && this.#preparedKey !== null && this.#preparedKey.startsWith(`${this.#entryKey}|`);
   }
 
-  #pending(): "static" | "compose" | "prepare" | null {
-    if (!this.#target.staticBuilt()) { return "static"; }
+  #pending(): "static" | "waiting" | "compose" | "prepare" | null {
+    if (!this.#target.staticBuilt()) { return this.#target.staticPartReady() ? "static" : "waiting"; }
     const entry = this.#entry;
     if (entry === null || this.#entryKey === null) { return null; }
     if (this.#composedKey !== this.#entryKey) { return "compose"; }
@@ -130,7 +142,9 @@ export class EntryPrebuild<Entry> {
   }
 
   #next(): void {
-    if (!this.#active || this.#scheduled || this.#preparing || this.#pending() === null) { return; }
+    if (!this.#active || this.#scheduled || this.#preparing) { return; }
+    const pending = this.#pending();
+    if (pending === null || pending === "waiting") { return; }
     this.#scheduled = true;
     this.#schedule(() => this.#slice());
   }
@@ -140,7 +154,7 @@ export class EntryPrebuild<Entry> {
     this.#scheduled = false;
     if (!this.#active) { return; }
     const pending = this.#pending();
-    if (pending === null) { return; }
+    if (pending === null || pending === "waiting") { return; }
     this.work.slices += 1;
     const started = typeof performance === "undefined" ? 0 : performance.now();
     if (pending === "static") {
