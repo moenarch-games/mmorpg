@@ -240,11 +240,13 @@ def serve(binaries, smoke, watch, source):
     host = client = None
     environment = dict(os.environ)
     environment.pop("MMORPG_RECOVERY_DIR", None)
+    # Loopback unless MMORPG_BIND_IP names the LAN interface peers reach (#1141).
+    bind = environment.get("MMORPG_BIND_IP") or "127.0.0.1"
     environment.update({
         "MMORPG_ZONE_IDS": "1", "MMORPG_PORT": "4433", "MMORPG_STATUS_PORT": "8080",
         "MMORPG_CERT_PEM": str(TLS / "cert.pem"), "MMORPG_KEY_PEM": str(TLS / "key.pem"),
         "MMORPG_ROUTE_PREFIX": "/game", "MMORPG_RECONNECT_GRACE_TICKS": "600",
-        "MMORPG_DRAIN_GRACE_MS": "500",
+        "MMORPG_DRAIN_GRACE_MS": "500", "MMORPG_BIND_IP": bind,
     })
     try:
         with HOST_LOG.open("w") as log:
@@ -254,14 +256,14 @@ def serve(binaries, smoke, watch, source):
         while True:
             host_failure(host)
             ready = run(["curl", "--fail", "--silent", "--max-time", "1",
-                         "http://127.0.0.1:8080/readyz"], 2, capture=True)
+                         f"http://{bind}:8080/readyz"], 2, capture=True)
             if ready.returncode == 0:
                 host_failure(host)
                 break
             if time.monotonic() >= deadline:
                 raise LaunchError("Zone host did not become ready within 10 seconds.")
             time.sleep(0.1)
-        arguments = [binaries["mmorpg-client"], "--url", "https://localhost:4433/game/matches/zone-1",
+        arguments = [binaries["mmorpg-client"], "--url", f"https://{bind}:4433/game/matches/zone-1",
                      "--zone", "1", "--certificate", str(TLS / "cert.pem")]
         if smoke:
             arguments.append("--smoke")

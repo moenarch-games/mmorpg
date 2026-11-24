@@ -100,7 +100,7 @@ impl RunningWorld {
     }
     #[must_use]
     pub fn url(&self) -> String {
-        format!("https://localhost:{}/game/matches/zone-1", self.port)
+        format!("https://127.0.0.1:{}/game/matches/zone-1", self.port)
     }
 
     fn request(&self, action: &str) -> Result<()> {

@@ -80,7 +80,7 @@ The launcher requires Python 3, Cargo, Git, curl and OpenSSL. It fetches `origin
 
 On first use, or when a cached native bundle is missing, the launcher runs `scripts/fetch-bundles.sh` before Cargo. This asset-acquisition phase needs network access; once the bundles are present, later launches skip it. A direct `cargo build` needs only a prior `scripts/fetch-bundles.sh`: the client reads the published Ranger files itself (#866).
 
-It builds from its own checkout regardless of the calling directory, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://localhost:4433`, waits for `/readyz`, and opens the client. It watches workspace source, shaders, embedded scenery and Ranger OBJ/manifest/material assets, Cargo manifests/lockfile, toolchain and `.cargo` configuration. An edit stops the owned host/client processes, rebuilds, then restarts them; edits during a build cause another build before launch. Failed builds remain visible and watching resumes after the next edit. Generated targets, logs and certificates do not trigger rebuilds. **Restarting resets the disposable zone and its development session.**
+It builds from its own checkout regardless of the calling directory, reuses a valid disposable certificate under `target/dev-tls/` (or creates one valid for 10 days), starts zone `1` at `https://127.0.0.1:4433`, waits for `/readyz`, and opens the client. It watches workspace source, shaders, embedded scenery and Ranger OBJ/manifest/material assets, Cargo manifests/lockfile, toolchain and `.cargo` configuration. An edit stops the owned host/client processes, rebuilds, then restarts them; edits during a build cause another build before launch. Failed builds remain visible and watching resumes after the next edit. Generated targets, logs and certificates do not trigger rebuilds. **Restarting resets the disposable zone and its development session.**
 
 Closing the window or pressing Ctrl-C stops the owned host and its workers. `--no-watch` keeps a single interactive launch. To play at full speed, use `./scripts/run-native.sh` ([below](#optimised-standalone-build)).
 
@@ -115,15 +115,16 @@ Run this command in another terminal for a second player after the launcher is r
 cargo run --locked -p mmorpg-client -- --certificate target/dev-tls/cert.pem
 ```
 
-To join the same host **from another computer on the LAN**, use the host's actual IPv4 address and transfer only the **public** `target/dev-tls/cert.pem` to that client (never `key.pem`):
+The launcher's host listens on loopback only. To let **another computer on the LAN** join, start it bound to the host's actual IPv4 address, and transfer only the **public** `target/dev-tls/cert.pem` to that client (never `key.pem`):
 
 ```sh
+MMORPG_BIND_IP=192.168.1.20 ./scripts/dev-native.sh   # on the host computer
 cargo run --locked -p mmorpg-client -- \
   --url https://192.168.1.20:4433/game/matches/zone-1 \
   --certificate ./cert.pem
 ```
 
-Replace `192.168.1.20` with the server machine's LAN address. The zone host already binds its WebTransport port for incoming peers; allow inbound **UDP 4433** from the LAN in the host firewall. Keep the launcher running (closing the host's local window stops its server). For friends who want to join in a browser without installing Rust, run `./scripts/dev-browser-online.sh --lan 192.168.1.20` **instead**; it serves an HTTPS game page and the same authoritative server. See [LAN browser hosting](BROWSER_CLIENT.md#play-together-on-a-local-network) for TLS and firewall setup.
+Replace `192.168.1.20` with the server machine's LAN address; the local window then joins through that address too. Allow inbound **UDP 4433** from the LAN in the host firewall. Anyone who reaches the host can join it: there is no authentication. Keep the launcher running (closing the host's local window stops its server). For friends who want to join in a browser without installing Rust, run `./scripts/dev-browser-online.sh --lan 192.168.1.20` **instead**; it serves an HTTPS game page and the same authoritative server. See [LAN browser hosting](BROWSER_CLIENT.md#play-together-on-a-local-network) for TLS and firewall setup.
 
 Controls:
 
@@ -166,11 +167,11 @@ A standard gamepad plays the window like Pages (`gamepad.rs`). Devices come from
 
 Units use the browser's current class/sex looks, headwear variants, creature families and NPC-role models. Rangers use the normalized authored archer mesh; other humanoids and creatures use procedural mesh parts. Movement, jump/turn, viewer ability poses and spell effects derive from presentation time and received state. Reduced motion holds rest poses and suppresses transient animation. Living players and creatures retain camera-aligned health bars based on projected health; NPCs and corpses omit them. Target markers, unit names and class/resource/cast information remain presentation of authoritative projections. Units are drawn 2 ticks behind the newest projection through `mmorpg-client-model`'s `SnapshotHistory`, the interpolation the browser's presenter runs too (#1058, Atlas 6.1.i1058); the orbit camera's look, zoom, focus-following and ground rules (`mmorpg_client_model::camera`, smooth wheel zoom included) and the impact cues are shared the same way, and `camera.rs` only adds the field of view. There is no local movement prediction, so input response includes network and interpolation delay.
 
-The default endpoint is `https://localhost:4433/game/matches/zone-1`. For another configured zone:
+The default endpoint is `https://127.0.0.1:4433/game/matches/zone-1`. For another configured zone:
 
 ```sh
 cargo run --locked -p mmorpg-client -- \
-  --url https://localhost:4433/game/matches/zone-2 --zone 2 \
+  --url https://127.0.0.1:4433/game/matches/zone-2 --zone 2 \
   --certificate target/dev-tls/cert.pem
 ```
 
@@ -275,7 +276,9 @@ The host uses one WebTransport listener (port `4433` by default) and routes sess
 - `/status` reports host capacity and per-zone readiness;
 - `/matches/zone-<id>/readyz` and `/matches/zone-<id>/status` expose a single zone's operational projection.
 
-These endpoints consume `game-server` host state and never mutate or redefine zone gameplay authority. Configuration is explicit through `MMORPG_ZONE_IDS` (default `1`), `MMORPG_PORT`, `MMORPG_STATUS_PORT`, `MMORPG_CERT_PEM`, `MMORPG_KEY_PEM`, `MMORPG_RECOVERY_DIR`, `MMORPG_CHARACTER_DIR`, `MMORPG_ROUTE_PREFIX`, `MMORPG_RECONNECT_GRACE_TICKS` (default 20 s) and `MMORPG_DRAIN_GRACE_MS`; recovery is opt-in, and invalid configured values fail startup instead of silently falling back.
+These endpoints consume `game-server` host state and never mutate or redefine zone gameplay authority. Configuration is explicit through `MMORPG_ZONE_IDS` (default `1`), `MMORPG_BIND_IP` (default `127.0.0.1`), `MMORPG_PORT`, `MMORPG_STATUS_PORT`, `MMORPG_CERT_PEM`, `MMORPG_KEY_PEM`, `MMORPG_RECOVERY_DIR`, `MMORPG_CHARACTER_DIR`, `MMORPG_ROUTE_PREFIX`, `MMORPG_RECONNECT_GRACE_TICKS` (default 20 s) and `MMORPG_DRAIN_GRACE_MS`; recovery is opt-in, and invalid configured values fail startup instead of silently falling back.
+
+**Bind address and claims (#1141).** Every mode except Host World listens on `MMORPG_BIND_IP`, by default loopback (`127.0.0.1`), so only this machine reaches it; the status port follows the same address, and the host logs the address it serves. Set it to a LAN interface address (or `0.0.0.0` for every interface) to let other machines join. **Character claims are unauthenticated until account authentication exists:** a claim is a class and a `CharacterId` the client chooses, so anyone who reaches a character-storing host can play any character it is not already serving, and an unknown ID creates a durable character. The PostgreSQL persistence mode therefore refuses a non-loopback address unless `MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS=1` acknowledges this. In character-storing modes, at most 32 sessions per zone may wait for their claim at once, and a session that has not claimed a character within 30 seconds is removed and its connection closed, so unclaimed connections cannot fill a zone.
 
 When `MMORPG_RECOVERY_DIR` is set, graceful `SIGINT`/`SIGTERM` shutdown writes one atomic recovery bundle for the complete configured zone set. Restarting with the same zones restores simulation, command-sequence, and reconnect state, then consumes the old bundle. A missing zone, an extra zone, or corrupt recovery data fails startup closed instead of partially restoring a host. The bundle is not crash-durable; crash recovery is the PostgreSQL persistence mode.
 
@@ -308,7 +311,7 @@ remain server responsibilities.
 Build the host with `cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host`.
 `MMORPG_PERSISTENCE_MODE` selects the storage composition; setting it on a build without that feature fails explicitly.
 It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`.
-Both clients keep their existing character-claim protocol. Identity remains the existing unauthenticated development/LAN contract; this does not select a public authentication service or deploy a fleet.
+Both clients keep their existing character-claim protocol. Identity remains the existing unauthenticated development/LAN contract; this does not select a public authentication service or deploy a fleet. The host serves loopback unless `MMORPG_BIND_IP` names another address, and then only with `MMORPG_ALLOW_UNAUTHENTICATED_CLAIMS=1` ([bind address and claims](#zone-host-modes)).
 
 Configure distinct login roles granted the migration-created roles below, on one PostgreSQL deployment with a physical standby:
 
@@ -350,7 +353,7 @@ The focused `persistence_host` test exercises a real WebTransport claim, complet
 
 ## Trusted-LAN handoff hosts (#145)
 
-Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated: trusted LAN only.
+Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated: trusted LAN only. Hosts on separate machines set `MMORPG_BIND_IP` to their LAN address, and their transfer links and zone routes to addresses the peers reach.
 
 | Environment variable | Meaning | Default |
 | --- | --- | --- |
@@ -367,15 +370,15 @@ For example, Seam Test West and East on one machine (certificates as for any hos
 ```sh
 MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=west MMORPG_ZONE_IDS=901 MMORPG_PORT=4433 \
   MMORPG_STATUS_PORT=9101 MMORPG_TRANSFER_LINK=127.0.0.1:4501 \
-  MMORPG_ZONE_ROUTES=902=127.0.0.1:4502@https://localhost:4434/game/matches/zone-902 \
+  MMORPG_ZONE_ROUTES=902=127.0.0.1:4502@https://127.0.0.1:4434/game/matches/zone-902 \
   cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
 MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=east MMORPG_ZONE_IDS=902 MMORPG_PORT=4434 \
   MMORPG_STATUS_PORT=9102 MMORPG_TRANSFER_LINK=127.0.0.1:4502 \
-  MMORPG_ZONE_ROUTES=901=127.0.0.1:4501@https://localhost:4433/game/matches/zone-901 \
+  MMORPG_ZONE_ROUTES=901=127.0.0.1:4501@https://127.0.0.1:4433/game/matches/zone-901 \
   cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
 ```
 
-A departing session receives a redirect notice ([PROTOCOL.md](PROTOCOL.md#redirect-notice-145)). Both clients follow it: they connect to the destination's route, claim the same character there and draw the destination zone's scenery; the source's route and resume token are never used again ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#client-cutover-part-3c)). Start the native client in a Seam Test zone with `--zone 901 --url https://localhost:4433/game/matches/zone-901`. `python3 scripts/smoke-handoff.py` runs the whole journey: PostgreSQL 17 in Docker, both hosts, and `mmorpg-client --autopilot` walking West → East through the seam and teleporting back by waystone. The focused `handoff_hosts` test runs both host processes against `MMORPG_CHARACTERS_POSTGRES_URL`: a walker crosses the seam and a traveller teleports by waystone, each continuing at the other host.
+A departing session receives a redirect notice ([PROTOCOL.md](PROTOCOL.md#redirect-notice-145)). Both clients follow it: they connect to the destination's route, claim the same character there and draw the destination zone's scenery; the source's route and resume token are never used again ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#client-cutover-part-3c)). Start the native client in a Seam Test zone with `--zone 901 --url https://127.0.0.1:4433/game/matches/zone-901`. `python3 scripts/smoke-handoff.py` runs the whole journey: PostgreSQL 17 in Docker, both hosts, and `mmorpg-client --autopilot` walking West → East through the seam and teleporting back by waystone. The focused `handoff_hosts` test runs both host processes against `MMORPG_CHARACTERS_POSTGRES_URL`: a walker crosses the seam and a traveller teleports by waystone, each continuing at the other host.
 
 ### Client Settings and character controls
 

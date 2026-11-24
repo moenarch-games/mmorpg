@@ -153,6 +153,8 @@ set -m
   export MMORPG_ROUTE_PREFIX=/game
   export MMORPG_RECONNECT_GRACE_TICKS="$GRACE_TICKS"
   export MMORPG_DRAIN_GRACE_MS=500
+  # Loopback unless --lan names the interface LAN peers reach (#1141).
+  export MMORPG_BIND_IP="$WEB_HOST"
   exec cargo run --locked --quiet -p mmorpg-game-server --bin mmorpg-zone-host
 ) </dev/null >"$HOST_LOG_PATH" 2>&1 &
 host_pid=$!
@@ -187,7 +189,7 @@ wait_for() {
     sleep 0.2
   done
 }
-wait_for 'The zone host' "http://127.0.0.1:$STATUS_PORT/readyz" "$host_pid"
+wait_for 'The zone host' "http://$WEB_HOST:$STATUS_PORT/readyz" "$host_pid"
 wait_for 'Vite' "$PAGE_BASE" "$web_pid" "${web_curl_options[@]}"
 
 printf '\nGreyhaven Vale is online. Open this URL in a Chromium-based browser:\n\n  %s\n\n' "$PAGE_URL"
@@ -195,6 +197,7 @@ printf 'Without the query, "Play online" on the character screen joins the same 
 if [[ -n "$lan_address" ]]; then
   printf 'LAN peers need to trust this development HTTPS certificate (target/dev-tls/cert.pem) for the page. Never share key.pem.\n'
   printf 'Allow TCP %s (page) and UDP %s (game) on your LAN only; do not forward these ports to the Internet.\n' "$WEB_PORT" "$TRANSPORT_PORT"
+  printf 'The host has no authentication: anyone who reaches it can join.\n'
 fi
 printf 'Logs: %s\nPress Ctrl-C to stop.\n' "$LOG_DIR"
 
