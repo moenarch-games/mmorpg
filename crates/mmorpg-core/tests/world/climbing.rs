@@ -584,6 +584,92 @@ fn the_hollow_rope_still_reaches_the_sculpted_ridge_landing() {
     );
 }
 
+/// Greyhaven's real terrain, rock and climbing, without the Hollow camp's Redbrands, whose
+/// fight would interrupt a climb there.
+fn hollow_without_its_camp() -> ZoneSimulation {
+    let content = ZoneContent::from_definition(greyhaven_vale::greyhaven_vale_definition())
+        .with_climbing(greyhaven_vale::climbing())
+        .unwrap();
+    let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::new(content)).unwrap();
+    zone.add_player(1).unwrap();
+    zone
+}
+
+/// The Hollow's western ridge grows out of the camp's ground with no base wall (#1195): a player
+/// grabs its broken camp face at the foot, climbs it and mantles onto its shoulder. Its rock
+/// climbs because the authored mesh sets `"grip": "rock"`.
+#[test]
+fn a_player_climbs_a_hollow_cliff_from_its_foot_and_mantles_onto_it() {
+    let rock = outcrop(*ids::CLIFFS.start());
+    let cliff = rock.bounds().unwrap();
+    assert_eq!(
+        greyhaven_vale::climbing().collider(rock.id),
+        Some(Grip::Rock)
+    );
+    let west = 49_152;
+    let mut player = Player::in_zone(
+        hollow_without_its_camp(),
+        [cliff.position[0] + cliff.half_extents[0] + 400, -10_250],
+    );
+    // Against its broken foot, which turns the walker a little along the face.
+    player.hold(1, west);
+    player.ticks(200);
+    player.jump();
+    player.ticks(1);
+    assert!(
+        player.until(1, west, 30, |p| matches!(
+            p.traversal(),
+            Traversal::Climbing {
+                grip: Grip::Rock,
+                ..
+            }
+        )),
+        "holds the cliff: {:?} at {:?}",
+        player.traversal(),
+        player.feet()
+    );
+    let mut mantled = false;
+    for _ in 0..3_000 {
+        player.hold(1, west);
+        player.ticks(1);
+        mantled |= matches!(player.traversal(), Traversal::Mantling { .. });
+        if mantled && player.traversal() == Traversal::Free {
+            break;
+        }
+    }
+    assert!(
+        mantled,
+        "never mantled: {:?} {:?}",
+        player.feet(),
+        player.traversal()
+    );
+    player.hold(0, west);
+    player.ticks(30);
+    let feet = player.feet();
+    assert_eq!(player.traversal(), Traversal::Free, "at {feet:?}");
+    assert!(over(&cliff, feet), "on the cliff: {feet:?}");
+    assert!(
+        feet[1] > top(&cliff) - 300.0,
+        "on its shoulder under {}: {feet:?}",
+        top(&cliff)
+    );
+}
+
+/// The Hollow's back wall is smooth, sheer rock (#1195): its authored mesh sets
+/// `"grip": "sheer"`, and a player walking into it from the camp cannot grab it.
+#[test]
+fn the_hollows_sheer_back_wall_refuses_a_climber() {
+    let wall = outcrop(greyhaven_vale::SHEER_HOLLOW_WALL);
+    assert_eq!(greyhaven_vale::climbing().collider(wall.id), None);
+    let bounds = wall.bounds().unwrap();
+    let mut player = Player::in_zone(
+        hollow_without_its_camp(),
+        [0, bounds.position[2] + bounds.half_extents[2] + 400],
+    );
+    player.walk_into(NORTH);
+    player.refused(NORTH);
+}
+
 #[test]
 fn a_player_climbs_the_basin_cliff_over_its_rounded_rim_without_falling() {
     // The basin's west cliff under the Hollow rounds over at about 45° before the rim: the

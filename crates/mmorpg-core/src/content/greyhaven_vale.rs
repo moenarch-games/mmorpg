@@ -1790,8 +1790,9 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 /// buildings, towers,
 /// standing stones and cave walls do not. Each kind keeps unclimbable variants: the Redbrand
 /// Hollow's sheer back wall, the highland crags' spires and their two sheer crags, and the
-/// stronghold's smooth-planked northern palisade. The world dressing's rocks climb by their
-/// placement's grip (#1195, [`fort::dressing_grips`]), not by collider ID. On the terrain, the Vale basin's cliffs are rough rock except the sheer
+/// stronghold's smooth-planked northern palisade. The world dressing's rocks and the Hollow's
+/// cliffs climb by their authored grip (#1195, [`fort::dressing_grips`] and
+/// [`cave::climbable_rock`]), not by collider ID. On the terrain, the Vale basin's cliffs are rough rock except the sheer
 /// cliff under Stillwater Lake, and each boundary ridge or escarpment has one hard climbable
 /// route beside its pass while the rest of it is sheer.
 #[must_use]
@@ -1817,8 +1818,9 @@ pub fn climbing() -> crate::ClimbSurfaces {
         .chain(palisades)
         .chain(range(ids::SHORE_ROCKS, Rock))
         .chain(range(ids::BOULDERS, Rock))
-        // The Redbrand Hollow's cliffs, but not its sheer back wall.
-        .chain(range(ids::CLIFFS, Rock).filter(|&(id, _)| id != SHEER_HOLLOW_WALL))
+        // The Redbrand Hollow's cliffs whose authored rock climbs (#1195): all but its sheer
+        // back wall.
+        .chain(cave::climbable_rock())
         .chain(range(ids::LADDERS, Ladder))
         // The Greyfang lookout's ladder (#913).
         .chain([(discoveries::LOOKOUT_LADDER, Ladder)])
@@ -1832,7 +1834,8 @@ pub fn climbing() -> crate::ClimbSurfaces {
     crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
 }
 
-/// The Redbrand Hollow's 14 m back wall under the north wall: sheer (#490).
+/// The Redbrand Hollow's 14 m back wall under the north wall: sheer (#490), as its authored
+/// rock sets `"grip": "sheer"` (#1195, `content/greyhaven/authoring/hollow_cliffs.py`).
 pub const SHEER_HOLLOW_WALL: u32 = 404;
 /// The sheer highland crags, by index in [`highlands::CRAGS`] (#490): every outcrop of their
 /// groups is placed `"grip": "sheer"` (#1195), so none of their rock climbs.

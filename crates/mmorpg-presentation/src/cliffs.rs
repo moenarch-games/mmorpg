@@ -129,8 +129,10 @@ fn group(id: String, geometry: Geometry) -> Group {
     }
 }
 
-/// Muted strata and moss on exposed landscape rock; cave floors and ceilings stay stone.
-pub(crate) fn landscape_color(points: [V; 3], id: u32) -> u32 {
+/// Weathered stone and moss on exposed landscape rock; cave floors and ceilings stay stone.
+/// The stone's tone drifts slowly in world space, up a face as well as along it, so joined
+/// pieces share it and no horizontal band repeats (#1195); the rock material draws the grain.
+pub(crate) fn landscape_color(points: [V; 3]) -> u32 {
     let centre: V = std::array::from_fn(|axis| points.iter().map(|p| p[axis]).sum::<f64>() / 3.);
     let [a, b, c] = points;
     let u: V = std::array::from_fn(|i| b[i] - a[i]);
@@ -140,8 +142,12 @@ pub(crate) fn landscape_color(points: [V; 3], id: u32) -> u32 {
         u[2] * v[0] - u[0] * v[2],
         u[0] * v[1] - u[1] * v[0],
     ])[1];
-    let band = hash(&[f64::from(id), (centre[1] / 1.8).floor()]);
-    let stone = mix(0x68675f, 0x969082, 0.25 + 0.5 * band);
+    let [x, y, z] = centre;
+    // Sampled on planes sheared by height: the tone changes up a face without lining up in
+    // strata at any one height.
+    let tone = 0.65 * crate::terrain::noise(x + 0.6 * y, z - 0.4 * y, 9., 541.)
+        + 0.35 * crate::terrain::noise(x - 0.5 * y, z + 0.7 * y, 3.5, 547.);
+    let stone = mix(0x68675f, 0x969082, 0.2 + 0.6 * tone);
     let growth = ((up - 0.45) / 0.55).clamp(0., 1.)
         * (0.25 + 0.55 * crate::terrain::noise(centre[0], centre[2], 5., 539.));
     mix(stone, 0x667447, growth)
@@ -200,7 +206,7 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                 }
                 let landscape = stand_in.is_some() || (400..=406).contains(&mesh.id);
                 let color = if landscape {
-                    landscape_color(points, mesh.id)
+                    landscape_color(points)
                 } else {
                     0x817b70
                 };

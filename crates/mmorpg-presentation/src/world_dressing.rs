@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 17] = [
+const GREYHAVEN: [&str; 18] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -117,6 +117,12 @@ const GREYHAVEN: [&str; 17] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/crags.json"
+    )),
+    // The climbing ivy on two of the Redbrand Hollow's climbable cliffs (#1195), placed on
+    // their rock by `content/greyhaven/authoring/hollow_cliffs.py`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/hollow-cliffs.json"
     )),
 ];
 

@@ -131,6 +131,36 @@ errors. The final capture includes the facet-fitted climbing marks. The camp's b
 clearing and other older surroundings still need further visual refinement toward the
 owner's reference; this is a completed ridge pass, not final acceptance of the whole area.
 
+## Hollow cliffs grown out of the ground (#1195 part 3)
+
+The previous ridges stood on a vertical 3 m base wall under a sloping slab, and their skin
+painted a colour band every 1.8 m of height, so they read as a plinth with horizontal stripes.
+`content/greyhaven/authoring/hollow_cliffs.py` now authors the seven ridges (400–406). It runs
+headless with `python3` or in Blender, reads the ground from `export-site-context`, and replaces
+only those seven meshes in `redbrand.json`. `redbrand.py` keeps authoring the cave and leaves
+the ridges alone. Each ridge is one closed rock mass. Its foot flares out and is buried 1.1–1.6 m
+along an uneven line, its face leans back unevenly, and it ends in a broken crest with a walkable
+shoulder. Nothing overhangs.
+
+The footprints at the camp's ground stay within the previous ridges' XZ bounds, which are
+pinned. The scenery scatters its grass, flowers and bushes from one seeded stream that rejects
+candidates against those bounds, so wider bounds would reshuffle about 1,800 placements across
+the region. With the bounds pinned, `nature.json` and every other placement are unchanged.
+
+Climbability now comes from each mesh's `"grip": "rock" | "sheer"` (core
+`cave::climbable_rock`) rather than from an ID range. As before, everything climbs except the
+back wall 404. Climbable rock has strata jogs, slow buttresses and gullies, and vertical cracks.
+The sheer wall is a smooth, steep sweep. The worn handhold routes on these cliffs are spaced
+about every 8 m instead of 4 m. Ridges 400 and 403 wear a little climbing-kit ivy as world
+dressing (`dressing/hollow-cliffs.json`), placed on their collision like the highland crags'
+ivy. The old box-face ivy cover on 400 is gone. Ridge 402 keeps the rope: its west face stays
+upright at x = 22 m round the rope, and its 12 m plateau is still the ridge's top.
+
+The landscape rock's tone (`cliffs::landscape_color`) now drifts in world-space noise on planes
+sheared by height, so it varies up a face without bands. The rock PBR material draws the grain.
+The cave roofs share the same colouring. Live Blender review collection:
+**Redbrand Hollow re-model (1195)**.
+
 ## Used camp ground and canvas tents
 
 The camp is now grass with worn approach tracks, a bare fire apron and patches of gravel
