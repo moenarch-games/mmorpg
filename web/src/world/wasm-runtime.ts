@@ -75,6 +75,10 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
     if (scene) { generated.seedStaticScene(scene.skeleton, scene.layout, scene.vertices, scene.indices, scene.models); }
     markStartup("scene-derived");
   });
+  farDerived = derived.far.then((far) => {
+    if (far) { generated.seedTerrainFarLevels(far.prefix, far.levels); }
+    markStartup("far-derived");
+  });
   grassDerived = derived.grass.then((grass) => {
     if (grass) { generated.seedGrass(grass); }
     markStartup("grass-derived");
@@ -88,6 +92,7 @@ export async function loadLocalWorld(characters: LocalCharacters, wasmReady: () 
 }
 
 let sceneDerived: Promise<void> = Promise.resolve();
+let farDerived: Promise<void> = Promise.resolve();
 let grassDerived: Promise<void> = Promise.resolve();
 
 /**
@@ -97,6 +102,15 @@ let grassDerived: Promise<void> = Promise.resolve();
  */
 export function whenSceneDerived(): Promise<void> {
   return sceneDerived;
+}
+
+/**
+ * Settles once the worker's terrain far levels (#855), packed after the static scene, were seeded into this page's
+ * module, or failed, so the static scene's ground part hands them over instead of building them; call after
+ * `loadLocalWorld`.
+ */
+export function whenFarDerived(): Promise<void> {
+  return farDerived;
 }
 
 /**
