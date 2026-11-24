@@ -24,7 +24,7 @@ The [architecture capability map](docs/ARCHITECTURE.md#scope-and-current-state) 
 | Presentation scenery and shared client presentation (clients only) | `mmorpg-scenery`, `mmorpg-presentation`, `mmorpg-client-model` |
 | Native graphics | `mmorpg-client`: wgpu/winit with `render-engine` and `3d-lab` geometry/camera |
 | Browser graphics | `3d-lab`'s Three.js renderer adapter |
-| Browser zone host (single-player demo) | `mmorpg-wasm`: thin wasm-bindgen adapter, owns no rules |
+| Browser zone host (single-player demo) | `mmorpg-local-host`, exported by `mmorpg-wasm` (a thin wasm-bindgen adapter); owns no rules |
 | Runtime input semantics | `input-bindings` (both clients) |
 | User-facing settings | `settings` (both clients) |
 | Asset normalization and provenance | `asset-tooling`: the bundles both clients build from, and the saved authoring packages |

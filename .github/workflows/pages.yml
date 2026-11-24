@@ -20,6 +20,8 @@ on:
       - "crates/mmorpg-core/**"
       - "crates/mmorpg-protocol/**"
       - "crates/mmorpg-wasm/**"
+      - "crates/mmorpg-local-host/**"
+      - "crates/mmorpg-control-plane/**"
       - "crates/mmorpg-scenery/**"
       - "crates/sim-foundation/**"
       - "crates/sim-movement/**"

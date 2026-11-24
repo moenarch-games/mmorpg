@@ -25,7 +25,7 @@ The directory resets a run's retention whenever a character (re)enters. After th
 
 ### Browser
 
-The Pages demo's `LocalZoneHost` runs the depths solo in a second `ZoneSimulation` beside Greyhaven (one run, this host's lifetime, only that character), with the same content and the same transfer steps and no lease or second authority. Online browser clients join hosted instances like native clients: the redirect and zone presentation paths already exist.
+The Pages demo's `LocalZoneHost` runs the depths solo in a second `ZoneSimulation` beside Greyhaven, with the same content and the same transfer steps and no lease or second authority. Since #1160 it answers the threshold, binds runs and records their progress through the same `mmorpg_control_plane::instance` flow as the network host, over its own one-slot `InstanceDirectory` that lives as long as the host. Online browser clients join hosted instances like native clients: the redirect and zone presentation paths already exist.
 
 ## Behaviour decided here
 
