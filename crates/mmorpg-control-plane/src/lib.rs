@@ -12,6 +12,7 @@ pub mod party;
 mod permit;
 #[cfg(feature = "postgres")]
 pub mod postgres;
+pub mod shared_directory;
 pub use permit::{LocalZonePermit, PermitError};
 
 pub use partition::{

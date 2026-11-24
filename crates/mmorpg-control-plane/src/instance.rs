@@ -6,7 +6,7 @@
 //! progress (cleared chambers and the checkpoint) is reported to it as data so a restarted host
 //! can rebind the run.
 //!
-//! One [`InstanceAuthority::transact`] applies all or nothing under the store's exclusion, so
+//! One [`InstanceAuthority::transact`] applies all or nothing, linearized with every host's, so
 //! two parties touching the threshold at once cannot create or join the same run, and a stale
 //! zone lease changes nothing.
 //!
@@ -28,6 +28,7 @@ use mmorpg_core::{
 };
 
 use crate::ZoneLease;
+use crate::shared_directory::{DecodeFailure, DirectoryError, StoredDirectory};
 
 /// How long an empty run stays resumable unless a host configures otherwise (15 minutes).
 pub const DEFAULT_RUN_GRACE_MS: u64 = 15 * 60 * 1_000;
@@ -394,6 +395,27 @@ impl InstanceDirectory {
     }
 }
 
+impl StoredDirectory for InstanceDirectory {
+    const NAME: &'static str = "instance directory";
+    /// Format 1: the layout of [`InstanceDirectory::encode`], with boss outcomes (#404 part 3).
+    const FORMAT: i16 = 1;
+
+    fn empty() -> Self {
+        Self::new()
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        Self::encode(self)
+    }
+
+    fn decode(format: i16, bytes: &[u8]) -> Result<Self, DecodeFailure> {
+        match format {
+            1 => Self::decode(bytes).map_err(|_| DecodeFailure::Malformed),
+            _ => Err(DecodeFailure::UnknownFormat),
+        }
+    }
+}
+
 fn encode_text(out: &mut Vec<u8>, text: &str) {
     out.push(text.len() as u8);
     out.extend_from_slice(text.as_bytes());
@@ -466,8 +488,19 @@ impl fmt::Display for InstanceStoreError {
 
 impl std::error::Error for InstanceStoreError {}
 
-/// A store of the one run directory; `body` runs under the store's exclusion and applies only
-/// when the transaction commits.
+impl From<DirectoryError> for InstanceStoreError {
+    fn from(error: DirectoryError) -> Self {
+        match error {
+            DirectoryError::Fenced => Self::Fenced,
+            error => Self::Backend(error.to_string()),
+        }
+    }
+}
+
+/// A store of the one run directory; `body`'s changes apply only when the transaction commits,
+/// linearized with every other host's. A shared store may run `body` twice, the second time on
+/// a directory another host changed meanwhile ([`crate::shared_directory`]), so `body` only
+/// assigns its outputs.
 pub trait InstanceAuthority {
     fn transact(
         &mut self,

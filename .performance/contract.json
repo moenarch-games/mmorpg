@@ -463,6 +463,71 @@
       ]
     },
     {
+      "id": "directory-poll",
+      "description": "A host's party or instance reconciliation over the shared directory row (#1146), every 100 ms per zone: a poll reads only the row's revision without a lock, runs on the decoded copy it already holds, and takes the row's lock only to write a change; so locks follow the changes, not the polls, and the stored encoding is decoded only when another host moved it.",
+      "dimensions": {
+        "polls": { "description": "reconciliation polls of one host" },
+        "changes": { "description": "polls that change the directory (a character joins the zone)" }
+      },
+      "scalePoints": [
+        { "polls": 100, "changes": 4 },
+        { "polls": 1000, "changes": 4 },
+        { "polls": 10000, "changes": 4 },
+        { "polls": 1000, "changes": 40 }
+      ],
+      "metrics": [
+        {
+          "name": "row_locks",
+          "unit": "locks",
+          "signal": "operation-count",
+          "notes": "Writes under the row's lock (shared_directory::DirectoryWork::locked_writes); crates/mmorpg-control-plane/examples/directory_poll_work.rs.",
+          "budget": { "max": 40 },
+          "growth": [
+            { "dimension": "polls", "bound": "constant" },
+            { "dimension": "changes", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "directory_decodes",
+          "unit": "decodes",
+          "signal": "operation-count",
+          "notes": "Stored encodings decoded: the first read only, since a host's own writes keep its copy current.",
+          "budget": { "max": 1 },
+          "growth": [
+            { "dimension": "polls", "bound": "constant" },
+            { "dimension": "changes", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arrival-expiry",
+      "description": "A destination's claim timeout for accepted arrivals (#1146), every departure poll of the timeout: arrivals are kept by deadline, so a poll visits only the arrivals whose client did not claim them in time, once each, and never the claimed ones.",
+      "dimensions": {
+        "claimed": { "description": "arrivals claimed by their client in time" },
+        "unclaimed": { "description": "arrivals nobody claims, all accepted on one poll" }
+      },
+      "scalePoints": [
+        { "claimed": 16, "unclaimed": 4 },
+        { "claimed": 256, "unclaimed": 4 },
+        { "claimed": 4096, "unclaimed": 4 },
+        { "claimed": 256, "unclaimed": 64 }
+      ],
+      "metrics": [
+        {
+          "name": "arrival_deadlines_visited",
+          "unit": "entries",
+          "signal": "operation-count",
+          "notes": "handoff_schedule::ArrivalDeadlines::visits over every departure poll of the timeout; crates/mmorpg-game-server/examples/arrival_expiry_work.rs.",
+          "budget": { "max": 64 },
+          "growth": [
+            { "dimension": "claimed", "bound": "constant" },
+            { "dimension": "unclaimed", "bound": "linear" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {

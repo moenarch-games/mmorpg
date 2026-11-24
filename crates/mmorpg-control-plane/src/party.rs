@@ -20,6 +20,7 @@ use mmorpg_core::{
     PartyState, PlayerId, ZoneId,
 };
 
+use crate::shared_directory::{DecodeFailure, DirectoryError, StoredDirectory};
 use crate::{ControlPlaneError, ZoneDirectory, ZoneLease};
 
 /// An unanswered invite lapses after one minute.
@@ -526,6 +527,27 @@ impl PartyDirectory {
     }
 }
 
+impl StoredDirectory for PartyDirectory {
+    const NAME: &'static str = "party directory";
+    /// Format 1: the layout of [`PartyDirectory::encode`] (#404).
+    const FORMAT: i16 = 1;
+
+    fn empty() -> Self {
+        Self::new()
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        Self::encode(self)
+    }
+
+    fn decode(format: i16, bytes: &[u8]) -> Result<Self, DecodeFailure> {
+        match format {
+            1 => Self::decode(bytes).map_err(|_| DecodeFailure::Malformed),
+            _ => Err(DecodeFailure::UnknownFormat),
+        }
+    }
+}
+
 fn encode_view(out: &mut Vec<u8>, state: &PartyState) {
     out.push(u8::from(state.roster.is_some()));
     if let Some(roster) = &state.roster {
@@ -665,6 +687,15 @@ impl fmt::Display for PartyStoreError {
 
 impl std::error::Error for PartyStoreError {}
 
+impl From<DirectoryError> for PartyStoreError {
+    fn from(error: DirectoryError) -> Self {
+        match error {
+            DirectoryError::Fenced => Self::Fenced,
+            error => Self::Backend(error.to_string()),
+        }
+    }
+}
+
 impl From<ControlPlaneError> for PartyStoreError {
     fn from(error: ControlPlaneError) -> Self {
         Self::Backend(error.to_string())
@@ -672,7 +703,9 @@ impl From<ControlPlaneError> for PartyStoreError {
 }
 
 /// A store of the one party directory. Each transaction checks the issuing zone's lease (when
-/// it has one) and applies all or nothing; `body` runs under the store's exclusion.
+/// it has one) and applies all or nothing, linearized with every other host's. A shared store
+/// may run `body` twice, the second time on a directory another host changed meanwhile
+/// ([`crate::shared_directory`]), so `body` only assigns its outputs.
 pub trait PartyAuthority {
     fn transact(
         &mut self,

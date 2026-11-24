@@ -3,7 +3,9 @@ mod backend;
 mod checkpoints;
 mod global_worker;
 mod serving;
-pub use serving::{migrate_postgres_schemas, serve_postgres_character_host};
+pub use serving::{
+    migrate_postgres_schemas, repair_postgres_directories, serve_postgres_character_host,
+};
 mod hosted;
 #[cfg(feature = "postgres")]
 pub(crate) mod postgres;

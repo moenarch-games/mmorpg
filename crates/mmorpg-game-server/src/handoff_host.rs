@@ -37,10 +37,10 @@ use std::collections::BTreeMap;
 use std::hash::{BuildHasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use game_server::{ControlContext, LiveMatchHost, MatchId};
-use mmorpg_characters::{Acquired, CharacterLease, EntryBackend};
+use mmorpg_characters::{Acquired, CharacterLease, EntryBackend, StoreError};
 use mmorpg_control_plane::{HandoffAuthority, ZoneLease};
 use mmorpg_core::{
     CharacterId, CharacterLocation, CharacterTransfer, ClassChoice, Departure, PlayerId,
@@ -55,7 +55,7 @@ use crate::handoff::{
     activate_inbound, begin_outbound, reconcile_outbound, resolve_pending_handoff, retire_outbound,
     source_retired,
 };
-use crate::handoff_schedule::{DepartureSchedule, Reach, depart_toward};
+use crate::handoff_schedule::{ArrivalDeadlines, DepartureSchedule, Reach, depart_toward};
 use crate::instance::InstanceService;
 use crate::transfer_link::{
     LinkFailure, TcpLinks, TransferLinkHandler, TransferLinks, serve_transfer_link,
@@ -123,7 +123,18 @@ struct Inbound {
     transfer: CharacterTransfer,
     /// The character's lease once the transfer is accepted.
     lease: Option<CharacterLease>,
+    /// When this host stops waiting for the client to claim it (#1146).
+    deadline: Option<Instant>,
 }
+
+/// How long a destination keeps an accepted arrival for its client (#1146). An arrival nobody
+/// claims by then releases its character's lease, so the character simply logs in again; its
+/// record already stands in the destination zone.
+pub const ARRIVAL_CLAIM_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// How soon an expired arrival is looked at again while its source has not retired, or while the
+/// character store could not be reached.
+const ARRIVAL_RECHECK: Duration = Duration::from_secs(5);
 
 pub struct HandoffHost<
     B: EntryBackend,
@@ -140,6 +151,8 @@ pub struct HandoffHost<
     /// The connection epoch of each claimed session, for its host inputs.
     sessions: Mutex<BTreeMap<(MatchId, PlayerId), u32>>,
     inbound: Mutex<BTreeMap<TransferId, Inbound>>,
+    /// The inbound transfers by the deadline their client has to claim them (#1146).
+    arrivals: Mutex<ArrivalDeadlines<TransferId>>,
     /// Accepted departures whose retirement this host could not confirm yet
     /// (#1096): the zone and the redirect their frozen sessions still wait for.
     unretired: Mutex<BTreeMap<TransferId, (ZoneId, Redirect)>>,
@@ -180,6 +193,7 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
             routes,
             sessions: Mutex::default(),
             inbound: Mutex::default(),
+            arrivals: Mutex::default(),
             unretired: Mutex::default(),
             link_timeout,
             // Transfer IDs only need to be unique; start at a random point.
@@ -255,6 +269,9 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
         activate_inbound(&mut live, &mut **authority, transfer_id, context.player_id)
             .map_err(message)?;
         lock(&self.inbound)?.remove(&transfer_id);
+        if let Some(deadline) = inbound.deadline {
+            lock(&self.arrivals)?.remove(deadline, transfer_id);
+        }
         let lease = inbound.lease.ok_or("the arrival has no lease")?;
         storage
             .leases
@@ -300,6 +317,7 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
             return;
         }
         self.retry_retirements();
+        self.expire_arrivals(Instant::now());
         let Ok(mut schedule) = lock(&self.schedule) else {
             return;
         };
@@ -369,6 +387,69 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
                 unretired.remove(&transfer_id);
             }
         }
+    }
+
+    /// Destination: gives up the arrivals whose client did not claim them by their deadline
+    /// (#1146), visiting only those. An accepted one releases its character's lease once its
+    /// source retired, so the character logs in afresh where the transfer left it; one the
+    /// source has not retired yet waits, since that source may still hold the frozen copy. A
+    /// later claim finds no arrival and admits the character from the store, and a resent
+    /// offer answers as for any character that logged out since.
+    fn expire_arrivals(&self, now: Instant) {
+        let Ok(due) = lock(&self.arrivals).map(|mut arrivals| arrivals.take_due(now)) else {
+            return;
+        };
+        for transfer_id in due {
+            if let Err(error) = self.expire_arrival(transfer_id, now) {
+                eprintln!(
+                    "unclaimed arrival {} not released: {error}",
+                    transfer_id.get()
+                );
+            }
+        }
+    }
+
+    fn expire_arrival(&self, transfer_id: TransferId, now: Instant) -> Result<(), String> {
+        let mut storage = lock(&self.storage)?;
+        let Some(inbound) = lock(&self.inbound)?.get(&transfer_id).cloned() else {
+            return Ok(()); // Claimed or discarded meanwhile.
+        };
+        if inbound.deadline.is_none_or(|deadline| deadline > now) {
+            return Ok(()); // Due again later.
+        }
+        let recheck = |host: &Self| -> Result<(), String> {
+            let deadline = now + ARRIVAL_RECHECK;
+            if let Some(inbound) = lock(&host.inbound)?.get_mut(&transfer_id) {
+                inbound.deadline = Some(deadline);
+            }
+            lock(&host.arrivals)?.insert(deadline, transfer_id);
+            Ok(())
+        };
+        if let Some(lease) = &inbound.lease {
+            let retired = source_retired(&mut **lock(&self.authority)?, transfer_id);
+            if !retired.map_err(message)? {
+                return recheck(self);
+            }
+            match storage.store.release(lease, None) {
+                Ok(_) => {}
+                Err(StoreError::Backend(error)) => {
+                    recheck(self)?;
+                    return Err(error);
+                }
+                // The lease is no longer this host's: nothing left to release.
+                Err(error) => eprintln!(
+                    "unclaimed arrival {}: its lease was already gone: {error}",
+                    transfer_id.get()
+                ),
+            }
+            eprintln!(
+                "zone {}: nobody claimed character {} in time; its lease is released",
+                inbound.transfer.record.location.zone_id.get(),
+                inbound.transfer.record.character_id.as_str()
+            );
+        }
+        lock(&self.inbound)?.remove(&transfer_id);
+        Ok(())
     }
 
     /// Moves one departing player; `reach` tells whether its destination's
@@ -509,7 +590,7 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
             .ok_or("this host does not run the destination zone")?;
         let transfer_id = transfer.transfer_id;
         let mut live = self.live(zone, None);
-        let acquired = accept_inbound(
+        let accepted = accept_inbound(
             &mut live,
             &mut storage.store,
             authority,
@@ -521,11 +602,19 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
                 eprintln!("refused a transfer link offer: {error}");
             }
         })
-        .map_err(message)?;
+        .map_err(message);
+        // A staged arrival waits for its client until its deadline (#1146), accepted or not.
         if let Some(inbound) = lock(&self.inbound)?.get_mut(&transfer_id) {
-            inbound.lease = Some(acquired.lease);
+            if let Ok(acquired) = &accepted {
+                inbound.lease = Some(acquired.lease.clone());
+            }
+            if inbound.deadline.is_none() {
+                let deadline = Instant::now() + ARRIVAL_CLAIM_TIMEOUT;
+                inbound.deadline = Some(deadline);
+                lock(&self.arrivals)?.insert(deadline, transfer_id);
+            }
         }
-        Ok(())
+        accepted.map(|_| ())
     }
 
     /// Serves the transfer link and starts departures until the link fails.
@@ -667,6 +756,7 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> TransferZone for LiveZone
             Inbound {
                 transfer,
                 lease: None,
+                deadline: None,
             },
         );
         Ok(())
@@ -753,6 +843,48 @@ mod postgres_host {
 
     /// How often a starting host looks whether its previous grant has expired.
     const OWN_GRANT_POLL: Duration = Duration::from_millis(250);
+
+    /// How long settled handoff records stay (#1146): a lost step of a settled transfer can be
+    /// retried, and its outcome looked up, for a week.
+    pub const SETTLED_HANDOFF_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+    /// How often a host deletes the settled records past the retention, and how many at most
+    /// per statement.
+    const HANDOFF_PURGE_INTERVAL: Duration = Duration::from_secs(10 * 60);
+    const HANDOFF_PURGE_BATCH: u32 = 1_000;
+
+    /// Deletes settled handoff records past [`SETTLED_HANDOFF_RETENTION`] every
+    /// [`HANDOFF_PURGE_INTERVAL`], in batches, until the host stops. Every host does; deleting
+    /// a record twice deletes nothing more.
+    async fn purge_settled_handoffs(purger: PostgresHandoffs) {
+        let purger = Arc::new(Mutex::new(purger));
+        let mut interval = tokio::time::interval(HANDOFF_PURGE_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            let purger = Arc::clone(&purger);
+            let purged = tokio::task::spawn_blocking(move || -> Result<u64, String> {
+                let mut purger = purger.lock().map_err(message)?;
+                let mut total = 0;
+                loop {
+                    let deleted = purger
+                        .purge_settled(SETTLED_HANDOFF_RETENTION, HANDOFF_PURGE_BATCH)
+                        .map_err(message)?;
+                    total += deleted;
+                    if deleted < u64::from(HANDOFF_PURGE_BATCH) {
+                        return Ok(total);
+                    }
+                }
+            })
+            .await
+            .map_err(message)
+            .and_then(|result| result);
+            match purged {
+                Ok(0) => {}
+                Ok(count) => eprintln!("deleted {count} settled handoff records"),
+                Err(error) => eprintln!("settled handoff records not deleted: {error}"),
+            }
+        }
+    }
 
     /// Retires the unretired grant `previous` that this host ID's earlier
     /// process left behind (#1097). The matching ID alone proves nothing: that
@@ -859,7 +991,7 @@ mod postgres_host {
             confirmed_stopped,
         } = config;
         let zones = zone_ids.clone();
-        let (directory, grants, entries, handoffs, parties, instances) =
+        let (directory, grants, entries, handoffs, purger, parties, instances) =
             tokio::task::spawn_blocking(move || -> Result<_, String> {
                 // The serving login never migrates (#1142): each connection
                 // refuses a schema at another version than this build's.
@@ -873,9 +1005,12 @@ mod postgres_host {
                     .collect::<Result<Vec<_>, _>>()?;
                 let entries = PostgresEntries::connect(&url, timeout).map_err(message)?;
                 let handoffs = PostgresHandoffs::connect(&url, timeout).map_err(message)?;
+                let purger = PostgresHandoffs::connect(&url, timeout).map_err(message)?;
                 let parties = PostgresParties::connect(&url, timeout).map_err(message)?;
                 let instances = PostgresInstances::connect(&url, timeout).map_err(message)?;
-                Ok((directory, grants, entries, handoffs, parties, instances))
+                Ok((
+                    directory, grants, entries, handoffs, purger, parties, instances,
+                ))
             })
             .await??;
         let leases: Vec<_> = grants.iter().map(|grant| grant.lease().clone()).collect();
@@ -983,6 +1118,7 @@ mod postgres_host {
                 }
             }
         });
+        let purge = tokio::spawn(purge_settled_handoffs(purger));
         let forward = tokio::spawn(async move {
             while shutdown.recv().await.is_some() {
                 if stop.send(()).await.is_err() {
@@ -1013,6 +1149,7 @@ mod postgres_host {
         )
         .await;
         renewal.abort();
+        purge.abort();
         forward.abort();
         let _ = std::fs::remove_dir_all(&recovery);
         let _ = std::fs::remove_file(&seed);
