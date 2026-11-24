@@ -122,6 +122,21 @@ impl Ellipse {
         i64::try_from((norm - scale) / largest).unwrap_or(i64::MAX)
     }
 
+    /// [`Self::distance`] where it is below `limit`, and `limit` elsewhere: a point clearly that
+    /// far away is decided in floating point, without the exact integer root (#855).
+    #[must_use]
+    pub fn distance_within(self, point: [i32; 2], limit: i64) -> i64 {
+        let dx = f64::from(point[0]) - f64::from(self.centre[0]);
+        let dz = f64::from(point[1]) - f64::from(self.centre[1]);
+        let [rx, rz] = self.radii.map(f64::from);
+        let estimate = ((dx * dx * rz * rz + dz * dz * rx * rx).sqrt() - rx * rz) / rx.max(rz);
+        // The exact distance rounds its root and its quotient down: at most two units less.
+        if estimate >= limit as f64 + 2. {
+            return limit;
+        }
+        self.distance(point).min(limit)
+    }
+
     #[must_use]
     pub const fn bounds(self) -> Rect {
         Rect::around(self.centre, self.radii)
@@ -225,6 +240,27 @@ mod tests {
         assert!(circle.contains([60, 80]));
         assert_eq!(circle.distance([0, 150]), 50);
         assert_eq!(circle.distance([30, 40]), 0);
+    }
+
+    /// Within its limit the floating-point shortcut answers exactly [`Ellipse::distance`], and
+    /// never less than the limit beyond it.
+    #[test]
+    fn distance_within_a_limit_is_the_distance_below_it() {
+        let ellipse = Ellipse {
+            centre: [1_234, -5_678],
+            radii: [42_000, 9_100],
+        };
+        for x in (-60_000..60_000).step_by(397) {
+            for z in (-30_000..20_000).step_by(211) {
+                let point = [x, z];
+                let exact = ellipse.distance(point);
+                assert_eq!(
+                    ellipse.distance_within(point, 1_200),
+                    exact.min(1_200),
+                    "{point:?}"
+                );
+            }
+        }
     }
 
     #[test]
