@@ -14,7 +14,7 @@ use mmorpg_core::{
 };
 
 use crate::codec::Codec;
-use crate::records::{CastRecord, DebrisRecord, EntityRecord, ProjectileRecord};
+use crate::records::{CastRecord, DebrisRecord, EntityRecord, LoadRecord, ProjectileRecord};
 use crate::sheet::{
     Abilities, PublishStamps, SHEET_COUNT, Sheet, SheetEncodingCache, SheetRevisions,
     encode_sheets, revision,
@@ -56,6 +56,16 @@ pub const TRAP_RECORD_BYTES: usize = TrapRecord::BYTES;
 pub const DEBRIS_RECORD_BYTES: usize = DebrisRecord::BYTES;
 /// At most this many pieces of debris, nearest first, take what budget the units leave.
 pub const MAX_WIRE_DEBRIS: usize = 16;
+/// A [`LoadRecord`] (#1077): kind and ownership, `3 × i32` base and `u16` facing.
+pub const LOAD_RECORD_BYTES: usize = LoadRecord::BYTES;
+/// At most this many set-down loads, nearest first (#1077), before the debris takes the rest.
+pub const MAX_WIRE_LOADS: usize = mmorpg_core::MAX_VISIBLE_LOADS;
+/// The debris count byte's high bits count the set-down loads after the debris (#1077), so
+/// a projection without loads does not grow.
+const LOAD_COUNT_SHIFT: u32 = 5;
+const DEBRIS_COUNT_MASK: u8 = (1 << LOAD_COUNT_SHIFT) - 1;
+const _: () = assert!(MAX_WIRE_DEBRIS <= DEBRIS_COUNT_MASK as usize);
+const _: () = assert!(MAX_WIRE_LOADS < 1 << (8 - LOAD_COUNT_SHIFT));
 /// A [`ProjectileRecord`] (#286): `u16` ID, kind, `3 × i32` position, `u16` yaw, `i16` pitch
 /// and state.
 pub const PROJECTILE_RECORD_BYTES: usize = ProjectileRecord::BYTES;
@@ -106,6 +116,8 @@ pub struct PackedSnapshot {
     pub packed_projectiles: usize,
     /// Leading pieces of debris that fit; the rest were omitted (#288).
     pub packed_debris: usize,
+    /// Leading set-down loads that fit; the rest were omitted (#1077).
+    pub packed_loads: usize,
     /// Whether a sheet the client lacks waits for a later tick because it did not fit (#544).
     pub deferred_sheets: bool,
 }
@@ -345,20 +357,28 @@ fn pack(
     for projectile in &snapshot.projectiles[..projectiles] {
         projectile.encode(&mut payload)?;
     }
-    // Debris (#288) takes what the units left.
-    let debris = (MAX_PLAYER_PROJECTION_BYTES.saturating_sub(payload.len() + 1)
-        / DEBRIS_RECORD_BYTES)
+    // Set-down loads (#1077), then debris (#288), take what the units left; one byte counts
+    // both.
+    let room = MAX_PLAYER_PROJECTION_BYTES.saturating_sub(payload.len() + 1);
+    let loads = (room / LOAD_RECORD_BYTES)
+        .min(MAX_WIRE_LOADS)
+        .min(snapshot.loads.len());
+    let debris = ((room - loads * LOAD_RECORD_BYTES) / DEBRIS_RECORD_BYTES)
         .min(MAX_WIRE_DEBRIS)
         .min(snapshot.debris.len());
-    payload.push(u8::try_from(debris).unwrap_or(u8::MAX));
+    payload.push(u8::try_from(debris | loads << LOAD_COUNT_SHIFT).unwrap_or(u8::MAX));
     for piece in &snapshot.debris[..debris] {
         piece.encode(&mut payload)?;
+    }
+    for load in &snapshot.loads[..loads] {
+        load.encode(&mut payload)?;
     }
     Ok(PackedSnapshot {
         payload,
         packed_entities: usize::from(packed_entities),
         packed_projectiles: projectiles,
         packed_debris: debris,
+        packed_loads: loads,
         deferred_sheets,
     })
 }
@@ -371,6 +391,7 @@ pub fn encode_snapshot(snapshot: &ZoneSnapshot) -> Result<Vec<u8>, ProtocolError
     if packed.packed_entities < snapshot.entities.len()
         || packed.packed_projectiles < snapshot.projectiles.len()
         || packed.packed_debris < snapshot.debris.len()
+        || packed.packed_loads < snapshot.loads.len()
         || packed.deferred_sheets
     {
         return Err(ProtocolError::new(
@@ -618,15 +639,23 @@ fn decode_projection(
     for _ in 0..count {
         projectiles.push(mmorpg_core::ProjectileView::decode(payload, &mut offset)?);
     }
-    let count = decode_u8_count(
-        payload,
-        &mut offset,
-        MAX_WIRE_DEBRIS,
-        "snapshot has too much debris",
-    )?;
+    // One byte counts the debris (low bits) and the set-down loads after it (#1077).
+    let [counts] = take(payload, &mut offset)?;
+    let count = usize::from(counts & DEBRIS_COUNT_MASK);
+    if count > MAX_WIRE_DEBRIS {
+        return Err(ProtocolError::new("snapshot has too much debris"));
+    }
     let mut debris = Vec::with_capacity(count);
     for _ in 0..count {
         debris.push(mmorpg_core::DebrisView::decode(payload, &mut offset)?);
+    }
+    let count = usize::from(counts >> LOAD_COUNT_SHIFT);
+    if count > MAX_WIRE_LOADS {
+        return Err(ProtocolError::new("snapshot has too many loads"));
+    }
+    let mut loads = Vec::with_capacity(count);
+    for _ in 0..count {
+        loads.push(mmorpg_core::LoadView::decode(payload, &mut offset)?);
     }
     ensure_fully_consumed(payload, offset)?;
     if entities
@@ -775,6 +804,7 @@ fn decode_projection(
         doors,
         projectiles,
         debris,
+        loads,
         pieces,
         depleted_veins,
         summoned,
@@ -973,6 +1003,7 @@ pub(crate) mod tests {
         slots[15] = Some(mmorpg_core::ItemStack::new(mmorpg_core::ItemId::new(1), 20).unwrap());
         ZoneSnapshot {
             debris: Vec::new(),
+            loads: Vec::new(),
             party: None,
             depths_loot: None,
             raid: Some(mmorpg_core::RaidView {
@@ -1282,6 +1313,7 @@ pub(crate) mod tests {
                         named_weapon: None,
                         great_weapon: None,
                         shapeshifted: false,
+                        load: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: false,
@@ -1609,6 +1641,61 @@ pub(crate) mod tests {
             (debris + 2, 9, "unknown debris kind"),
             (debris + 3, 8, "unknown debris piece"),
             (debris - 1, 17, "snapshot has too much debris"),
+        ] {
+            let mut invalid = encoded.clone();
+            invalid[offset] = value;
+            assert_eq!(
+                decode_snapshot(&invalid).unwrap_err().to_string(),
+                message,
+                "byte {offset} = {value}"
+            );
+        }
+    }
+
+    /// Set-down loads (#1077) follow the debris, counted in the debris count byte's high bits, so
+    /// a projection without loads keeps its bytes.
+    #[test]
+    fn set_down_loads_follow_the_debris_and_round_trip() {
+        let mut snapshot = fixture_snapshot();
+        snapshot.debris = vec![mmorpg_core::DebrisView {
+            id: 9,
+            kind: mmorpg_core::PropKind::Crate,
+            piece: 0,
+            position: [-300, 12, 9_000],
+            rotation: [0, 23_170, 0, 23_170],
+            age: 4,
+        }];
+        snapshot.loads = vec![
+            mmorpg_core::LoadView {
+                kind: mmorpg_core::LoadKind::Sack,
+                own: true,
+                at: [120, 0, -40],
+                facing: 16_384,
+            },
+            mmorpg_core::LoadView {
+                kind: mmorpg_core::LoadKind::WaterJug,
+                own: false,
+                at: [-6_000, 1_040, 1_100],
+                facing: 0,
+            },
+        ];
+        let encoded = encode_snapshot(&snapshot).unwrap();
+        assert_eq!(
+            encoded.len(),
+            fixture_bytes().len() + DEBRIS_RECORD_BYTES + 2 * LOAD_RECORD_BYTES
+        );
+        assert_eq!(decode_snapshot(&encoded).unwrap(), snapshot);
+        let loads = encoded.len() - 2 * LOAD_RECORD_BYTES;
+        let counts = loads - DEBRIS_RECORD_BYTES - 1;
+        assert_eq!(encoded[counts], 1 | 2 << LOAD_COUNT_SHIFT);
+        assert_eq!(encoded[loads], 0x80 | mmorpg_core::LoadKind::Sack.code());
+        for (offset, value, message) in [
+            (loads, 6, "unknown load kind"),
+            (
+                counts,
+                1 | 5 << LOAD_COUNT_SHIFT,
+                "snapshot has too many loads",
+            ),
         ] {
             let mut invalid = encoded.clone();
             invalid[offset] = value;
@@ -2187,6 +2274,7 @@ pub(crate) mod tests {
                         named_weapon: None,
                         great_weapon: None,
                         shapeshifted: false,
+                        load: None,
                         hostile: true,
                         attackable: true,
                         tapped_by_other: kind == EntityKind::Creature,
@@ -2222,6 +2310,7 @@ pub(crate) mod tests {
             }),
             projectiles: Vec::new(),
             debris: Vec::new(),
+            loads: Vec::new(),
             doors: vec![
                 mmorpg_core::DoorView {
                     door: mmorpg_core::DoorId::new(1),

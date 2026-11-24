@@ -18,6 +18,7 @@ command gather 6B
 command guard 3B
 command inspect 6B
 command jump 2B
+command lift 6B
 command loot 14B
 command move 6B
 command move_item 6B
@@ -35,6 +36,7 @@ command roll 2B
 command roll_depths_drop 12B
 command select_target 7B
 command sell_item 12B
+command set_down 2B
 command set_weapon_drawn 3B
 command sit 6B
 command skin 6B
@@ -804,6 +806,18 @@ canonical @2125 4B
 canonical @2129 4B
 canonical @2133 4B
 canonical @2137 4B
+canonical @2141 2B
+canonical @2143 4B
+canonical @2147 4B
+canonical @2151 1B
+canonical @2152 4B
+canonical @2156 4B
+canonical @2160 1B
+canonical @2161 4B
+canonical @2165 4B
+canonical @2169 4B
+canonical @2173 2B
+canonical @2175 8B
 player-snapshot @0 3B
 player-snapshot @3 1B
 player-snapshot @4 4B

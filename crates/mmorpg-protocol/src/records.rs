@@ -152,6 +152,41 @@ impl Codec for mmorpg_core::DebrisView {
 }
 
 record! {
+    /// A set-down load (#1077): its kind's code, with bit 7 set when the viewer set it down,
+    /// `3 × i32` base and `u16` facing.
+    pub(crate) struct LoadRecord {
+        kind: u8,
+        position: [i32; 3],
+        facing: u16,
+    }
+}
+
+/// The load record's kind byte: bit 7 says the viewer set it down (#1077).
+const OWN_LOAD_BIT: u8 = 0x80;
+
+impl Codec for mmorpg_core::LoadView {
+    fn encode(&self, payload: &mut Vec<u8>) -> Result<(), ProtocolError> {
+        LoadRecord {
+            kind: self.kind.code() | if self.own { OWN_LOAD_BIT } else { 0 },
+            position: self.at,
+            facing: self.facing,
+        }
+        .encode(payload)
+    }
+
+    fn decode(payload: &[u8], offset: &mut usize) -> Result<Self, ProtocolError> {
+        let record = LoadRecord::read(payload, offset)?;
+        Ok(Self {
+            kind: mmorpg_core::LoadKind::from_code(record.kind & !OWN_LOAD_BIT)
+                .ok_or_else(|| ProtocolError::new("unknown load kind"))?,
+            own: record.kind & OWN_LOAD_BIT != 0,
+            at: record.position,
+            facing: record.facing,
+        })
+    }
+}
+
+record! {
     /// A visible unit: kind, ID, `u32` appearance, `3 × i32` position, `3 × i8` velocity, `u16`
     /// facing, level, health percent, flags and the player's weapon (#1088).
     ///
@@ -190,6 +225,10 @@ const NAMED_MASK: u32 = 0x7800_0000;
 const SHIFTED_BIT: u32 = 0x0080_0000;
 /// The appearance bits a player record lends to its weapon and form.
 const PLAYER_ONLY_BITS: u32 = DRAWN_BIT | GREAT_MASK | NAMED_MASK | SHIFTED_BIT;
+/// The weapon byte's low nibble on a player record: 1 + its weapon family's code, 0 for none
+/// (#1088); the high nibble: 1 + the code of the load it carries, 0 for none (#1077).
+const WEAPON_MASK: u8 = 0x0F;
+const LOAD_SHIFT: u8 = 4;
 /// Where the weapon byte sits in an entity record: last.
 #[cfg(test)]
 const WEAPON_OFFSET: usize = EntityRecord::BYTES - 1;
@@ -226,6 +265,7 @@ impl Codec for EntitySnapshot {
                     || flags.weapon.is_some()
                     || flags.named_weapon.is_some()
                     || flags.great_weapon.is_some()
+                    || flags.load.is_some()
                     || flags.shapeshifted))
         {
             return Err(ProtocolError::new("invalid drawn weapon appearance"));
@@ -240,7 +280,15 @@ impl Codec for EntitySnapshot {
         let weapon = u8::try_from(optional_code(
             flags.weapon.map(mmorpg_core::WeaponFamily::code),
         ))
-        .map_err(|_| ProtocolError::new("invalid weapon family"))?;
+        .ok()
+        .filter(|weapon| *weapon <= WEAPON_MASK)
+        .ok_or_else(|| ProtocolError::new("invalid weapon family"))?;
+        // A carried load shares the weapon byte (#1077), so a projection does not grow.
+        let load = u8::try_from(optional_code(flags.load.map(mmorpg_core::LoadKind::code)))
+            .ok()
+            .filter(|load| *load <= WEAPON_MASK)
+            .ok_or_else(|| ProtocolError::new("invalid load"))?;
+        let weapon = weapon | load << LOAD_SHIFT;
         if entity.health_percent > 100 {
             return Err(ProtocolError::new("health percent exceeds 100"));
         }
@@ -322,7 +370,7 @@ impl Codec for EntitySnapshot {
                 encoded_appearance & DRAWN_BIT != 0,
                 encoded_appearance & SHIFTED_BIT != 0,
                 from_optional_code(
-                    u32::from(record.weapon),
+                    u32::from(record.weapon & WEAPON_MASK),
                     mmorpg_core::WeaponFamily::from_code,
                     "invalid weapon family",
                 )?,
@@ -340,6 +388,15 @@ impl Codec for EntitySnapshot {
             )
         } else {
             (false, false, None, None, None, encoded_appearance)
+        };
+        let load = if player {
+            from_optional_code(
+                u32::from(record.weapon >> LOAD_SHIFT),
+                mmorpg_core::LoadKind::from_code,
+                "invalid load",
+            )?
+        } else {
+            None
         };
         let sitting_player = record.health & SITTING_BIT != 0;
         let health_percent = record.health & !SITTING_BIT;
@@ -428,6 +485,7 @@ impl Codec for EntitySnapshot {
                 named_weapon,
                 great_weapon,
                 shapeshifted,
+                load,
                 hostile,
                 attackable,
                 tapped_by_other,
@@ -449,7 +507,8 @@ mod tests {
     };
 
     use super::{
-        CastRecord, DebrisRecord, EntityRecord, PLAYER_ONLY_BITS, ProjectileRecord, WEAPON_OFFSET,
+        CastRecord, DebrisRecord, EntityRecord, LoadRecord, PLAYER_ONLY_BITS, ProjectileRecord,
+        WEAPON_OFFSET,
     };
     use crate::codec::Codec;
     use crate::codec::generate::{CASES, Gen, round_trip};
@@ -527,6 +586,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn set_down_loads_round_trip() {
+        let kinds = all(mmorpg_core::LoadKind::from_code);
+        let mut rng = Gen::new(7);
+        for _ in 0..CASES {
+            let load = mmorpg_core::LoadView {
+                kind: rng.pick(&kinds),
+                own: rng.bool(),
+                at: [rng.int(), rng.int(), rng.int()],
+                facing: rng.int(),
+            };
+            round_trip(&load, Some(LoadRecord::BYTES));
+        }
+    }
+
     /// Any entity a projection can carry: each kind with only the flags its record has room for.
     pub(crate) fn entity(rng: &mut Gen) -> EntitySnapshot {
         let kind = rng.pick(&[
@@ -562,6 +636,7 @@ mod tests {
                     flags.traversal = rng.pick(&all(TraversalView::from_code));
                     flags.posture = rng.pick(&[PostureView::Free, PostureView::Sitting]);
                 }
+                flags.load = maybe(rng, &all(mmorpg_core::LoadKind::from_code));
             }
             EntityKind::Npc => {
                 if !dead {
@@ -639,5 +714,43 @@ mod tests {
                 .to_string(),
             "only a player record carries a weapon"
         );
+    }
+
+    /// A carried load (#1077) rides the weapon byte's high nibble beside the weapon family, so
+    /// the record keeps its size; an unknown load fails closed.
+    #[test]
+    fn a_carried_load_shares_the_weapon_byte() {
+        let mut rng = Gen::new(6);
+        let mut player = entity(&mut rng);
+        player.kind = EntityKind::Player;
+        player.appearance = 3;
+        player.flags = EntityFlags {
+            weapon: Some(mmorpg_core::WeaponFamily::Sword),
+            load: Some(mmorpg_core::LoadKind::WaterJug),
+            ..EntityFlags::default()
+        };
+        let mut bytes = Vec::new();
+        player.encode(&mut bytes).unwrap();
+        assert_eq!(bytes.len(), EntityRecord::BYTES);
+        assert_eq!(
+            bytes[WEAPON_OFFSET],
+            (mmorpg_core::LoadKind::WaterJug.code() + 1) << 4
+                | (mmorpg_core::WeaponFamily::Sword.code() + 1)
+        );
+        assert_eq!(EntitySnapshot::decode(&bytes, &mut 0).unwrap(), player);
+        bytes[WEAPON_OFFSET] = 0xF0;
+        assert_eq!(
+            EntitySnapshot::decode(&bytes, &mut 0)
+                .unwrap_err()
+                .to_string(),
+            "invalid load"
+        );
+        let mut creature = player;
+        creature.kind = EntityKind::Creature;
+        creature.flags = EntityFlags {
+            load: Some(mmorpg_core::LoadKind::Sack),
+            ..EntityFlags::default()
+        };
+        assert!(creature.encode(&mut Vec::new()).is_err());
     }
 }
