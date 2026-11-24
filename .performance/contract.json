@@ -361,6 +361,33 @@
       ]
     },
     {
+      "id": "claim-expiry",
+      "description": "A zone's claim timeout (#1141), every tick from the moment sessions join until their waits end: the expiry looks up waits by deadline, so it visits each unclaimed session once, on the tick its wait ends, and never the claimed characters; a tick on which no wait ends visits none.",
+      "dimensions": {
+        "characters": { "description": "sessions that claimed a character and keep playing" },
+        "waiting": { "description": "sessions that never claim, all joining on one tick (at most 32 per zone)" }
+      },
+      "scalePoints": [
+        { "characters": 16, "waiting": 32 },
+        { "characters": 128, "waiting": 32 },
+        { "characters": 448, "waiting": 32 },
+        { "characters": 448, "waiting": 8 }
+      ],
+      "metrics": [
+        {
+          "name": "claim_waits_visited",
+          "unit": "entries",
+          "signal": "operation-count",
+          "notes": "ZoneGameServerAdapter::claim_expiry_visits over every tick of the timeout; crates/mmorpg-game-server/examples/claim_expiry_work.rs.",
+          "budget": { "max": 32 },
+          "growth": [
+            { "dimension": "characters", "bound": "constant" },
+            { "dimension": "waiting", "bound": "linear" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "camera-only-frames",
       "description": "Greyhaven client presentation (#645): camera-only frames around a standing viewer over settled static residency build, upload and evict no static scenery, whatever the authored scenery.",
       "dimensions": {

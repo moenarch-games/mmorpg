@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod character_admission;
+mod claim_waits;
 mod departures;
 pub use departures::{HandoffChannel, Redirect, arrival_input};
 mod dev_characters;
@@ -39,6 +40,13 @@ use mmorpg_core::{MAX_PLAYERS_PER_ZONE, TICK_HZ, ZoneContent, ZoneId, ZoneSimula
 use mmorpg_protocol::{
     SheetRevisions, decode_command_envelope, encode_canonical_snapshot, pack_projection_cached,
 };
+
+/// Sessions of one zone that may wait for a character claim at once, where claims are
+/// required (#1141). Claims are unauthenticated; the bound keeps unclaimed connections
+/// from filling a zone.
+pub const MAX_UNCLAIMED_SESSIONS: usize = 32;
+/// An unclaimed session leaves the zone this long (30 s) after it joined (#1141).
+pub const CLAIM_TIMEOUT_TICKS: u64 = mmorpg_core::long_ticks_from_ms(30_000) as u64;
 
 pub const PINNED_GAME_SERVER_REVISION: &str = "0817c9da548eeb44914a403f7515ab3bffdfbe47";
 pub const PINNED_PHYSICS_ENGINE_REVISION: &str = "1b98f84d409796b2a15b84f3fa4ed7f03a11f8bd";
@@ -107,6 +115,9 @@ pub struct ZoneGameServerAdapter {
     instances: Option<instance::InstanceChannel>,
     /// Players refused at a threshold: no new request until they leave its strip (#404).
     threshold_held: std::collections::BTreeSet<game_server::PlayerId>,
+    /// Sessions still waiting to claim a character, with the tick they expire at
+    /// (#1141). Only kept while claims are required; never canonical state.
+    claim_deadlines: claim_waits::ClaimWaits,
 }
 
 impl ZoneGameServerAdapter {
@@ -125,6 +136,31 @@ impl ZoneGameServerAdapter {
     }
     pub fn require_durable_character_claims(&mut self) {
         self.requires_character_claims = true;
+        self.reset_claim_deadlines();
+    }
+    /// Every session in the zone without a character waits for its claim from now on.
+    fn reset_claim_deadlines(&mut self) {
+        self.claim_deadlines.clear();
+        if !self.requires_character_claims {
+            return;
+        }
+        let deadline = self.zone.current_tick() + CLAIM_TIMEOUT_TICKS;
+        let waiting: Vec<_> = self
+            .zone
+            .player_ids()
+            .filter(|player| {
+                !self.characters.contains_key(player) && !self.departing.contains_key(player)
+            })
+            .collect();
+        for player in waiting {
+            self.claim_deadlines.insert(player, deadline);
+        }
+    }
+    /// Claim-wait entries the per-tick expiry has visited since creation (#1141): one per
+    /// expired session, none on a tick where no wait ends. A work counter.
+    #[must_use]
+    pub fn claim_expiry_visits(&self) -> u64 {
+        self.claim_deadlines.visits()
     }
     fn ensure_authority(&self) -> Result<(), SimulationError> {
         if let Some(permit) = &self.authority {
@@ -143,6 +179,7 @@ impl ZoneGameServerAdapter {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     fn remove_bound_player(&mut self, player_id: game_server::PlayerId) -> bool {
+        self.claim_deadlines.remove(&player_id);
         self.characters.remove(&player_id);
         self.held_back.remove(&player_id);
         self.threshold_held.remove(&player_id);
@@ -170,6 +207,7 @@ impl ZoneGameServerAdapter {
             parties: None,
             instances: None,
             threshold_held: Default::default(),
+            claim_deadlines: Default::default(),
         }
     }
 
@@ -205,6 +243,7 @@ impl ZoneGameServerAdapter {
             parties: None,
             instances: None,
             threshold_held: Default::default(),
+            claim_deadlines: Default::default(),
         })
     }
 
@@ -300,7 +339,17 @@ impl GameSimulation for ZoneGameServerAdapter {
 
     fn add_player(&mut self, player_id: game_server::PlayerId) -> Result<(), SimulationError> {
         self.ensure_authority()?;
-        self.zone.add_player(player_id).map_err(map_zone_error)
+        if self.requires_character_claims && self.claim_deadlines.len() >= MAX_UNCLAIMED_SESSIONS {
+            return Err(SimulationError::new(
+                "too many sessions are waiting to claim a character",
+            ));
+        }
+        self.zone.add_player(player_id).map_err(map_zone_error)?;
+        if self.requires_character_claims {
+            self.claim_deadlines
+                .insert(player_id, self.zone.current_tick() + CLAIM_TIMEOUT_TICKS);
+        }
+        Ok(())
     }
 
     fn remove_player(&mut self, player_id: game_server::PlayerId) -> bool {
@@ -387,7 +436,15 @@ impl GameSimulation for ZoneGameServerAdapter {
     ) -> Result<(), SimulationError> {
         self.ensure_authority()?;
         self.sheet_encodings_mut().clear();
-        self.restore_character_checkpoint(checkpoint)
+        self.restore_character_checkpoint(checkpoint)?;
+        self.reset_claim_deadlines();
+        Ok(())
+    }
+
+    /// Sessions that did not claim a character within [`CLAIM_TIMEOUT_TICKS`] (#1141);
+    /// the runtime removes them and closes their connections. Visits only those.
+    fn expired_admissions(&self) -> Vec<game_server::PlayerId> {
+        self.claim_deadlines.expired(self.zone.current_tick())
     }
 
     fn snapshot_scope(&self) -> SnapshotScope {
