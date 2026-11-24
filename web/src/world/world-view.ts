@@ -342,6 +342,11 @@ class RegionArt {
       this.#prefetch.plan({ foreground: ["Ranger"], background: [] });
       return;
     }
+    // Then the inn, which alone holds Enter World (#855): the area's other pieces would share its downloads and decodes.
+    if (entry === this.#innArea && !this.#prefetch.settled("inn")) {
+      this.#prefetch.plan({ foreground: ["inn"], background: [] });
+      return;
+    }
     this.#prefetch.plan({
       foreground: this.#pieces(entry),
       background: (isOutpostArea(home) ? [] : [...others, ...near.map((area) => area.id)]).flatMap((id) => this.#pieces(id)),
@@ -933,20 +938,29 @@ export class WorldView {
     this.#units = null;
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
-    // The selected character's imported model owns the first network/decoder work. Once it
-    // settles (including a failed load), background kits can prepare while the player selects a
-    // character or moves through creation. No world entry waits for them.
+    // The selected character's imported model owns the first network/decoder work, then the entry area's inn, which
+    // Enter World waits for (#855). Once both settled (including a failed load), background kits can prepare while the
+    // player selects a character or moves through creation. No world entry waits for them.
     const prewarmed = world.scenery;
-    const fortifications = this.#fortifications;
     const fortress = this.#fortress;
     // The selected look leads (#979); the kits wait for the world's Rangers as they waited for the whole Ranger before.
     void this.#models.preloadWorld("Ranger").then(() => {
       if (this.#loadedScenery !== prewarmed || this.#loadedArena !== arena) { return; }
       this.#avatarPrepared = true;
-      if (this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
-      void fortifications.load();
+      this.#loadSelectionKits();
       void fortress?.load();
     });
+  }
+
+  /**
+   * The selected area's placed kits and the fortifications, once the player figure and the selected area's entry art
+   * have settled (#855): started earlier, their downloads and decodes delay the inn Enter World waits for.
+   */
+  #loadSelectionKits(): void {
+    const area = this.#pendingKitArea;
+    if (!this.#avatarPrepared || !area || !(this.#regions?.entryReady(area.id) ?? false)) { return; }
+    this.#loadKitsForArea(area);
+    void this.#fortifications?.load();
   }
 
   /**
@@ -1577,7 +1591,8 @@ export class WorldView {
     this.#lastEffectNodes = [];
     this.#pendingNpc = null;
     this.#frameRate.reset();
-    this.#sky.show(true);
+    // The CSS sky stays hidden until the first world frame's HUD stage says the atmosphere cannot draw the sky (#855):
+    // shown here, its drifting clouds were repainted behind the selection screen for the whole entry.
   }
 
   /**
@@ -2856,8 +2871,8 @@ export class WorldView {
    */
   prefetchSelection(entry: number, others: readonly number[]): void {
     this.#pendingKitArea = this.#areas.find((area) => area.id === entry) ?? null;
-    if (this.#avatarPrepared && this.#pendingKitArea) { this.#loadKitsForArea(this.#pendingKitArea); }
     this.#regions?.plan(entry, others);
+    this.#loadSelectionKits();
   }
 
   /** How many of area `id`'s art pieces have settled (loaded or failed) out of how many. */
