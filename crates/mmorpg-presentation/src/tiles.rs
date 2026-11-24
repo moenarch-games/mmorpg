@@ -26,7 +26,7 @@ use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use crate::batching::{material, matrix, mix, rgb};
 use crate::geometry::{Geometry, ID, V, norm};
 use crate::ground::{self, Ground, Layer, Layers, Weights};
-use crate::terrain::{self, height, metres, overlaps};
+use crate::terrain::{self, metres, overlaps};
 use crate::{Draw, Material};
 
 /// Grid cells along a tile's side: 128 m of four-metre cells (64 m tiles drew twice as many
@@ -505,7 +505,6 @@ impl Tiles {
         let tile = &self.tiles[index];
         let g = &self.grid;
         let [c0, r0, c1, r1] = tile.cells;
-        let step = metres(g.step) * FAR_STRIDE as f64;
         let samples = |lo: usize, hi: usize| -> Vec<usize> {
             let mut out: Vec<usize> = (lo..=hi).step_by(FAR_STRIDE).collect();
             if out.last() != Some(&hi) {
@@ -524,6 +523,7 @@ impl Tiles {
             )
         };
         let mut out = Geometry::default();
+        let mut rocky = Vec::new();
         for &r in &rows {
             for &c in &columns {
                 let sample = r * g.columns + c;
@@ -531,12 +531,15 @@ impl Tiles {
                     metres(g.origin[0] + c as i32 * g.step),
                     metres(g.origin[1] + r as i32 * g.step),
                 );
-                let (ci, ri, s) = (c as isize, r as isize, FAR_STRIDE as isize);
-                let dx = (height(g, ci + s, ri) - height(g, ci - s, ri)) / (2. * step);
-                let dz = (height(g, ci, ri + s) - height(g, ci, ri - s)) / (2. * step);
                 out.p.push([x, metres(g.heights[sample]), z]);
-                out.n.push(norm([-dx, 1., -dz]));
+                out.n.push(terrain::smooth_normal(
+                    g,
+                    c as isize,
+                    r as isize,
+                    FAR_STRIDE as isize,
+                ));
                 out.colors.push(rgb(color(sample, x, z)).map(f64::from));
+                rocky.push(self.weights.weight(Layer::Rock, sample));
             }
         }
         let across = columns.len() as u32;
@@ -557,7 +560,12 @@ impl Tiles {
                     // The near terrain already assigns rock to these steep shoulders.
                     // Keep PR #642's rock PBR material on the coarse level as well, or
                     // the same cliff turns back into a smooth green-grey slope at range.
-                    if up < 0.80 {
+                    // Only a face the near rock fully covers takes it (#1195): the grey
+                    // and green meet in the baked colours' soft, noisy blend, not along
+                    // an eight-metre staircase of textured faces. A sheer wall is rock
+                    // whatever its corners' weights.
+                    let solid = tri.iter().all(|&i| rocky[i as usize] >= 0.8);
+                    if (solid && up < 0.92) || up < 0.5 {
                         // Split only the material ownership of the original coarse face.
                         // Per-face vertices keep its rock projection from stretching over
                         // a near-vertical wall; they introduce no new terrain samples.
@@ -703,7 +711,6 @@ fn skirts(
         }
         out
     };
-    let step = metres(g.step) * stride as f64;
     let s = stride as isize;
     let sides: [Vec<(usize, usize)>; 4] = [
         along(c0, c1).into_iter().map(|c| (c, r0)).collect(),
@@ -719,10 +726,7 @@ fn skirts(
                 metres(g.origin[0] + c as i32 * g.step),
                 metres(g.origin[1] + r as i32 * g.step),
             );
-            let (ci, ri) = (c as isize, r as isize);
-            let dx = (height(g, ci + s, ri) - height(g, ci - s, ri)) / (2. * step);
-            let dz = (height(g, ci, ri + s) - height(g, ci, ri - s)) / (2. * step);
-            let n = norm([-dx, 1., -dz]);
+            let n = terrain::smooth_normal(g, c as isize, r as isize, s);
             let y = metres(g.heights[sample]);
             let c = rgb(color(sample, x, z)).map(f64::from);
             for y in [y, y - depth] {

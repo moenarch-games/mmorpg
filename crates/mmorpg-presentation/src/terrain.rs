@@ -12,6 +12,55 @@ pub fn height(g: &TerrainGrid, c: isize, r: isize) -> f64 {
             + c.clamp(0, g.columns as isize - 1) as usize],
     )
 }
+/// The ground's shading normal at grid sample `(c, r)` (#1195): the central-difference
+/// gradient over `stride` samples, averaged with a 1-2-1 kernel over the neighbouring samples
+/// `stride` apart. A steep slope's flat four-metre triangles then shade as one smooth face
+/// rather than as bands down it. Presentation only: the collider keeps its triangles.
+pub(crate) fn smooth_normal(g: &TerrainGrid, c: isize, r: isize, stride: isize) -> V {
+    let (mut dx, mut dz) = (0., 0.);
+    for (dr, wr) in [(-1, 1.), (0, 2.), (1, 1.)] {
+        for (dc, wc) in [(-1, 1.), (0, 2.), (1, 1.)] {
+            let (c, r, w) = (c + dc * stride, r + dr * stride, wr * wc);
+            dx += w * (height(g, c + stride, r) - height(g, c - stride, r));
+            dz += w * (height(g, c, r + stride) - height(g, c, r - stride));
+        }
+    }
+    let span = 16. * 2. * metres(g.step) * stride as f64;
+    norm([-dx / span, 1., -dz / span])
+}
+
+/// [`smooth_normal`] (stride 1) of every grid sample of the grid cells `cells` (`[first
+/// column, first row, end column, end row]`), computed once for the meshes drawn over them.
+pub(crate) struct SampleNormals {
+    first: [usize; 2],
+    across: usize,
+    columns: usize,
+    normals: Vec<V>,
+}
+
+impl SampleNormals {
+    pub(crate) fn new(g: &TerrainGrid, cells: [usize; 4]) -> Self {
+        let last = [cells[2].min(g.columns - 1), cells[3].min(g.rows - 1)];
+        let first = [cells[0].min(last[0]), cells[1].min(last[1])];
+        let normals = (first[1]..=last[1])
+            .flat_map(|r| (first[0]..=last[0]).map(move |c| (c as isize, r as isize)))
+            .map(|(c, r)| smooth_normal(g, c, r, 1))
+            .collect();
+        Self {
+            first,
+            across: last[0] - first[0] + 1,
+            columns: g.columns,
+            normals,
+        }
+    }
+
+    /// Grid sample `sample`'s normal; it lies within the cells.
+    pub(crate) fn at(&self, sample: usize) -> V {
+        let (c, r) = (sample % self.columns, sample / self.columns);
+        self.normals[(r - self.first[1]) * self.across + c - self.first[0]]
+    }
+}
+
 pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
     let step = metres(g.step);
     let gx = (x - metres(g.origin[0])) / step;
@@ -210,14 +259,21 @@ fn around_holes(
     let (xs, zs) = (cuts(cell[0], cell[2], 0), cuts(cell[1], cell[3], 1));
     let h = |sample: usize| metres(g.heights[sample]);
     let corners = [h(s), h(s + 1), h(s + g.columns), h(s + g.columns + 1)];
+    // The cell's corner normals blended like its heights, so a cut cell shades like its
+    // neighbours (#1195).
+    let normals = [s, s + 1, s + g.columns, s + g.columns + 1].map(|sample| {
+        let (c, r) = ((sample % g.columns) as isize, (sample / g.columns) as isize);
+        smooth_normal(g, c, r, 1)
+    });
     let (width, depth) = (cell[2] - cell[0], cell[3] - cell[1]);
-    let dx = (corners[1] - corners[0] + corners[3] - corners[2]) / (2. * width);
-    let dz = (corners[2] - corners[0] + corners[3] - corners[1]) / (2. * depth);
-    let normal = norm([-dx, 1., -dz]);
     let mut vertex = |x: f64, z: f64| {
         let (u, v) = ((x - cell[0]) / width, (z - cell[1]) / depth);
         let y = (corners[0] * (1. - u) + corners[1] * u) * (1. - v)
             + (corners[2] * (1. - u) + corners[3] * u) * v;
+        let normal = norm(std::array::from_fn(|axis| {
+            (normals[0][axis] * (1. - u) + normals[1][axis] * u) * (1. - v)
+                + (normals[2][axis] * (1. - u) + normals[3][axis] * u) * v
+        }));
         let index = out.p.len() as u32;
         out.p.push([x, y, z]);
         out.n.push(normal);
@@ -258,6 +314,7 @@ pub(crate) fn grid(
     cells: [usize; 4],
 ) {
     let mut map = BTreeMap::new();
+    let normals = SampleNormals::new(g, cells);
     let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
     let at = |c: usize, r: usize| {
         within(
@@ -297,16 +354,9 @@ pub(crate) fn grid(
                     );
                     let h = metres(g.heights[sample]);
                     let y = if far && within(x, z) { h - 4. } else { h };
-                    let step = metres(g.step);
-                    let dx = (height(g, c as isize + 1, r as isize)
-                        - height(g, c as isize - 1, r as isize))
-                        / (2. * step);
-                    let dz = (height(g, c as isize, r as isize + 1)
-                        - height(g, c as isize, r as isize - 1))
-                        / (2. * step);
                     let index = out.p.len() as u32;
                     out.p.push([x, y, z]);
-                    let n = norm([-dx, 1., -dz]);
+                    let n = normals.at(sample);
                     out.n.push(n);
                     let color = if far {
                         far_color(g, biomes[sample], c, r, n)

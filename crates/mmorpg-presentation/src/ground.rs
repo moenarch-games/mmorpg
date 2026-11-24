@@ -19,7 +19,7 @@
 //! so the main pass still cuts at `weight × height alpha` while every shadow texel is cut away.
 use crate::batching::{mix, rgb, shade};
 use crate::geometry::{Geometry, V, norm};
-use crate::terrain::{ground_biomes, height, metres, noise, surface};
+use crate::terrain::{SampleNormals, ground_biomes, height, metres, noise, surface};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -340,6 +340,11 @@ impl Weights {
         })
     }
 
+    /// Overlay `layer`'s weight at grid sample `i` (0 for a layer the weights do not hold).
+    pub(crate) fn weight(&self, layer: Layer, i: usize) -> f64 {
+        self.layers.get(&layer).map_or(0., |weights| weights[i])
+    }
+
     /// How much the overlays together cover grid sample `i`: the heaviest one's weight.
     pub(crate) fn cover(&self, i: usize) -> f64 {
         self.layers
@@ -418,13 +423,22 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             g.origin[1] + (i / g.columns) as i32 * g.step,
         )
     };
-    let slope: Vec<f64> = (0..count)
+    let raw: Vec<f64> = (0..count)
         .map(|i| {
             let (c, r) = ((i % g.columns) as isize, (i / g.columns) as isize);
             let dx = (height(g, c + 1, r) - height(g, c - 1, r)) / (2. * step);
             let dz = (height(g, c, r + 1) - height(g, c, r - 1)) / (2. * step);
             1. - norm([-dx, 1., -dz])[1]
         })
+        .collect();
+    // The slope over about twelve metres (#1195), so a steep patch's edge no longer follows
+    // the four-metre cells in a staircase. No sample is gentler than its own slope, so a
+    // wall narrower than that, such as the basin's short cliffs and climbing lanes, stays
+    // rock.
+    let slope: Vec<f64> = blur(g, &raw, 1)
+        .into_iter()
+        .zip(&raw)
+        .map(|(smooth, raw)| smooth.max(*raw))
         .collect();
     let indicator = |of: &[Biome], wanted: &[&str]| -> Vec<f64> {
         of.iter()
@@ -462,7 +476,11 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         // The wetlands' designed ground, not the wider area traced round it (#1063).
         let marsh = mmorpg_core::greyhaven_vale::footprint_at(ux, uz)
             == Some(mmorpg_core::greyhaven_vale::marsh::MARSH_LAKE_WETLANDS);
-        let rock = smoothstep(0.17, 0.29, slope[i] + 0.06 * breakup).max(bare[i]);
+        // Steep ground turns to rock over 30°–46° (#1195), through broad seeded patches at
+        // nine and 23 metres, so grass and rock meet in soft, irregular tongues rather than
+        // along a contour; the layer's height blend breaks the edge up below the grid.
+        let rocky = noise(x, z, 23., 61.) * 0.6 + noise(x, z, 9., 67.) * 0.4 - 0.5;
+        let rock = smoothstep(0.13, 0.30, slope[i] + 0.14 * rocky).max(bare[i]);
         let gravel = smoothstep(0.07, 0.15, slope[i] + 0.05 * breakup).max(smoothstep(
             0.35,
             0.8,
@@ -527,7 +545,17 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
             .enumerate()
         {
             layers[at][i] = weight;
-            colors[at][i] = tinted(color, x, z, f64::from(OVERLAYS[at] as u8) * 7.);
+            let mut color = tinted(color, x, z, f64::from(OVERLAYS[at] as u8) * 7.);
+            if OVERLAYS[at] == Layer::Rock {
+                // Broad light and dark, warm and cool stretches across a face, so its
+                // texture's short repeat does not read as one even carpet (#1195).
+                let warm = smoothstep(0.35, 0.75, noise(x, z, 17., 73.));
+                color = shade(
+                    mix(color, 0x9a8668, 0.45 * warm),
+                    0.76 + 0.36 * noise(x, z, 31., 71.),
+                );
+            }
+            colors[at][i] = color;
         }
     }
     Weights {
@@ -623,17 +651,15 @@ pub(crate) fn grid_overlays(
     holes: &[[f64; 4]],
     cells: [usize; 4],
 ) {
-    let step = metres(g.step);
+    // The base's own shading normals, so an overlay lights exactly like the ground under it.
+    let normals = SampleNormals::new(g, cells);
     let at = |sample: usize| -> (V, V) {
         let (c, r) = (sample % g.columns, sample / g.columns);
         let (x, z) = (
             metres(g.origin[0] + c as i32 * g.step),
             metres(g.origin[1] + r as i32 * g.step),
         );
-        let (ci, ri) = (c as isize, r as isize);
-        let dx = (height(g, ci + 1, ri) - height(g, ci - 1, ri)) / (2. * step);
-        let dz = (height(g, ci, ri + 1) - height(g, ci, ri - 1)) / (2. * step);
-        ([x, metres(g.heights[sample]), z], norm([-dx, 1., -dz]))
+        ([x, metres(g.heights[sample]), z], normals.at(sample))
     };
     for (&layer, weights) in &w.layers {
         let colors = &w.colors[&layer];
