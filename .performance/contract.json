@@ -736,7 +736,7 @@
     },
     {
       "id": "entry-prebuild",
-      "description": "Browser entry prebuild (#855, owner decision 2026-11-23): while the selection screen shows, the world view builds its static scene one part per idle slice from when the worker's scene reaches the page (its grass part once the grass does), then composes and prepares the selected character's entry view; Enter World joins into it. Measured by web/tests/entry-prebuild.test.ts (bun test) over EntryPrebuild; the page reports the same counters in `__valeDebug.loadingReport().prebuild`.",
+      "description": "Browser entry prebuild (#855, owner decision 2026-11-23): while the selection screen shows, the world view builds its static scene one part per idle slice from when the worker's scene reaches the page (its ground part once the terrain's far levels do, its grass part once the grass does), then composes and prepares the selected character's entry view; Enter World joins into it. Measured by web/tests/entry-prebuild.test.ts (bun test) over EntryPrebuild; the page reports the same counters in `__valeDebug.loadingReport().prebuild`.",
       "dimensions": { "entries": { "description": "entries selected in turn on the selection screen before entering: 1 is the first prebuild alone, each further one a character or slot switch" } },
       "scalePoints": [{ "entries": 1 }, { "entries": 2 }, { "entries": 3 }],
       "metrics": [
@@ -751,7 +751,7 @@
           "name": "static_parts",
           "unit": "parts",
           "signal": "operation-count",
-          "notes": "Static scene parts built (the page module realizing its seeded scene, decoded scene, batches, ground, grass), one per idle slice; the grass waits for its seed; a switch rebuilds none.",
+          "notes": "Static scene parts built (the page module realizing its seeded scene, decoded scene, batches, ground, grass), one per idle slice; the ground waits for the far levels and the grass for its seed; a switch rebuilds none.",
           "budget": { "max": 5 },
           "growth": [{ "dimension": "entries", "bound": "constant" }]
         },
