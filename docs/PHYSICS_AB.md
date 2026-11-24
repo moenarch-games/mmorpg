@@ -266,8 +266,9 @@ On **each** backend, every run must:
   let go of the keys mid-air;
 - in `vale-missiles`, strike some wolf with a missile, with every missile spent the same way
   (in a unit or in the world) on both arms;
-- in `vale-climb`, end with the climber standing on the crag's top and the mantler on the
-  dock's deck, each within a unit;
+- in `vale-climb`, end with the climber standing on the crag's domed crown (within 2.5 m of its
+  peak: the crag is a sculpted buttress since #1195) and the mantler on the dock's deck within
+  a unit;
 - in `vale-roll`, let every player roll, never let the crag stop its roller into a climb, and
   land the dock's roller on the ground beyond the deck's edge;
 - in `vale-mill-ramps`, carry the walker up the cart ramp onto the dock (feet 1.5 m up within 3
