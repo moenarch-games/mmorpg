@@ -3,6 +3,7 @@ import { shadowGeometry, StaggeredCascades } from "@moritzbrantner/three-lightin
 import { CASCADE_UPDATE_INTERVALS, SUN_SHADOWS } from "../../../src/world/lighting";
 import { triangles } from "../../../src/world/shadow-lod";
 import { mergeUnitMeshes } from "../../../src/world/units/merged-unit";
+import { wasm } from "../../../src/wasm";
 
 // The `sun-shadow-casters` measurement (#1083, #1120): `web/tests/shadow-lod.test.ts` asserts its bounds and
 // `web/scripts/work-evidence.ts` emits it as work evidence. A camera walking and turning through Greyhaven redraws at
@@ -67,4 +68,55 @@ export async function unitShadowTrianglePercent(): Promise<number[]> {
   const merged = mergeUnitMeshes(model, new Set());
   await merged.shadowLevels;
   return [0, 1, 2].map((cascade) => Math.round((100 * merged.shadows.reduce((sum, proxy) => sum + triangles(shadowGeometry(proxy, cascade)), 0)) / full));
+}
+
+/** A stand-in nature descriptor: every entry a tree 6 m across and 14 m tall, one level (no bundle needed). */
+function standInNatureDescriptor(entries: readonly string[]): string {
+  return JSON.stringify({
+    lodSelection: { metric: "projected-bounding-sphere-height-fraction" },
+    assets: entries.map((key) => ({
+      key, bounds: { min: [-3, 0, -3], max: [3, 14, 3] },
+      lods: { boundingSphere: { center: [0, 7, 0], radius: 7.6 }, levels: [{ variant: "default", minScreenSize: 0 }] },
+    })),
+  });
+}
+
+/**
+ * Off-screen casters the sun keeps (#1038): over `frames` frames of the walk through Greyhaven's woods (from the
+ * `woods` review pose, 6 m/s, a quarter turn every four seconds), the largest share by which the sun's shadow sweep
+ * grows the nature kit's drawn placements past the camera's own selection, in percent, for a sun `elevation` degrees
+ * high. Every placement stands in as a 14 m tree, so bushes and rocks count as long casters as trees.
+ */
+export function largestFrameKitShadowCasterExtraPercent(frames: number, elevation: number): number {
+  const entries = wasm.kitEntries("nature");
+  const descriptor = standInNatureDescriptor(entries);
+  const plain = new wasm.KitLods("nature", descriptor);
+  const lit = new wasm.KitLods("nature", descriptor);
+  const up = THREE.MathUtils.degToRad(elevation);
+  // From the south-west, like the cascade walk's sun.
+  lit.setSun(new Float64Array([-Math.cos(up) * 0.66, -Math.sin(up), -Math.cos(up) * 0.75]));
+  const camera = new THREE.PerspectiveCamera(55, 1.6, 0.1, 1000);
+  const clip = new THREE.Matrix4();
+  const fov = THREE.MathUtils.degToRad(55);
+  let largest = 0;
+  let own = 0;
+  let kept = 0;
+  try {
+    for (let f = 0; f <= frames; f++) {
+      camera.position.set(-55 + 0.1 * f, 20, 8 - 0.03 * f);
+      camera.rotation.set(-0.35, Math.PI / 2 + f * (Math.PI / 2 / 240), 0, "YXZ");
+      camera.updateMatrixWorld();
+      clip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      const clipFloats = new Float32Array(clip.elements);
+      const { x, y, z } = camera.position;
+      // Undefined: unchanged since the previous frame.
+      own = plain.update(x, y, z, fov, clipFloats, 1 / 60, 1, false)?.length ?? own;
+      kept = lit.update(x, y, z, fov, clipFloats, 1 / 60, 1, false)?.length ?? kept;
+      if (f > 0 && own > 0) { largest = Math.max(largest, Math.round((100 * (kept - own)) / own)); }
+    }
+  } finally {
+    plain.free();
+    lit.free();
+  }
+  return largest;
 }

@@ -8,10 +8,22 @@
 //! every switch, for the nature bundle (#49) and the composition kits (#599) alike. It culls
 //! a placement wholly outside the camera's side planes by the descriptor's `bounds` box (the
 //! drawn art, decoration included), or by the bounding sphere where the asset has none.
+//!
+//! The selection is also the sun's shadow-caster set: the sun cascades can draw only what it
+//! keeps. While the sun casts shadows ([`Lods::set_sun`]), the side-plane test sweeps each box
+//! down the sunlight until it has fallen its own height, so a tree beside or behind the camera
+//! whose shadow reaches into view stays (#1038); the cascades cull those casters per view.
 use serde_json::Value;
 
 /// The one selection metric the descriptors use.
 pub const METRIC: &str = "projected-bounding-sphere-height-fraction";
+
+/// The lowest sun elevation, as its sine (10°), a shadow-caster sweep is measured for: a lower
+/// sun's shadow, over five times as long as its caster is tall, is cut there.
+pub const SHADOW_SWEEP_MIN_SINE: f64 = 0.173_648_177_666_930_35;
+/// The sun direction is kept in steps of this much per component (under a degree), so a
+/// slowly turning sun re-selects a resting camera's placements only once a step.
+const SUN_STEP: f64 = 1. / 64.;
 
 /// A switch between two levels of detail cross-fades over this long.
 pub const FADE_SECONDS: f64 = 0.35;
@@ -213,6 +225,8 @@ struct Instance {
     /// bounds).
     box_centre: [f64; 3],
     half_axes: Option<[[f64; 3]; 3]>,
+    /// The world box's height, which its shadow sweep falls.
+    height: f64,
 }
 
 impl Instance {
@@ -239,6 +253,7 @@ impl Instance {
                 origin: at([0.; 3]),
                 box_centre: [0.; 3],
                 half_axes: None,
+                height: 0.,
             };
         };
         let centre = at(entry.centre);
@@ -250,28 +265,33 @@ impl Instance {
             });
             (at(middle), Some(axes))
         });
+        let radius = entry.radius * placed.scale;
+        let height =
+            2. * half_axes.map_or(radius, |axes| axes.iter().map(|axis| axis[1].abs()).sum());
         Self {
             lods,
             centre,
-            radius: entry.radius * placed.scale,
+            radius,
             reach: placed.reach,
             max_distance: placed.max_distance,
             origin: at([0.; 3]),
             box_centre,
             half_axes,
+            height,
         }
     }
 
-    /// Whether the placement lies wholly behind one of `planes`.
-    fn outside(&self, planes: &[[f64; 4]; 4]) -> bool {
-        planes.iter().any(|&[a, b, c, d]| {
+    /// Whether the placement, swept `lean[i]` metres along plane `i`'s normal per metre of its
+    /// height (its shadow), lies wholly behind one of `planes`.
+    fn outside(&self, planes: &[[f64; 4]; 4], lean: &[f64; 4]) -> bool {
+        planes.iter().zip(lean).any(|(&[a, b, c, d], lean)| {
             let [x, y, z] = self.box_centre;
             let extent = self.half_axes.map_or(self.radius, |axes| {
                 axes.iter()
                     .map(|[u, v, w]| (a * u + b * v + c * w).abs())
                     .sum()
             });
-            a * x + b * y + c * z + d < -extent
+            a * x + b * y + c * z + d + lean * self.height < -extent
         })
     }
 }
@@ -292,6 +312,8 @@ pub struct Lods {
     view: Option<View>,
     fading: bool,
     changed: bool,
+    /// The direction sunlight travels while the sun casts shadows, in [`SUN_STEP`]s.
+    sun: Option<[f64; 3]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -333,6 +355,7 @@ impl Lods {
             view: None,
             fading: false,
             changed: false,
+            sun: None,
         }
     }
 
@@ -363,11 +386,28 @@ impl Lods {
         }
     }
 
+    /// The direction sunlight travels (any length, downwards) while the sun casts shadows, or
+    /// `None` (#1038): with it, [`Self::update`] keeps a placement outside the view whose
+    /// shadow may fall inside. Kept in [`SUN_STEP`]s; a new step evaluates every placement again.
+    pub fn set_sun(&mut self, direction: Option<[f64; 3]>) {
+        let sun = direction
+            .filter(|d| d.iter().all(|c| c.is_finite()) && d.iter().any(|&c| c != 0.))
+            .map(|d| {
+                let length = d[0].hypot(d[1]).hypot(d[2]);
+                d.map(|c| (c / length / SUN_STEP).round() * SUN_STEP)
+            });
+        if sun != self.sun {
+            self.sun = sun;
+            self.view = None;
+        }
+    }
+
     /// Advances every placement by `seconds` for a camera at `eye` (metres) with vertical
     /// field of view `fov_y` (radians). `bias` multiplies every `minScreenSize` (a model-detail
     /// setting: larger switches to coarser levels sooner); without `fade` (reduced motion)
     /// switches are immediate. With the camera's column-major `clip_from_world` matrix,
-    /// placements wholly outside its side planes are not drawn. Returns what to draw. For the
+    /// placements wholly outside its side planes are not drawn, unless the sun
+    /// ([`Self::set_sun`]) casts their shadow inside. Returns what to draw. For the
     /// same camera while nothing fades or moved it returns the last result without evaluating
     /// any placement; [`Self::changed`] tells whether the result changed.
     pub fn update(
@@ -392,6 +432,18 @@ impl Lods {
         }
         self.view = Some(view);
         let planes = clip_from_world.map(side_planes);
+        // Per side plane, how far into it a box's shadow reaches per metre of the box's height:
+        // swept down the sunlight until it has fallen that height.
+        let lean = match (&planes, self.sun) {
+            (Some(planes), Some(sun)) => {
+                let length = sun[0].hypot(sun[1]).hypot(sun[2]);
+                let fall = (-sun[1] / length).max(SHADOW_SWEEP_MIN_SINE);
+                planes.map(|[a, b, c, _]| {
+                    ((a * sun[0] + b * sun[1] + c * sun[2]) / length / fall).max(0.)
+                })
+            }
+            _ => [0.; 4],
+        };
         let tan = (fov_y / 2.).tan().max(1e-6);
         let step = if fade {
             (seconds / FADE_SECONDS).max(0.)
@@ -455,7 +507,7 @@ impl Lods {
             };
             if planes
                 .as_ref()
-                .is_some_and(|planes| instance.outside(planes))
+                .is_some_and(|planes| instance.outside(planes, &lean))
             {
                 continue;
             }
@@ -665,17 +717,7 @@ mod tests {
             model
         };
         let fov = 60f64.to_radians();
-        let projection = {
-            let f = 1. / (fov / 2.).tan();
-            let (near, far) = (0.1, 1000.);
-            let mut m = [0_f32; 16];
-            m[0] = f as f32;
-            m[5] = f as f32;
-            m[10] = ((far + near) / (near - far)) as f32;
-            m[11] = -1.;
-            m[14] = (2. * far * near / (near - far)) as f32;
-            m
-        };
+        let projection = looking_down_minus_z(fov);
         let placed = Placed {
             entry: "wall",
             model: turned(50.),
@@ -697,6 +739,101 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    /// The clip-from-world matrix of a square camera at the origin looking down -z.
+    fn looking_down_minus_z(fov: f64) -> [f32; 16] {
+        let f = 1. / (fov / 2.).tan();
+        let (near, far) = (0.1, 1000.);
+        let mut m = [0_f32; 16];
+        m[0] = f as f32;
+        m[5] = f as f32;
+        m[10] = ((far + near) / (near - far)) as f32;
+        m[11] = -1.;
+        m[14] = (2. * far * near / (near - far)) as f32;
+        m
+    }
+
+    #[test]
+    fn a_tree_off_screen_stays_while_its_shadow_falls_in_view() {
+        // A 12 m tree whose box stands 24 m right of a 60° view looking down -z, 20 m ahead:
+        // the right edge there is 11.5 m out, so the whole tree is off screen. Its shadow under a
+        // sun 45° high in the east (light travelling -x) reaches back to x = 9, into view (#1038).
+        let tree = EntryLods {
+            bounds: Some([[-3., 0., -3.], [3., 12., 3.]]),
+            ..tree()
+        };
+        let placed = Placed {
+            model: translated(24., -20.),
+            ..at(0.)
+        };
+        let fov = 60f64.to_radians();
+        let clip = Some(looking_down_minus_z(fov));
+        let mut lods = Lods::new(vec![tree], [placed]);
+        let drawn = |lods: &mut Lods, sun: Option<[f64; 3]>| {
+            lods.set_sun(sun);
+            lods.update([0., 0., 0.], fov, 0., 1., false, clip).len()
+        };
+        assert_eq!(
+            drawn(&mut lods, None),
+            0,
+            "without sun shadows the side planes cull it"
+        );
+        assert_eq!(
+            drawn(&mut lods, Some([-1., -1., 0.])),
+            1,
+            "its shadow falls into view"
+        );
+        assert_eq!(
+            drawn(&mut lods, Some([1., -1., 0.])),
+            0,
+            "its shadow falls away from the view"
+        );
+        // A sun at noon drops the shadow at its foot, off screen too.
+        assert_eq!(drawn(&mut lods, Some([0., -1., 0.])), 0);
+        // A low sun's longer shadow reaches a tree further out; one past its sweep is culled.
+        let far = Placed {
+            model: translated(40., -20.),
+            ..placed
+        };
+        lods.place(0, far);
+        assert_eq!(
+            drawn(&mut lods, Some([-1., -1., 0.])),
+            0,
+            "a 45° shadow falls short"
+        );
+        assert_eq!(
+            drawn(&mut lods, Some([-1., -0.4, 0.])),
+            1,
+            "a 22° shadow reaches in"
+        );
+    }
+
+    #[test]
+    fn a_sun_turning_within_a_step_leaves_a_resting_camera_alone() {
+        let fov = 60f64.to_radians();
+        let clip = Some(looking_down_minus_z(fov));
+        let ahead = Placed {
+            model: translated(0., -20.),
+            ..at(0.)
+        };
+        let mut lods = Lods::new(vec![tree()], [ahead]);
+        lods.set_sun(Some([-0.5, -0.8, 0.3]));
+        lods.update([0., 4., 0.], fov, 0., 1., false, clip);
+        assert!(lods.changed());
+        // Within a step the resting camera's selection is kept, not evaluated again.
+        lods.set_sun(Some([-0.501, -0.8, 0.3]));
+        assert!(lods.view.is_some());
+        // A sun of any length is one direction.
+        lods.set_sun(Some([-5., -8., 3.]));
+        assert!(lods.view.is_some());
+        lods.set_sun(Some([-0.6, -0.8, 0.3]));
+        assert!(
+            lods.view.is_none(),
+            "a new step evaluates every placement again"
+        );
+        lods.update([0., 4., 0.], fov, 0., 1., false, clip);
+        assert!(!lods.changed());
     }
 
     #[test]
