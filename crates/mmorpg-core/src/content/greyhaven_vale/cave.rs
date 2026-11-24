@@ -114,11 +114,58 @@ pub const fn depths_threshold() -> crate::DepthsThreshold {
     }
 }
 
+/// One persisted mesh: the cave's from `redbrand.py`, the Hollow's ridges from
+/// `hollow_cliffs.py` with their climbable or sheer `grip` (#1195).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Persisted {
+    id: u32,
+    position: [i32; 3],
+    vertices: Vec<[i32; 3]>,
+    triangles: Vec<[u32; 3]>,
+    #[serde(default)]
+    grip: Option<RockGrip>,
+}
+
+/// A persisted mesh's `grip` (#1195): rough rock climbs, sheer rock does not.
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RockGrip {
+    Rock,
+    Sheer,
+}
+
+fn persisted() -> Vec<Persisted> {
+    serde_json::from_str(include_str!("../../../content/collision/redbrand.json"))
+        .expect("committed Redbrand collision JSON is valid")
+}
+
 /// Repository-persisted simplified geometry, exported from Blender in game coordinates.
 #[must_use]
 pub fn collision_meshes() -> Vec<crate::StaticMesh> {
-    serde_json::from_str(include_str!("../../../content/collision/redbrand.json"))
-        .expect("committed Redbrand collision JSON is valid")
+    persisted()
+        .into_iter()
+        .map(|mesh| crate::StaticMesh {
+            id: mesh.id,
+            position: mesh.position,
+            vertices: mesh.vertices,
+            triangles: mesh.triangles,
+        })
+        .collect()
+}
+
+/// The climbable Redbrand rock (#1195): every persisted mesh whose `grip` is `rock`. The
+/// Hollow's ridges carry the setting with their shape, so the sheer back wall is sheer because
+/// its authored rock says so, not because of its collider ID.
+#[must_use]
+pub fn climbable_rock() -> Vec<(u32, crate::Grip)> {
+    persisted()
+        .into_iter()
+        .filter_map(|mesh| match mesh.grip? {
+            RockGrip::Rock => Some((mesh.id, crate::Grip::Rock)),
+            RockGrip::Sheer => None,
+        })
+        .collect()
 }
 
 /// The north-side approach sits on a broad terrace blended into the surrounding hills.
