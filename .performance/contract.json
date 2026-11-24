@@ -771,7 +771,7 @@
     },
     {
       "id": "sun-shadow-casters",
-      "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), and a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade. Measured without a GPU by web/tests/support/work/sun-shadow-casters.ts: asserted by web/tests/shadow-lod.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade, and the placed kits keep off-screen casters whose shadow reaches the view (#1038) for a bounded share more placements. Measured without a GPU by web/tests/support/work/sun-shadow-casters.ts: asserted by web/tests/shadow-lod.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "frames": { "description": "frames of a fixed camera walk (6 m/s, a quarter turn every four seconds) after the first" } },
       "scalePoints": [{ "frames": 16 }, { "frames": 64 }, { "frames": 256 }],
       "metrics": [
@@ -796,6 +796,14 @@
           "signal": "operation-count",
           "notes": "The same in the middle and far cascades (10 % at #1083).",
           "budget": { "max": 12 }
+        },
+        {
+          "name": "kit_shadow_caster_extra_percent",
+          "unit": "percent",
+          "signal": "operation-count",
+          "notes": "Placements the nature kit draws beyond the camera's own selection so the sun cascades can cast off-screen trees whose shadow reaches the view (#1038), the largest share over a walk through the woods with every placement a 14 m tree and the sun at its 10° sweep floor (17 % at #1038; 5 % with the sun 60° high).",
+          "budget": { "max": 20 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
         }
       ]
     },

@@ -2320,11 +2320,13 @@ export class WorldView {
     // A map view's eye is high only to clear the terrain: its ground streams as if standing on it.
     this.#ground?.update(this.#plan ? [view.eye[0], 0, view.eye[2]] : view.eye, sceneFrame.shown);
     if (!this.#plan) { this.#grass?.update(view.eye, [self.x, self.feetY, self.z], this.#seconds, animate); }
-    this.#nature?.update(this.#camera, deltaSeconds, animate);
-    this.#climbing?.update(this.#camera, deltaSeconds, animate);
-    this.#crag?.update(this.#camera, deltaSeconds, animate);
-    this.#gather?.update(this.#camera, deltaSeconds, animate);
-    for (const kit of this.#kits) { kit.update(this.#camera, deltaSeconds, animate); }
+    // The sun cascades cast only what the kits draw: they keep off-screen casters whose shadow reaches the view (#1038).
+    const sun = this.#lighting.sunShadowDirection;
+    this.#nature?.update(this.#camera, deltaSeconds, animate, sun);
+    this.#climbing?.update(this.#camera, deltaSeconds, animate, sun);
+    this.#crag?.update(this.#camera, deltaSeconds, animate, sun);
+    this.#gather?.update(this.#camera, deltaSeconds, animate, sun);
+    for (const kit of this.#kits) { kit.update(this.#camera, deltaSeconds, animate, sun); }
     this.#fortress?.update(this.#camera, deltaSeconds, animate);
     this.#lastSceneryNodes = sceneFrame.nodes;
     this.#barYaw = Math.atan2(view.target[0] - view.eye[0], view.target[2] - view.eye[2]);

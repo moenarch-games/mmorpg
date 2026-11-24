@@ -162,6 +162,8 @@ export class GreyhavenLighting {
   #skySupported: boolean | null = null;
   /** Greyhaven's sun path (`mmorpg_presentation::lighting`), once the module loaded. */
   #dayCycle: DayCycle | null = null;
+  /** The direction sunlight travelled at the last configured frame while the sun cast shadows. */
+  #sunShadow: Vec3 | null = null;
 
   /**
    * Loads the tone-mapping LUTs from `base`, where `vite.config.ts` copies them (`luts/`), and the module that owns the
@@ -193,6 +195,14 @@ export class GreyhavenLighting {
     return this.#frame?.sky === true && this.#skySupported !== false;
   }
 
+  /**
+   * The direction sunlight travelled at the last drawn frame while the sun cast shadows, or null (#1038): the placed
+   * kits keep the off-screen casters whose shadow it may throw into view.
+   */
+  get sunShadowDirection(): Vec3 | null {
+    return this.#sunShadow;
+  }
+
   /** Sets the lights for the next frame. */
   apply(frame: LightingFrame): void {
     this.#frame = frame;
@@ -207,11 +217,13 @@ export class GreyhavenLighting {
     const { transmission } = light;
     lighting.ev100 = light.ev100;
     const shadows = light.sunShadows ? SUN_SHADOWS : null;
+    this.#sunShadow = null;
     if (this.drawsSky) {
       lighting.sky = { ...DEFAULT_SKY, environmentIntensity: light.environmentIntensity };
       lighting.clearColor = [0, 0, 0];
       lighting.clearAlpha = 1;
       lighting.sun = { direction: negate(sun), color: [1, 1, 1], illuminance: RAW_SUNLIGHT * transmission, shadows };
+      if (shadows) { this.#sunShadow = negate(sun); }
       lighting.moon = { direction: negate(dayCycle.toMoon(hour)), color: shared.moonColor, illuminance: shared.moonLux * transmission };
       // The sky's environment light is the ambient light, plus the sunlit ground's bounce by day.
       lighting.ambient = { color: shared.bounceColor, brightness: light.bounceNits };
@@ -223,6 +235,7 @@ export class GreyhavenLighting {
       // One directional light: the sun while it outshines the moon, then the moon.
       if (lux > shared.moonLux) {
         lighting.sun = { direction: negate(sun), color: light.sunlight.map((channel) => channel / lux) as unknown as Vec3, illuminance: lux * transmission, shadows };
+        if (shadows) { this.#sunShadow = negate(sun); }
       } else {
         const moon = dayCycle.toMoon(hour);
         lighting.sun = moon[1] > 0 ? { direction: negate(moon), color: shared.moonColor, illuminance: shared.moonLux * transmission, shadows: null } : null;

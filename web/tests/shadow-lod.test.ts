@@ -5,7 +5,7 @@ import { shadowBakeWork, useShadowBaker } from "../src/world/shadow-bake";
 import { closedSurface, shadowLevels, shadowLodReady, triangles, UNIT_SHADOW_LEVELS } from "../src/world/shadow-lod";
 import { indexLevels } from "../src/world/shadow-lod-indices";
 import { mergeUnitMeshes, releaseUnit } from "../src/world/units/merged-unit";
-import { body, largestFrameCascadeRedraws, unitShadowTrianglePercent } from "./support/work/sun-shadow-casters";
+import { body, largestFrameCascadeRedraws, largestFrameKitShadowCasterExtraPercent, unitShadowTrianglePercent } from "./support/work/sun-shadow-casters";
 
 // The `sun-shadow-casters` budget (#1083, `.performance/contract.json`): a camera walking and turning through Greyhaven
 // redraws at most two of the three sun cascades a frame, and a skinned unit's shadow proxy draws a fraction of its
@@ -24,6 +24,15 @@ describe("sun-shadow-casters", () => {
     expect(near).toBeLessThanOrEqual(33);
     expect(middle).toBeLessThanOrEqual(12);
     expect(far).toBeLessThanOrEqual(12);
+  });
+
+  test("the kits keep off-screen shadow casters for at most a fifth more placements (#1038)", () => {
+    for (const frames of [16, 64, 256]) {
+      const extra = largestFrameKitShadowCasterExtraPercent(frames, 10);
+      // The sweep keeps some: the woods have trees beside the view whose shadows reach in.
+      expect(extra).toBeGreaterThan(0);
+      expect(extra).toBeLessThanOrEqual(20);
+    }
   });
 
   test("a closed double-sided body casts through one single-sided proxy", () => {

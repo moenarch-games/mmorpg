@@ -20,7 +20,7 @@ const { shadowLodReady } = await import("../src/world/shadow-lod");
 const { largestClipsSampledPerFrame } = await import("../tests/support/work/ambient-clips");
 const { prebuildThenEnter } = await import("../tests/support/work/entry-prebuild");
 const { greyhavenScenery, warmSceneryFrames } = await import("../tests/support/work/scenery-frame");
-const { largestFrameCascadeRedraws, unitShadowTrianglePercent } = await import("../tests/support/work/sun-shadow-casters");
+const { largestFrameCascadeRedraws, largestFrameKitShadowCasterExtraPercent, unitShadowTrianglePercent } = await import("../tests/support/work/sun-shadow-casters");
 const { warmActionBar, warmWorldFrames } = await import("../tests/support/work/world-frame");
 
 type Point = Record<string, number>;
@@ -61,6 +61,8 @@ const MEASUREMENTS: Record<string, Measure> = {
     unit_near_shadow_triangle_percent: nearShadow!,
     // The contract bounds the middle and far cascades together.
     unit_far_shadow_triangle_percent: Math.max(middleShadow!, farShadow!),
+    // At the sun's 10° sweep floor, the longest shadow sweep (#1038).
+    kit_shadow_caster_extra_percent: largestFrameKitShadowCasterExtraPercent(at(point, "frames"), 10),
   }),
   "entry-prebuild": async (point) => {
     const { staticParts, prepares, frameStaticBuilds } = await prebuildThenEnter(at(point, "entries"));

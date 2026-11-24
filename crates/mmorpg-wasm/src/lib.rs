@@ -1953,6 +1953,14 @@ impl KitLods {
         self.0.set_hidden(index, hidden);
     }
 
+    /// The direction sunlight travels (3 floats, downwards) while the sun casts shadows, or
+    /// empty (#1038): placements outside the view whose shadow may fall inside stay drawn, so
+    /// the sun cascades can cast them (`mmorpg_presentation::lod::Lods::set_sun`).
+    #[wasm_bindgen(js_name = setSun)]
+    pub fn set_sun(&mut self, direction: &[f64]) {
+        self.0.set_sun(<[f64; 3]>::try_from(direction).ok());
+    }
+
     /// Each entry's variants from the finest level to the coarsest, as `entry/variant`.
     pub fn variants(&self, entry: &str) -> Vec<String> {
         self.0

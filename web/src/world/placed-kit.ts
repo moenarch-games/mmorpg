@@ -43,6 +43,11 @@ export type KitLodsHandle = {
   update(x: number, y: number, z: number, fovY: number, clipFromWorld: Float32Array, seconds: number, bias: number, fade: boolean): Float32Array | undefined;
   /** Hides placement `index`, or shows it again (#917: a vein's full or spent look). */
   setHidden?(index: number, hidden: boolean): void;
+  /**
+   * The direction sunlight travels while the sun casts shadows, or empty (#1038): placements outside the view whose
+   * shadow may fall inside stay drawn, so the sun cascades can cast them.
+   */
+  setSun?(direction: Float64Array): void;
 };
 
 export type PlacedKitSource = {
@@ -114,6 +119,8 @@ export class PlacedKit {
   readonly #hidden = new Map<number, boolean>();
   readonly #clip = new THREE.Matrix4();
   readonly #clipFloats = new Float32Array(16);
+  readonly #sun = new Float64Array(3);
+  static readonly #noSun = new Float64Array(0);
 
   constructor(source: PlacedKitSource) {
     this.#source = source;
@@ -195,10 +202,16 @@ export class PlacedKit {
     return this.#lods !== null;
   }
 
-  /** Picks each placement's level for `camera` and places the instances; `fade` false switches at once. */
-  update(camera: THREE.PerspectiveCamera, seconds: number, fade: boolean, bias = 1): void {
+  /**
+   * Picks each placement's level for `camera` and places the instances; `fade` false switches at once. With `sun`, the
+   * direction sunlight travels while it casts shadows, a placement outside the view whose shadow may fall inside stays
+   * drawn (#1038): the selection is the sun cascades' caster set too, and they cull it per cascade.
+   */
+  update(camera: THREE.PerspectiveCamera, seconds: number, fade: boolean, sun: readonly number[] | null = null, bias = 1): void {
     const lods = this.#lods;
     if (!lods || !this.#levels) { return; }
+    if (sun) { this.#sun.set(sun); }
+    lods.setSun?.(sun ? this.#sun : PlacedKit.#noSun);
     this.#clip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.#clipFloats.set(this.#clip.elements);
     const p = camera.position;
