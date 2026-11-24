@@ -335,11 +335,13 @@ Intentional or explained differences:
    walking into its side slides around it differently and players part by up to 74 units;
    every shove and stomp still happens on both.
 2. **Grounded.** Both report static ground within the contact offset plus 5 cm (Rapier's ground
-   prediction; physics-engine #348; the engine also requires it walkable). A body placed since
-   its last move (a recovered state, a spawn) is answered on the engine arm by the Rapier arm's
-   own support cast: walkable ground within offset + 5 cm beyond the contact offset (#534; it
-   had stopped the offset short, so a fight fixture's player placed 5.3 units over a hillside
-   was grounded on Rapier only). On identical states they agree for every unit.
+   prediction; physics-engine #348; the engine also requires it walkable and measures the gap
+   along the contact normal). A body placed since its last move (a recovered state, a spawn) or
+   whose static geometry changed since is answered on the engine arm by the character
+   controller's own support test cast from its pose, so a restored zone answers as the unbroken
+   run does (#1148; until then it used the Rapier arm's support cast, walkable ground within
+   offset + 5 cm beyond the contact offset, #534, which a body 5.25–5.5 units over flat ground
+   passed and the controller's result did not).
 3. **Creature drift.** Creatures wander and chase on a zone RNG they share. Over 5,124 ticks
    (`vale-wolf-hunt`) the small differences above move AI decisions and the RNG stream, so most
    creatures end elsewhere; the scripted hunter's path, fights and command outcomes stay

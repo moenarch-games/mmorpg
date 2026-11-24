@@ -32,11 +32,11 @@
 //! - Characters touching another moving character turn their moves with the shared game
 //!   `slide_around` intent before the batch (#534), which sees every body at its position from before
 //!   the step (Rapier's sees earlier movers already moved); characters do not push each other.
-//! - Grounded is the engine's own result: walkable static support within the contact offset
-//!   plus 5 cm after the last move, or snapped to (Rapier: any static ground within offset +
-//!   5 cm). A body that was placed or added since its last move is answered by the Rapier
-//!   backend's support cast: walkable static ground within offset + 5 cm beyond the contact
-//!   offset.
+//! - Grounded is the engine's own support test: walkable static support whose gap along its
+//!   contact normal is within the contact offset plus 5 cm (Rapier: any static ground within
+//!   offset + 5 cm). A move leaves its result; a body placed, added or recovered since, or
+//!   whose static geometry changed, is answered by the same test cast from its pose, so a
+//!   restored zone answers as the unbroken run does (#1148).
 //! - Overlap queries see the terrain (Rapier skips box–heightfield pairs). Flat terrain cells
 //!   are removed on both backends and left to the floor half-space.
 
@@ -56,9 +56,9 @@ use super::shared::{
     comes_to_rest, nearby, over_open_floor,
 };
 use super::{
-    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, Kind, PhysicsError, PieceMedium, PieceShape,
-    RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG, error,
-    exact, from_subunits,
+    Aabb, BodyId, CONTACT_OFFSET_UNITS, DebrisBody, GroundedWork, Kind, PhysicsError, PieceMedium,
+    PieceShape, RayHit, RigidBody, StepStats, StepUp, Vec3i, WATER_ANGULAR_DRAG, WATER_LINEAR_DRAG,
+    error, exact, from_subunits,
 };
 
 /// The game's centimetres per metre: the engine's length unit.
@@ -171,20 +171,24 @@ struct GroundGap {
     gap: Option<f32>,
 }
 
-/// A placed body's last support cast in [`World::grounded`] (#666), exact like [`GroundGap`].
+/// A moving body's last support test (#666, #1148): its move's own result, or the same test
+/// cast by [`World::grounded`]. A pure function of the body's position, its open floor and the
+/// static geometry, so it stands while none of them changed.
 #[derive(Clone, Copy)]
 struct Support {
     revision: u64,
     position: [u32; 3],
+    open: Option<EngineId>,
     grounded: bool,
 }
 
-/// The ground casts' reused hit buffer, [`World::grounded`]'s cached answers (#666) and the
-/// first engine query failure since the zone last took it (#1151).
+/// The ground casts' reused hit buffer, [`World::grounded`]'s cached answers (#666) and their
+/// work counters (#1148), and the first engine query failure since the zone last took it (#1151).
 #[derive(Clone, Default)]
 struct Probes {
     hits: Vec<QueryHit>,
     support: BTreeMap<BodyId, Support>,
+    grounded: GroundedWork,
     failure: Option<PhysicsError>,
 }
 
@@ -232,9 +236,6 @@ pub(super) struct World {
     handles: BTreeMap<BodyId, EngineId>,
     /// Engine body bits → game body (the terrain maps to its floor's ID).
     games: BTreeMap<u64, BodyId>,
-    /// Each moving body's grounded result from its last move; absent once it was placed or
-    /// added, until a step moves it again.
-    grounded: BTreeMap<BodyId, bool>,
     moves: Vec<CharacterMove>,
     results: Vec<CharacterMoveResult>,
     velocities: Vec<(BodyId, [f32; 3])>,
@@ -281,7 +282,6 @@ impl World {
             ground: None,
             handles: BTreeMap::new(),
             games: BTreeMap::new(),
-            grounded: BTreeMap::new(),
             moves: Vec::new(),
             results: Vec::new(),
             velocities: Vec::new(),
@@ -507,7 +507,6 @@ impl World {
         }
         let handle = self.insert(&body)?;
         self.handles.insert(body.id, handle);
-        self.grounded.remove(&body.id);
         self.track(&body, true);
         self.bodies.insert(body.id, body);
         Ok(())
@@ -526,7 +525,6 @@ impl World {
             self.engine.remove_body(handle);
             self.games.remove(&handle.to_bits());
         }
-        self.grounded.remove(&id);
         self.track(&body, false);
         Some(body)
     }
@@ -549,9 +547,7 @@ impl World {
         let handle = self.handles[&id];
         self.engine
             .set_kinematic_position(handle, lifted(position))
-            .map_err(|failure| engine_error("set_kinematic_position", failure))?;
-        self.grounded.remove(&id);
-        Ok(())
+            .map_err(|failure| engine_error("set_kinematic_position", failure))
     }
 
     fn platform_mut(&mut self, id: BodyId) -> Result<&mut RigidBody, PhysicsError> {
@@ -786,20 +782,31 @@ impl World {
             .move_characters(moves, &mut results)
             .map_err(|failure| engine_error("move_characters", failure));
         if outcome.is_ok() {
-            for result in &results {
+            let revision = self.engine.static_revision();
+            let support = &mut self.probes.get_mut().support;
+            for (result, request) in results.iter().zip(moves) {
                 let id = self.games[&result.body.to_bits()];
-                self.grounded.insert(id, result.grounded);
-                if result.translation == Vector::ZERO && result.depenetration == Vector::ZERO {
+                let Some(body) = self.bodies.get_mut(&id) else {
                     continue;
+                };
+                if result.translation != Vector::ZERO || result.depenetration != Vector::ZERO {
+                    body.position = self
+                        .engine
+                        .body(result.body)
+                        .map(|body| lowered(body.position))
+                        .ok_or_else(|| error("moved engine body vanished"))?;
                 }
-                let position = self
-                    .engine
-                    .body(result.body)
-                    .map(|body| lowered(body.position))
-                    .ok_or_else(|| error("moved engine body vanished"))?;
-                if let Some(body) = self.bodies.get_mut(&id) {
-                    body.position = position;
-                }
+                // The move's grounded result is the engine's support test at the pose it left,
+                // [`World::grounded`]'s own test, so it answers until that would differ.
+                support.insert(
+                    id,
+                    Support {
+                        revision,
+                        position: body.position.map(f32::to_bits),
+                        open: request.exclude,
+                        grounded: result.grounded,
+                    },
+                );
             }
         }
         self.results = results;
@@ -842,10 +849,6 @@ impl World {
             if displacement[1] > 0.0 {
                 self.shift_platform(platform, displacement)?;
             }
-        }
-        // A rider's grounded result predates its platform's rise: ask the geometry again.
-        for id in carried.keys() {
-            self.grounded.remove(id);
         }
         Ok(stats)
     }
@@ -974,33 +977,33 @@ impl World {
         self.handles.get(&ground.floor).copied()
     }
 
-    /// Whether a moving body stands on static ground: its last move's engine result, or for a
-    /// body placed or added since, the engine's grounded test as a downward shape cast
-    /// (walkable static support within the contact offset plus 5 cm beyond the contact offset,
-    /// as on the Rapier arm). The cast sees only static geometry, so its answer stands while
-    /// neither that (physics-engine `World::static_revision`) nor the body's position changed.
+    /// Whether a moving body stands on static ground: physics-engine's own support test after a
+    /// character move (`CharacterMoveResult::grounded`), walkable static support whose gap
+    /// along its contact normal is within the ground prediction (offset + 5 cm). A body's move
+    /// leaves its result; a body placed, added or recovered since, or whose static geometry or
+    /// open floor changed, is answered by the same test cast here, so a restored zone answers
+    /// as the unbroken run would (#1148).
     pub fn grounded(&self, id: BodyId) -> bool {
         let Some(body) = self.bodies.get(&id).filter(|body| body.is_moving()) else {
             return false;
         };
-        if let Some(&grounded) = self.grounded.get(&id) {
-            return grounded;
-        }
         let revision = self.engine.static_revision();
         let position = body.position.map(f32::to_bits);
-        let cached = self.probes.lock().support.get(&id).copied();
-        if let Some(support) = cached
-            && support.revision == revision
-            && support.position == position
+        let open = self.open_floor(body);
         {
-            return support.grounded;
+            let mut probes = self.probes.lock();
+            if let Some(support) = probes.support.get(&id).copied()
+                && support.revision == revision
+                && support.position == position
+                && support.open == open
+            {
+                probes.grounded.cached += 1;
+                return support.grounded;
+            }
+            probes.grounded.casts += 1;
         }
-        // The Rapier arm's support cast: ground prediction (offset + 5 cm) beyond the contact
-        // offset the capsule keeps, so any walkable hit within the cast's reach supports.
-        let offset = self.settings.offset;
-        let reach = offset + GROUND_PREDICTION_UNITS + offset;
-        let grounded = match self.support_fraction(body, capsule(body.half_extents), reach) {
-            Ok(fraction) => fraction.is_some(),
+        let grounded = match self.support_test(body) {
+            Ok(grounded) => grounded,
             Err(failure) => {
                 let mut probes = self.probes.lock();
                 probes.failure.get_or_insert(failure);
@@ -1012,10 +1015,26 @@ impl World {
             Support {
                 revision,
                 position,
+                open,
                 grounded,
             },
         );
         grounded
+    }
+
+    /// physics-engine's grounded test after a move that did not snap (its `support_hit` and
+    /// prediction, `approximate::character`), cast from the body's pose: the body's capsule
+    /// cast straight down by the controller's reach meets walkable static support whose gap,
+    /// measured along the contact normal, is within the ground prediction. A move that snapped
+    /// left the body at the contact offset, which this test also accepts.
+    fn support_test(&self, body: &RigidBody) -> Result<bool, PhysicsError> {
+        let offset = self.settings.offset;
+        let predict = offset + GROUND_PREDICTION_UNITS;
+        let min_up = libm::cosf(self.settings.max_slope);
+        let reach =
+            (predict / min_up).max(offset + self.settings.snap_to_ground.unwrap_or(0.0)) + offset;
+        let hit = self.support_hit(body, capsule(body.half_extents), -Vector::Y * reach)?;
+        Ok(hit.is_some_and(|hit| hit.fraction * reach * hit.normal.1 <= predict))
     }
 
     fn probe_ground_gap(&self, body: &RigidBody) -> Result<Option<f32>, PhysicsError> {
@@ -1023,24 +1042,25 @@ impl World {
         let reach = offset + GROUND_PREDICTION_UNITS;
         let (half_segment, radius) = super::capsule_dimensions(body.half_extents);
         Ok(self
-            .support_fraction(body, Shape::capsule(half_segment, radius + offset), reach)?
-            .map(|fraction| fraction * reach))
+            .support_hit(
+                body,
+                Shape::capsule(half_segment, radius + offset),
+                Vector(0.0, -reach, 0.0),
+            )?
+            .map(|hit| hit.fraction * reach))
     }
 
-    /// The fraction of `reach` at which `shape`, cast down from `body`, first meets walkable
-    /// static support, in the reused hit buffer: a too-steep face met first (a ramp's chute end)
-    /// is passed over, as physics-engine's own support test does (physics-engine #395). Over
-    /// the lake basin the floor is open, as in the body's moves.
-    fn support_fraction(
+    /// The first walkable static support `shape` meets cast from `body` by `down`, from the
+    /// reused hit buffer: a too-steep face met first (a ramp's chute end) is passed over, as
+    /// physics-engine's own support test does (physics-engine #395). Over the lake basin the
+    /// floor is open, as in the body's moves.
+    fn support_hit(
         &self,
         body: &RigidBody,
         shape: Shape,
-        reach: f32,
-    ) -> Result<Option<f32>, PhysicsError> {
-        let cast = ShapeCast::new(
-            QueryPose::new(shape, lifted(body.position)),
-            Vector(0.0, -reach, 0.0),
-        );
+        down: Vector,
+    ) -> Result<Option<QueryHit>, PhysicsError> {
+        let cast = ShapeCast::new(QueryPose::new(shape, lifted(body.position)), down);
         let filter = QueryFilter {
             exclude: Some(self.handles[&body.id]),
             ..QueryFilter::default()
@@ -1065,7 +1085,7 @@ impl World {
                         .and_then(|game| self.bodies.get(game))
                         .is_none_or(|body| !body.is_moving())
             })
-            .map(|hit| hit.fraction))
+            .copied())
     }
 
     pub fn overlap_query(&self, aabb: Aabb) -> Result<Vec<BodyId>, PhysicsError> {
@@ -1264,6 +1284,11 @@ impl World {
     /// the zone checks it once per tick and fails the tick with it.
     pub fn take_query_failure(&mut self) -> Result<(), PhysicsError> {
         self.probes.get_mut().failure.take().map_or(Ok(()), Err)
+    }
+
+    /// [`World::grounded`]'s reads since the world was built, by how each was answered.
+    pub fn grounded_work(&self) -> GroundedWork {
+        self.probes.lock().grounded
     }
 
     fn has_authored_geometry(&self) -> bool {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086, #1120).
+"""Emits `coding-tooling/work-evidence/v1` for `.performance/contract.json` (#138, #645, #855, #1009, #1057, #1058, #1086, #1120, #1148).
 
-Runs the deterministic zone (`mmorpg-protocol`) and client presentation
+Runs the deterministic zone (`mmorpg-protocol`, `mmorpg-core`, `sim-foundation`) and client presentation
 (`mmorpg-presentation`, `mmorpg-wasm`) work examples and the browser operations' Bun entry
 point (`web/scripts/work-evidence.ts`), and wraps their samples with the contract's suite and
 SHA-256. Counters only; nothing is timed.
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = [
     ("mmorpg-protocol", "operation_work"),
     ("mmorpg-core", "creature_tick_work"),
+    ("sim-foundation", "grounded_work"),
     ("mmorpg-presentation", "presentation_work"),
     ("mmorpg-wasm", "projection_ingest"),
     ("mmorpg-wasm", "unit_layout"),
