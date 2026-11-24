@@ -327,6 +327,50 @@ fn a_transfer_moves_the_live_character_and_its_lease_once() {
 }
 
 #[test]
+fn an_altered_offer_is_refused_and_the_committed_copy_goes_live() {
+    let mut world = world();
+    let transfer = world.begin(1).unwrap();
+    // A peer on the link offers the transfer's ID with a richer character.
+    let mut forged = transfer.clone();
+    forged.record.copper += 1_000_000;
+    forged.record.level = forged.record.level.saturating_add(10);
+    assert_eq!(
+        world.accept(forged),
+        Err(HandoffError::OfferMismatch(transfer_id(1)))
+    );
+    // Nothing changed: not staged, not accepted, the source still decides.
+    assert!(world.east.staged_transfer(transfer_id(1)).is_none());
+    assert_eq!(
+        world.control.phase(transfer_id(1)),
+        Some(HandoffPhase::Prepared)
+    );
+    assert!(world.store.pending_handoff(&character()).unwrap().is_some());
+    assert_eq!(world.leased_by(), Some(holder(&world.west_lease)));
+
+    // The honest offer completes with the copy the source committed.
+    let lease = world.accept(transfer.clone()).unwrap();
+    assert_eq!(world.east.staged_transfer(transfer_id(1)), Some(&transfer));
+    let committed = world.store.committed(&character()).unwrap().unwrap();
+    assert_eq!(committed.record, transfer.record);
+    // An altered resend after completion stages nothing and keeps the lease.
+    let mut forged = transfer.clone();
+    forged.record.copper += 1;
+    assert_eq!(world.accept(forged).unwrap(), lease);
+    assert_eq!(world.east.staged_transfer(transfer_id(1)), Some(&transfer));
+    retire_outbound(
+        &mut world.west,
+        &mut world.control.authority(),
+        &world.west_lease,
+        transfer_id(1),
+    )
+    .unwrap();
+    world.activate(1).unwrap();
+    world.assert_single_authority();
+    let live = world.east.capture_character(ARRIVAL, character()).unwrap();
+    assert_eq!(live.copper, transfer.record.copper);
+}
+
+#[test]
 fn an_unreachable_destination_leaves_the_source_authoritative() {
     let mut world = world();
     let transfer = world.begin(2).unwrap();

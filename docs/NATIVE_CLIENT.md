@@ -353,7 +353,7 @@ The focused `persistence_host` test exercises a real WebTransport claim, complet
 
 ## Trusted-LAN handoff hosts (#145)
 
-Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated: trusted LAN only. Hosts on separate machines set `MMORPG_BIND_IP` to their LAN address, and their transfer links and zone routes to addresses the peers reach.
+Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated and unencrypted: run the hosts and their transfer links on a private network only. A destination stages the pending transfer from the shared store, never the offered copy, and refuses and logs an offer that differs from it (#1143). Hosts on separate machines set `MMORPG_BIND_IP` to their LAN address, and their transfer links and zone routes to addresses the peers reach.
 
 | Environment variable | Meaning | Default |
 | --- | --- | --- |

@@ -1,7 +1,9 @@
 //! Host-to-host transfer link over a trusted LAN (#145, ADR 0003 trust mode).
 //!
-//! Plain TCP between zone hosts: no authentication or encryption, so it is
-//! only for development and trusted LAN hosting and never for the internet.
+//! Plain TCP between zone hosts: no authentication or encryption, so it runs
+//! on a private network only, never the internet. An offer carries no
+//! authority over the character: the destination stages the pending copy the
+//! source committed to the store and refuses an offer that differs (#1143).
 //! The link carries requests; it decides nothing. Every request is
 //! idempotent per transfer ID, so a source may resend after a timeout, and
 //! the control plane's handoff record settles the outcome (see

@@ -13,7 +13,8 @@
 //!   projection. A destination that refuses or cannot be reached leaves the
 //!   source authoritative: the player is put back live and is not offered
 //!   again until it leaves the crossing strip.
-//! - **Destination.** An offered transfer is validated against the zone's
+//! - **Destination.** An offered transfer is checked against the pending
+//!   copy the source committed to the store (#1143), validated against the zone's
 //!   content, accepted (the decision point) and takes over the character's
 //!   lease. The character goes live when its client connects and claims it,
 //!   and only once the source retired.
@@ -413,6 +414,11 @@ impl<B: EntryBackend> HandoffHost<B> {
             &zone.lease,
             transfer.clone(),
         )
+        .inspect_err(|error| {
+            if matches!(error, HandoffError::OfferMismatch(_)) {
+                eprintln!("refused a transfer link offer: {error}");
+            }
+        })
         .map_err(message)?;
         if let Some(inbound) = lock(&self.inbound)?.get_mut(&transfer_id) {
             inbound.lease = Some(acquired.lease);

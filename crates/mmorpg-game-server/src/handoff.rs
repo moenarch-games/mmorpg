@@ -25,7 +25,9 @@
 //!
 //! These are synchronous steps with storage I/O: hosts run them off the zone
 //! tick, between ticks. [`crate::transfer_link`] carries the transfer between
-//! hosts over a trusted LAN.
+//! hosts over a private network. The destination never trusts the copy the
+//! link delivers: it stages the one the source committed to the store under
+//! its lease, and refuses an offer that differs from it (#1143).
 
 use std::fmt;
 
@@ -49,6 +51,9 @@ pub enum HandoffError {
     Invalid(&'static str),
     /// The destination may not go live before the source retired.
     NotCommitted(TransferId),
+    /// The offered transfer differs from the copy the source committed to
+    /// the store under its lease: the offer was altered or forged.
+    OfferMismatch(TransferId),
     /// A live zone host could not run the step.
     Host(String),
 }
@@ -63,6 +68,11 @@ impl fmt::Display for HandoffError {
             Self::NotCommitted(transfer) => write!(
                 formatter,
                 "transfer {} has not retired its source yet",
+                transfer.get()
+            ),
+            Self::OfferMismatch(transfer) => write!(
+                formatter,
+                "the offered transfer {} differs from the copy its source committed",
                 transfer.get()
             ),
             Self::Host(message) => write!(formatter, "zone host: {message}"),
@@ -275,12 +285,19 @@ where
 /// transfer's record committed. The character is not live until
 /// [`activate_inbound`]. A refused acceptance discards the staged copy; a
 /// failure after acceptance keeps it for [`reconcile_inbound`].
+///
+/// `offered` only names the transfer. What the destination stages is the
+/// store's pending copy, which the source committed under its character
+/// lease; an offer that differs from it is refused with
+/// [`HandoffError::OfferMismatch`] and changes nothing. A resent offer of a
+/// handoff that already completed returns the destination's lease without
+/// staging anything.
 pub fn accept_inbound<Z, B, A>(
     zone: &mut Z,
     store: &mut CharacterStore<B>,
     authority: &mut A,
     destination: &ZoneLease,
-    transfer: CharacterTransfer,
+    offered: CharacterTransfer,
 ) -> Result<Acquired, HandoffError>
 where
     Z: TransferZone + ?Sized,
@@ -290,9 +307,34 @@ where
     if destination.zone_id != zone.zone_id() {
         return Err(HandoffError::Invalid("the lease is not this zone's"));
     }
-    let transfer_id = transfer.transfer_id;
-    let character = transfer.record.character_id.clone();
-    zone.stage(transfer)?;
+    let transfer_id = offered.transfer_id;
+    let character = offered.record.character_id.clone();
+    let pending = store
+        .pending_handoff(&character)?
+        .filter(|pending| pending.transfer.transfer_id == transfer_id);
+    let Some(pending) = pending else {
+        // Not pending: either it already completed (a resent offer, answered
+        // from the store) or it was never begun or was taken back (refused).
+        if phase(authority, transfer_id)? == Some(HandoffPhase::Aborted) {
+            return Err(ControlPlaneError::TransferAborted(handoff_id(transfer_id)).into());
+        }
+        let acquired = store.complete_handoff(&character, transfer_id)?;
+        if acquired.lease.holder != holder(destination) {
+            return Err(HandoffError::Invalid(
+                "the transfer completed to another zone lease",
+            ));
+        }
+        return Ok(acquired);
+    };
+    if pending.to != holder(destination) {
+        return Err(HandoffError::Invalid(
+            "the pending transfer is addressed to another zone lease",
+        ));
+    }
+    if pending.transfer != offered {
+        return Err(HandoffError::OfferMismatch(transfer_id));
+    }
+    zone.stage(pending.transfer)?;
     if let Err(error) = authority.accept(handoff_id(transfer_id), destination) {
         zone.discard(transfer_id);
         return Err(error.into());
