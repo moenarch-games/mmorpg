@@ -231,15 +231,15 @@ const PROPS: [(u32, CreatureTemplateId, [i32; 2], u16); 23] = {
         // Millbrook Farm: two heavy crates south of the barn that knockbacks slide (#58).
         (917, HEAVY_CRATE, [7_400, 3_200], 0),
         (918, HEAVY_CRATE, [7_550, 3_200], 0),
-        // Redbrand Hollow: powder barrels by the campfire and beside the western tents.
-        (920, EXPLOSIVE_BARREL, [300, -9_000], 0),
-        (921, EXPLOSIVE_BARREL, [370, -9_000], 0),
-        (922, EXPLOSIVE_BARREL, [335, -8_935], 0),
-        (923, EXPLOSIVE_BARREL, [-800, -9_500], 0),
-        (924, EXPLOSIVE_BARREL, [-870, -9_500], 0),
-        // The boulder trap above the camp's south edge (#299): it rests on the rise north of the
-        // watch post, and rolling down it sends the boulder across the bandits' camp.
-        (925, BOULDER, [950, -7_420], 0),
+        // Redbrand quarry: powder barrels by the campfire and beside the northern tents.
+        (920, EXPLOSIVE_BARREL, [-700, -11_000], 0),
+        (921, EXPLOSIVE_BARREL, [-700, -10_930], 0),
+        (922, EXPLOSIVE_BARREL, [-765, -10_965], 0),
+        (923, EXPLOSIVE_BARREL, [-200, -11_950], 0),
+        (924, EXPLOSIVE_BARREL, [-200, -12_020], 0),
+        // The boulder trap above the quarry's gateway (#299, #1195): it rests on the south spur's
+        // rim (`super::perches`), and pushed off it falls into the gateway below.
+        (925, BOULDER, [-2_350, -9_950], 0),
         // Redbrand Cave (#719): a small supply row along the outer chamber's west wall.
         // Broken panels/staves meet the authored wall and floor, clear of the mouth,
         // south shelf and passage to the inner chamber. These barrels contain no powder.
@@ -309,23 +309,23 @@ const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 75] = {
         (305, MIREFIN_LURKER, [5_850, -7_000], 0),
         (306, MIREFIN_LURKER, [3_800, -5_800], 8_192),
         (307, MIREFIN_LURKER, [6_500, -6_830], 24_576),
-        // Redbrand Hollow: the bandit camp between the cliffs.
-        (400, REDBRAND_BANDIT, [-1_000, -8_200], 0),
-        (401, REDBRAND_BANDIT, [1_000, -7_800], 0),
-        (402, REDBRAND_BANDIT, [-500, -8_400], 0),
-        (403, REDBRAND_BANDIT, [600, -8_500], 0),
-        (404, REDBRAND_BANDIT, [-1_100, -9_000], 16_384),
-        (405, REDBRAND_BANDIT, [1_000, -9_100], 49_152),
-        (406, REDBRAND_BANDIT, [-400, -9_700], 0),
-        (407, REDBRAND_BANDIT, [500, -9_800], 0),
-        (408, REDBRAND_BANDIT, [-1_300, -10_000], 8_192),
-        (409, REDBRAND_BANDIT, [1_300, -10_200], 57_344),
-        (410, REDBRAND_BANDIT, [-2_000, -9_400], 16_384),
-        (411, REDBRAND_BANDIT, [2_000, -8_200], 49_152),
-        (412, REDBRAND_BANDIT, [0, -10_000], 0),
-        (413, REDBRAND_BANDIT, [-500, -8_000], 16_384),
-        // Garrick Redbrand holds the mine entrance.
-        (450, GARRICK_REDBRAND, [0, -10_500], 0),
+        // Redbrand Hollow: the bandit camp on the quarry's floor (#1195).
+        (400, REDBRAND_BANDIT, [-1_500, -12_300], 16_384),
+        (401, REDBRAND_BANDIT, [-1_600, -10_300], 16_384),
+        (402, REDBRAND_BANDIT, [-1_300, -11_800], 16_384),
+        (403, REDBRAND_BANDIT, [-1_200, -10_700], 16_384),
+        (404, REDBRAND_BANDIT, [-700, -12_250], 32_768),
+        (405, REDBRAND_BANDIT, [-600, -10_300], 0),
+        (406, REDBRAND_BANDIT, [0, -11_550], 16_384),
+        (407, REDBRAND_BANDIT, [100, -10_800], 16_384),
+        (408, REDBRAND_BANDIT, [300, -12_600], 24_576),
+        (409, REDBRAND_BANDIT, [500, -10_000], 8_192),
+        (410, REDBRAND_BANDIT, [-300, -13_150], 32_768),
+        (411, REDBRAND_BANDIT, [-1_550, -9_700], 0),
+        (412, REDBRAND_BANDIT, [300, -11_300], 16_384),
+        (413, REDBRAND_BANDIT, [-1_700, -11_800], 32_768),
+        // Garrick Redbrand holds the old mine's adit under the east wall.
+        (450, GARRICK_REDBRAND, [1_550, -11_100], 49_152),
         // The outer valley (#159), on trunk-grid corners of its woods.
         // Hollowpine Reach: wolves and boars among the pines.
         (500, TIMBER_WOLF, [-18_600, -8_000], 0),

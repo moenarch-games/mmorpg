@@ -204,7 +204,8 @@ pub(crate) fn groups(scenery: &Scenery) -> Vec<Group> {
                 if (roof || ceiling_detail) && !ceiling_face(points) {
                     continue;
                 }
-                let landscape = stand_in.is_some() || (400..=406).contains(&mesh.id);
+                let landscape = stand_in.is_some()
+                    || mmorpg_core::greyhaven_vale::ids::CLIFFS.contains(&mesh.id);
                 let color = if landscape {
                     landscape_color(points)
                 } else {

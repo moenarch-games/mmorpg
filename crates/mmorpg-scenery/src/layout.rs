@@ -65,24 +65,33 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
         },
     ]);
     scenery.roads.extend([
+        // The quarry's floor (#1195): from the gateway past the fire to the old mine's adit,
+        // and out to the tents.
         crate::Road {
             name: "Hollow camp track",
-            points: vec![[0, -8600], [-250, -9200], [-150, -9600], [0, -10800]],
+            points: vec![
+                [-2800, -11300],
+                [-1100, -11300],
+                [-500, -11550],
+                [-100, -11450],
+                [1100, -11300],
+                [1750, -11300],
+            ],
             half_width: 90,
         },
         crate::Road {
-            name: "Hollow west tent track",
-            points: vec![[-150, -9600], [-600, -9500], [-1300, -9450]],
+            name: "Hollow north tent track",
+            points: vec![[-100, -11450], [-200, -11900], [-250, -12600]],
             half_width: 70,
         },
         crate::Road {
-            name: "Hollow east tent track",
-            points: vec![[-150, -9600], [600, -9650], [1000, -9750]],
+            name: "Hollow south tent track",
+            points: vec![[-100, -11450], [50, -10700], [50, -10300]],
             half_width: 70,
         },
         crate::Road {
             name: "Hollow lookout tent track",
-            points: vec![[0, -8600], [-600, -8600], [-1100, -8450]],
+            points: vec![[-1100, -11300], [-1100, -11900], [-1250, -12400]],
             half_width: 70,
         },
     ]);

@@ -349,7 +349,7 @@ impl ZoneSimulation {
         };
         let (spawn, template) = Self::creature_content(&self.content, id)?;
         let [x, z] = spawn.position;
-        let y = self.stand_y(x, z, template.half_extents);
+        let y = self.home_y(id, spawn.position, template);
         let home = crate::physics::from_units([x, y, z]);
         let away =
             libm::hypotf(motion.position[0] - home[0], motion.position[2] - home[2]) > HOME_UNITS;

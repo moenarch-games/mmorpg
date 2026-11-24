@@ -1,7 +1,7 @@
 //! The first world traps (#300, Atlas 5.2.i300): pressure-plate falling rocks and swinging
-//! blades in the Greyfang cave, and a spike pit in the Redbrand camp. All are visible (a raised
-//! plate, a pit edged in stones, blades that swing on a fixed schedule) and leave the cave's
-//! routes open: nothing here blocks a unit.
+//! blades in the Greyfang cave, and a spike pit at the inner end of the Redbrand quarry's
+//! gateway (#1195). All are visible (a raised plate, a pit edged in stones, blades that swing on
+//! a fixed schedule) and leave the cave's routes open: nothing here blocks a unit.
 //!
 //! Timings are ticks at the zone's 30 Hz; distances are units (centimetres).
 
@@ -116,7 +116,7 @@ pub fn traps() -> Vec<Trap> {
             id: CAMP_SPIKES,
             trigger: TrapTrigger::Live,
             effect: TrapEffect::Spikes(TriggerVolume {
-                centre: [-1_800, -8_600],
+                centre: [-1_550, -11_550],
                 half: [150, 100],
                 floor: SPIKE_FLOOR,
                 height: 40,

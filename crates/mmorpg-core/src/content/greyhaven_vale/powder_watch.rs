@@ -1,8 +1,8 @@
-//! The Redbrand powder watch (#954): a positioning challenge on the camp's western powder
-//! barrels (#288), with no new rules. Barrels 923 and 924 stand 0.7 m apart beside the western
+//! The Redbrand powder watch (#954): a positioning challenge on the camp's northern powder
+//! barrels (#288), with no new rules. Barrels 923 and 924 stand 0.7 m apart beside the northern
 //! tents, so one going up takes the other with it. Bandit 406 keeps watch 4.5 m from them, inside
-//! the 5 m blast; bandit 404 stands 5.5 m off, just beyond it; bandit 410 stands 11 m west
-//! behind the western tent (collider 420), out of reach and in its shadow. Lighting the powder
+//! the 5 m blast; bandit 404 stands 5.5 m off, just beyond it; bandit 410 stands 11 m north
+//! behind the northern tent (collider 420), out of reach and in its shadow. Lighting the powder
 //! at once catches only the one beside it and spends the barrels. Drawing 404 in beside 406
 //! (a Frost Nova holds them there) and lighting it from outside the blast catches both, while
 //! 410 is untouched. Spent barrels stand again after their respawn time, as every breakable

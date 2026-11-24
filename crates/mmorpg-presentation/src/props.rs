@@ -1504,6 +1504,39 @@ pub fn build(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) -> Vec<Animated> {
                 }
                 m.box_at(DARK, [0., h - 0.25, d * 0.4], [w * 0.95, 0.3, 0.32]);
                 m.box_at(DARK, [0., h * 0.72, d * 0.4], [w * 0.78, 0.12, 0.2]);
+                // The old mine's timbering (#1195): a second set of posts and a cap in front,
+                // braces down to the floor, lagging boards over the cap and two boards that
+                // once nailed the mouth shut, one half torn away.
+                let front = d + 0.45;
+                for sx in [-1., 1.] {
+                    m.box_at(DARK, [sx * w * 0.7, h * 0.42, front], [0.16, h * 0.42, 0.16]);
+                    m.beam(
+                        DARK,
+                        [sx * (w + 0.5), 0., front + 0.35],
+                        [sx * w * 0.74, h * 0.6, front],
+                        0.09,
+                        4,
+                    );
+                }
+                m.box_at(DARK, [0., h * 0.86, front], [w * 0.82, 0.16, 0.18]);
+                for i in 0..4 {
+                    let y = h * 0.86 + 0.25 + i as f64 * 0.21;
+                    m.box_at(WOOD, [0., y, d * 0.5], [w * (0.86 - 0.04 * i as f64), 0.09, 0.05]);
+                }
+                m.beam(
+                    LIGHT,
+                    [-w * 0.6, h * 0.55, front + 0.2],
+                    [w * 0.6, h * 0.62, front + 0.2],
+                    0.07,
+                    4,
+                );
+                m.beam(
+                    LIGHT,
+                    [-w * 0.6, h * 0.12, front + 0.22],
+                    [w * 0.05, h * 0.35, front + 0.24],
+                    0.07,
+                    4,
+                );
                 for sx in [-0.45, 0.45] {
                     m.box_at(IRON, [sx, 0.05, d + 2.4], [0.04, 0.04, 2.8]);
                 }

@@ -26,7 +26,7 @@ fn colliders() -> Vec<StaticCollider> {
     let mut colliders: Vec<_> = STRUCTURES
         .iter()
         // Elden's house collides through its walls and furniture (#158).
-        .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE && !(400..=406).contains(&id))
+        .filter(|&&(id, ..)| id != ids::MARSHAL_HOUSE && !ids::CLIFFS.contains(&id))
         // Millbrook's farmhouse is a walk-in farmhouse's walls and furniture (#886).
         .filter(|&&(id, ..)| id != ids::FARMHOUSE)
         // Structures out on the hills stand on the terrain (#159).
@@ -86,8 +86,8 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[
         REDBRAND_HOLLOW,
         "Redbrand Hollow",
         XzBounds {
-            min: [-3_500, -11_900],
-            max: [3_500, -7_000],
+            min: [-4_700, -15_300],
+            max: [3_800, -7_000],
         },
     ),
     // The outer valley (#159): a ring of four regions around the original five.
@@ -96,7 +96,7 @@ pub const AREAS: &[(AreaId, &str, XzBounds)] = &[
         "Greyfang Ridge",
         XzBounds {
             min: [-20_800, -20_800],
-            max: [20_800, -12_000],
+            max: [20_800, -15_300],
         },
     ),
     (
@@ -130,7 +130,8 @@ pub const ROADS: &[Road] = &[
     Road {
         name: "Hollow Road",
         // Up the Hollow Climb (#423): the ledge under the Hollow's cliff, the landing, the
-        // cutting.
+        // cutting; then west along the foot of the quarry's south wall, round its south spur and
+        // in through the gateway (#1195).
         points: &[
             [0, 1_200],
             [0, -1_000],
@@ -139,7 +140,12 @@ pub const ROADS: &[Road] = &[
             [-3_600, -6_200],
             [-3_600, -7_000],
             [0, -7_000],
-            [0, -8_600],
+            [-1_200, -7_600],
+            [-2_800, -8_300],
+            [-3_700, -9_600],
+            [-3_900, -10_800],
+            [-3_000, -11_300],
+            [-1_800, -11_300],
         ],
     },
     Road {
@@ -288,24 +294,27 @@ pub const STRUCTURES: &[Footprint] = &[
     (303, [3_500, -6_800], [3_700, -6_600], 160),
     (304, [6_710, -3_780], [6_890, -3_620], 120),
     (305, [4_330, -3_760], [4_470, -3_640], 90),
-    // Redbrand Hollow: cliffs under the north wall, the mine entrance, the camp.
-    // Their southern faces stand back for the Wolfrun Ridge Path (#423).
-    (400, [-3_200, -12_000], [-2_200, -8_000], 1_200),
-    (401, [-2_200, -8_400], [-1_600, -8_000], 800),
-    (402, [2_200, -12_000], [3_200, -7_400], 1_200),
-    (403, [1_600, -9_600], [2_200, -8_600], 900),
-    (404, [-2_200, -12_000], [2_200, -11_000], 1_400),
-    (405, [-2_200, -11_000], [-800, -10_400], 1_000),
-    (406, [800, -11_000], [2_200, -10_500], 1_000),
-    (ids::MINE_ENTRANCE, [-300, -11_000], [300, -10_900], 420),
-    (420, [-1_700, -9_600], [-1_400, -9_300], 220),
-    (421, [1_100, -9_900], [1_400, -9_600], 220),
-    (422, [-1_500, -8_600], [-1_200, -8_300], 220),
-    (430, [500, -10_500], [600, -10_400], 100),
-    (431, [620, -10_500], [720, -10_400], 100),
-    (432, [560, -10_380], [660, -10_280], 100),
-    (433, [-700, -10_300], [-600, -10_200], 100),
-    (ids::CAMPFIRE, [-60, -9_260], [60, -9_140], 30),
+    // Redbrand Hollow (#1195): the quarry's horseshoe wall in segments (their footprints; the
+    // rock collides as `hollow_cliffs.py`'s meshes), the old mine's adit at the foot of the
+    // sheer east wall, opening west, and the camp on the quarry's floor.
+    (400, [-2_800, -13_646], [-1_899, -11_793], 1_212),
+    (401, [-3_641, -15_228], [-1_086, -11_898], 1_396),
+    (402, [-1_380, -15_320], [873, -13_088], 1_528),
+    (403, [789, -15_173], [3_483, -12_199], 1_431),
+    (404, [1_810, -12_267], [3_498, -10_355], 1_614),
+    (405, [1_155, -10_409], [3_174, -8_300], 1_546),
+    (406, [-1_180, -9_260], [1_155, -8_165], 1_300),
+    (407, [-3_355, -10_703], [-1_180, -8_169], 1_277),
+    (408, [-2_800, -10_827], [-1_899, -9_157], 1_306),
+    (ids::MINE_ENTRANCE, [1_840, -11_600], [1_940, -11_000], 420),
+    (420, [-400, -12_850], [-100, -12_550], 220),
+    (421, [-100, -10_200], [200, -9_900], 220),
+    (422, [-1_400, -12_800], [-1_100, -12_500], 220),
+    (430, [700, -10_800], [800, -10_700], 100),
+    (431, [700, -10_680], [800, -10_580], 100),
+    (432, [580, -10_740], [680, -10_640], 100),
+    (433, [500, -12_000], [600, -11_900], 100),
+    (ids::CAMPFIRE, [-560, -11_360], [-440, -11_240], 30),
     // Greyfang Ridge: seven standing stones in an 8 m ring (#159).
     (500, [-40, -15_730], [40, -15_670], 250),
     (501, [590, -16_030], [670, -15_970], 230),
