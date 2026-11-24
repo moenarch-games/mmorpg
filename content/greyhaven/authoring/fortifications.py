@@ -668,30 +668,10 @@ gltf=json.loads((OUT/'settlement.gltf').read_text());uris=[v['uri'] for key in [
 resources=[dict(path=p,byteLength=(OUT/p).stat().st_size,sha256=hashlib.sha256((OUT/p).read_bytes()).hexdigest()) for p in sorted(set(uris))]
 manifest=dict(assets=[dict(key='greyhaven.fort.settlement',variant='default',path='settlement.gltf',resources=resources)],authoring='content/greyhaven/authoring/fortifications.py',license='MIT',coordinateSystem='right-handed-y-up',unit='metre')
 (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-# The basin crags (65030-65032), basin buttresses (65094-65102) and brook spurs (65128-65136)
-# are world dressing now (#683): content/greyhaven/dressing/vale.json places the crag kit's
-# outcrops and dressing_collision.py generates their collision from the art.
-# Low shoreline clusters: game collision only. The crag kit's talus dresses them through
-# content/greyhaven/dressing/vale.json (#683); these facets are its stand-in skin.
-# They break the water outline without blocking the dock.
-shore_preview=flat('Stillwater shore rock preview',(.29,.31,.23))
-for cluster,(x,z,turn) in enumerate([(39,-60,.4),(38,-65,1.1),(47,-70.5,.2),
-    (53,-71.5,1.4),(69,-69.5,.8),(39,-41,1.2),(55,-39.5,.6),(69,-40.5,1.5)]):
-    for piece,(dx,dz,rx,rz,h) in enumerate([(0,0,2.1,1.35,2.25),(1.8,.7,1.1,.85,1.45),(-1.6,-.65,.8,.65,.95)]):
-        id=65070+cluster*3+piece;n=9;vs=[]
-        cx=x+dx*math.cos(turn)-dz*math.sin(turn)
-        cz=z+dx*math.sin(turn)+dz*math.cos(turn)
-        for row,(height,width) in enumerate([(10.25,.75),(11.35,1),(10.25+h,.53)]):
-            for j in range(n):
-                a=j*math.tau/n;w=1+.16*math.sin(j*7.1+id)
-                px,pz=rx*w*width*math.sin(a),rz*w*width*math.cos(a)
-                vs.append((cx+px*math.cos(turn)-pz*math.sin(turn),
-                    height+(0 if row==0 else .12*math.sin(j*4.3+id)),
-                    cz+px*math.sin(turn)+pz*math.cos(turn)))
-        fs=[tuple(range(n-1,-1,-1)),tuple(range(2*n,3*n))]
-        fs += [(r*n+j,r*n+(j+1)%n,(r+1)*n+(j+1)%n,(r+1)*n+j) for r in range(2) for j in range(n)]
-        solid_record(id,vs,fs)
-        mesh('Stillwater fractured bank '+str(id),vs,fs,shore_preview)
+# The basin crags (65030-65032), basin buttresses (65094-65102), brook spurs (65128-65136) and
+# Stillwater shore rocks (65070-65093) are world dressing now (#683):
+# content/greyhaven/dressing/vale.json places the crag kit's outcrops and talus, and
+# dressing_collision.py generates their collision from the art.
 COLLISION.write_text(json.dumps(collision,separators=(',',':'))+'\n')
 print('Authored',len(o.data.polygons),'faces;',len(collision),'simplified collision meshes;',len(resources),'resources.')
 
