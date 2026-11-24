@@ -22,6 +22,16 @@
 //! Handoff records and zone-lease checks go through a [`HandoffAuthority`]
 //! (the PostgreSQL directory in [`serve_handoff_character_host`]); the
 //! characters through the shared character store.
+//!
+//! Departures toward different destination hosts run concurrently, one at
+//! a time per destination (#1152), so a host that cannot be reached delays
+//! only the players going to it. After one failed connect in a poll the
+//! rest of that destination's departures wait for a later poll, and a
+//! destination that keeps failing backs off by polls
+//! ([`crate::handoff_schedule`]). Concurrency changes
+//! no ownership rule: each departure is fenced by the source's zone lease
+//! and the character's lease as before, and different departures concern
+//! different characters.
 
 use std::collections::BTreeMap;
 use std::hash::{BuildHasher, RandomState};
@@ -45,12 +55,52 @@ use crate::handoff::{
     activate_inbound, begin_outbound, reconcile_outbound, resolve_pending_handoff, retire_outbound,
     source_retired,
 };
+use crate::handoff_schedule::{DepartureSchedule, Reach, depart_toward};
 use crate::instance::InstanceService;
-use crate::transfer_link::{TransferLink, TransferLinkHandler, serve_transfer_link};
+use crate::transfer_link::{
+    LinkFailure, TcpLinks, TransferLinkHandler, TransferLinks, serve_transfer_link,
+};
 use crate::{HandoffChannel, Redirect, ZoneGameServerAdapter};
 
 /// How often the service looks for departures.
 const DEPARTURE_POLL: Duration = Duration::from_millis(50);
+
+/// The live zones a handoff host drives through trusted host inputs: the
+/// match host in production, in-process runtimes in tests.
+pub trait ZoneInputs: Send + Sync + 'static {
+    /// Whether the zones are served; host inputs need a serving host.
+    fn serving(&self) -> bool;
+    /// Applies a trusted host input to `player`'s current connection.
+    fn submit(
+        &self,
+        id: &MatchId,
+        player: PlayerId,
+        connection_epoch: u32,
+        payload: &[u8],
+    ) -> impl Future<Output = Result<(), String>> + Send;
+}
+
+impl ZoneInputs for LiveMatchHost<ZoneGameServerAdapter> {
+    fn serving(&self) -> bool {
+        self.is_serving()
+    }
+
+    async fn submit(
+        &self,
+        id: &MatchId,
+        player: PlayerId,
+        connection_epoch: u32,
+        payload: &[u8],
+    ) -> Result<(), String> {
+        self.submit_host_input(id, player, connection_epoch, payload)
+            .await
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// One poll's departures toward one destination link (`None`: a zone of this
+/// host, or one without a route), in zone and player order.
+type DepartureGroups<'a> = BTreeMap<Option<&'a str>, Vec<(&'a LocalZone, Departure)>>;
 
 /// How a peer zone's host is reached.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,8 +125,13 @@ struct Inbound {
     lease: Option<CharacterLease>,
 }
 
-pub struct HandoffHost<B: EntryBackend> {
-    host: LiveMatchHost<ZoneGameServerAdapter>,
+pub struct HandoffHost<
+    B: EntryBackend,
+    Z: ZoneInputs = LiveMatchHost<ZoneGameServerAdapter>,
+    L: TransferLinks = TcpLinks,
+> {
+    host: Z,
+    links: L,
     runtime: tokio::runtime::Handle,
     storage: Arc<Mutex<DevCharacterStorage<B>>>,
     authority: Mutex<Box<dyn HandoffAuthority + Send>>,
@@ -90,6 +145,8 @@ pub struct HandoffHost<B: EntryBackend> {
     unretired: Mutex<BTreeMap<TransferId, (ZoneId, Redirect)>>,
     link_timeout: Duration,
     next_transfer: AtomicU64,
+    /// Departure polls and the destination links that failed to connect (#1152).
+    schedule: Mutex<DepartureSchedule>,
     /// Resolves threshold entries and binds private runs (#404).
     instances: Option<Arc<InstanceService>>,
 }
@@ -98,9 +155,11 @@ fn lock<T: ?Sized>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
     mutex.lock().map_err(message)
 }
 
-impl<B: EntryBackend> HandoffHost<B> {
+impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        host: LiveMatchHost<ZoneGameServerAdapter>,
+        host: Z,
+        links: L,
         storage: Arc<Mutex<DevCharacterStorage<B>>>,
         authority: Box<dyn HandoffAuthority + Send>,
         zones: Vec<LocalZone>,
@@ -110,6 +169,7 @@ impl<B: EntryBackend> HandoffHost<B> {
     ) -> Self {
         Self {
             host,
+            links,
             runtime: tokio::runtime::Handle::current(),
             storage,
             authority: Mutex::new(authority),
@@ -124,6 +184,7 @@ impl<B: EntryBackend> HandoffHost<B> {
             link_timeout,
             // Transfer IDs only need to be unique; start at a random point.
             next_transfer: AtomicU64::new(RandomState::new().hash_one(std::process::id())),
+            schedule: Mutex::default(),
             instances,
         }
     }
@@ -151,7 +212,7 @@ impl<B: EntryBackend> HandoffHost<B> {
         &'a self,
         zone: &'a LocalZone,
         session: Option<(PlayerId, u32)>,
-    ) -> LiveZone<'a, B> {
+    ) -> LiveZone<'a, B, Z, L> {
         LiveZone {
             handoffs: self,
             zone,
@@ -227,23 +288,62 @@ impl<B: EntryBackend> HandoffHost<B> {
     }
 
     /// Source: starts a transfer for every player due to leave. Runs off the
-    /// zone tick on a blocking worker.
-    pub fn process_departures(&self) {
-        if !self.host.is_serving() {
+    /// zone tick on a blocking worker. Departures toward different
+    /// destination hosts run concurrently, each destination's in order; one
+    /// that cannot be reached or backs off ([`crate::handoff_schedule`])
+    /// leaves the rest of its players due for a later poll.
+    pub fn process_departures(&self)
+    where
+        B: Send,
+    {
+        if !self.host.serving() {
             return;
         }
         self.retry_retirements();
+        let Ok(mut schedule) = lock(&self.schedule) else {
+            return;
+        };
+        schedule.begin_poll();
+        let mut groups = DepartureGroups::new();
         for zone in self.zones.values() {
             for due in zone.channel.departures() {
-                if let Err(error) = self.depart(zone, due) {
+                let destination = due.destination.zone_id;
+                let link = if self.zones.contains_key(&destination) {
+                    None
+                } else {
+                    self.routes
+                        .get(&destination)
+                        .map(|route| route.link.as_str())
+                };
+                if link.is_none_or(|link| schedule.due(link)) {
+                    groups.entry(link).or_default().push((zone, due));
+                }
+            }
+        }
+        drop(schedule);
+        let run = |(link, departures): (Option<&str>, Vec<(&LocalZone, Departure)>)| {
+            depart_toward(&self.schedule, link, departures, |(zone, due)| {
+                let mut reach = Reach::Untried;
+                if let Err(error) = self.depart(zone, due, &mut reach) {
                     eprintln!(
                         "zone {}: handoff of player {} failed: {error}",
                         zone.lease.zone_id.get(),
                         due.player
                     );
                 }
-            }
+                reach
+            });
+        };
+        if groups.len() <= 1 {
+            groups.into_iter().for_each(run);
+            return;
         }
+        let run = &run;
+        std::thread::scope(|scope| {
+            for group in groups {
+                scope.spawn(move || run(group));
+            }
+        });
     }
 
     /// Source: confirms the retirements that failed after their destination
@@ -271,7 +371,9 @@ impl<B: EntryBackend> HandoffHost<B> {
         }
     }
 
-    fn depart(&self, zone: &LocalZone, due: Departure) -> Result<(), String> {
+    /// Moves one departing player; `reach` tells whether its destination's
+    /// link answered.
+    fn depart(&self, zone: &LocalZone, due: Departure, reach: &mut Reach) -> Result<(), String> {
         let key = (zone.match_id.clone(), due.player);
         let Some(epoch) = lock(&self.sessions)?.get(&key).copied() else {
             return Ok(());
@@ -327,15 +429,16 @@ impl<B: EntryBackend> HandoffHost<B> {
             storage.leases.remove(&key);
             drop(authority);
             drop(storage);
-            let offered = self
-                .runtime
-                .block_on(async {
-                    TransferLink::connect(route.link.as_str(), self.link_timeout)
-                        .await?
-                        .offer(&transfer)
-                        .await
-                })
-                .map_err(message);
+            let offered = self.runtime.block_on(self.links.offer(
+                route.link.as_str(),
+                &transfer,
+                self.link_timeout,
+            ));
+            *reach = match offered {
+                Err(LinkFailure::Unreachable(_)) => Reach::Unreachable,
+                _ => Reach::Reached,
+            };
+            let offered = offered.map_err(message);
             storage = lock(&self.storage)?;
             authority = lock(&self.authority)?;
             offered
@@ -384,12 +487,11 @@ impl<B: EntryBackend> HandoffHost<B> {
         if self.zones.contains_key(&destination_zone) {
             return Ok(());
         }
-        let _ = self.runtime.block_on(async {
-            TransferLink::connect(route.link.as_str(), self.link_timeout)
-                .await?
-                .activate(transfer_id)
-                .await
-        });
+        let _ = self.runtime.block_on(self.links.activate(
+            route.link.as_str(),
+            transfer_id,
+            self.link_timeout,
+        ));
         Ok(())
     }
 
@@ -452,7 +554,9 @@ impl<B: EntryBackend> HandoffHost<B> {
     }
 }
 
-impl<B: EntryBackend + Send + 'static> TransferLinkHandler for HandoffHost<B> {
+impl<B: EntryBackend + Send + 'static, Z: ZoneInputs, L: TransferLinks> TransferLinkHandler
+    for HandoffHost<B, Z, L>
+{
     fn offer(&self, transfer: CharacterTransfer) -> Result<(), String> {
         let mut storage = lock(&self.storage)?;
         let mut authority = lock(&self.authority)?;
@@ -471,8 +575,8 @@ impl<B: EntryBackend + Send + 'static> TransferLinkHandler for HandoffHost<B> {
 
 /// A live zone's side of one transfer step, through host inputs and the
 /// zone's [`HandoffChannel`].
-struct LiveZone<'a, B: EntryBackend> {
-    handoffs: &'a HandoffHost<B>,
+struct LiveZone<'a, B: EntryBackend, Z: ZoneInputs, L: TransferLinks> {
+    handoffs: &'a HandoffHost<B, Z, L>,
     zone: &'a LocalZone,
     /// The session the host inputs apply to.
     session: Option<(PlayerId, u32)>,
@@ -480,20 +584,19 @@ struct LiveZone<'a, B: EntryBackend> {
     redirect: Option<Redirect>,
 }
 
-impl<B: EntryBackend> LiveZone<'_, B> {
+impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> LiveZone<'_, B, Z, L> {
     fn submit(&self, payload: &[u8]) -> Result<(), HandoffError> {
         let (player, epoch) = self
             .session
             .ok_or_else(|| HandoffError::Host("no session for the host input".into()))?;
         self.handoffs
             .runtime
-            .block_on(self.handoffs.host.submit_host_input(
-                &self.zone.match_id,
-                player,
-                epoch,
-                payload,
-            ))
-            .map_err(|error| HandoffError::Host(error.to_string()))
+            .block_on(
+                self.handoffs
+                    .host
+                    .submit(&self.zone.match_id, player, epoch, payload),
+            )
+            .map_err(HandoffError::Host)
     }
 
     fn inbound(&self) -> Result<MutexGuard<'_, BTreeMap<TransferId, Inbound>>, HandoffError> {
@@ -504,7 +607,7 @@ impl<B: EntryBackend> LiveZone<'_, B> {
     }
 }
 
-impl<B: EntryBackend> TransferZone for LiveZone<'_, B> {
+impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> TransferZone for LiveZone<'_, B, Z, L> {
     fn zone_id(&self) -> ZoneId {
         self.zone.lease.zone_id
     }
@@ -594,6 +697,9 @@ impl<B: EntryBackend> TransferZone for LiveZone<'_, B> {
         self.submit(&input)
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 #[cfg(feature = "postgres")]
 pub use postgres_host::{HandoffHostConfig, serve_handoff_character_host};
@@ -831,6 +937,7 @@ mod postgres_host {
                 );
                 Arc::new(HandoffHost::new(
                     host,
+                    crate::transfer_link::TcpLinks,
                     storage,
                     Box::new(handoffs),
                     local,

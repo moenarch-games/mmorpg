@@ -205,3 +205,77 @@ impl TransferLink {
             .await
     }
 }
+
+/// Why a request to a destination's transfer link failed.
+#[derive(Debug, Eq, PartialEq)]
+pub enum LinkFailure {
+    /// No connection: the destination host is down or unreachable (#1152).
+    Unreachable(LinkError),
+    /// Connected, but the request failed or was refused.
+    Request(LinkError),
+}
+
+impl fmt::Display for LinkFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unreachable(error) => write!(formatter, "unreachable: {error}"),
+            Self::Request(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for LinkFailure {}
+
+/// How a source host reaches destination hosts' transfer links: over TCP in
+/// production ([`TcpLinks`]), in process in tests. Each request opens its own
+/// connection and gives up after `timeout`.
+pub trait TransferLinks: Send + Sync + 'static {
+    /// Offers a frozen transfer to the link at `address`; `Ok` means accepted.
+    fn offer(
+        &self,
+        address: &str,
+        transfer: &CharacterTransfer,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<(), LinkFailure>> + Send;
+    /// Asks the destination at `address` to make a committed transfer live.
+    fn activate(
+        &self,
+        address: &str,
+        transfer_id: TransferId,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<(), LinkFailure>> + Send;
+}
+
+/// The trusted-LAN TCP transfer link ([`TransferLink`]).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TcpLinks;
+
+impl TransferLinks for TcpLinks {
+    async fn offer(
+        &self,
+        address: &str,
+        transfer: &CharacterTransfer,
+        timeout: Duration,
+    ) -> Result<(), LinkFailure> {
+        TransferLink::connect(address, timeout)
+            .await
+            .map_err(LinkFailure::Unreachable)?
+            .offer(transfer)
+            .await
+            .map_err(LinkFailure::Request)
+    }
+
+    async fn activate(
+        &self,
+        address: &str,
+        transfer_id: TransferId,
+        timeout: Duration,
+    ) -> Result<(), LinkFailure> {
+        TransferLink::connect(address, timeout)
+            .await
+            .map_err(LinkFailure::Unreachable)?
+            .activate(transfer_id)
+            .await
+            .map_err(LinkFailure::Request)
+    }
+}
