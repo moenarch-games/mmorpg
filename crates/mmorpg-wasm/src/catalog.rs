@@ -61,8 +61,9 @@ pub struct QuestExport {
 /// `kind` is `kill` (`target` is a creature template), `collect` (`target`
 /// is an item that creatures of template `source` drop), `talk` (`target`
 /// is an NPC), `explore` (`target` is an area), `retrieve` (`target` is an
-/// item granted by swimming into area `source`, #274) or `victory` (Captain
-/// Thorn beaten in the Redbrand Depths, `target` is 0, 5.1.37).
+/// item granted by swimming into area `source`, #274), `victory` (Captain
+/// Thorn beaten in the Redbrand Depths, `target` is 0, 5.1.37) or `inspect` (`target` is an
+/// evidence spot, #1019; `evidenceInReach` finds the one in reach).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
     pub kind: &'static str,
@@ -80,6 +81,7 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Explore { area } => ("explore", area.get(), None),
         QuestObjective::Retrieve { item, area } => ("retrieve", item.get(), Some(area.get())),
         QuestObjective::DefeatThorn => ("victory", 0, None),
+        QuestObjective::Inspect { spot } => ("inspect", spot.get(), None),
     };
     ObjectiveExport {
         kind,

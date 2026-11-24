@@ -237,6 +237,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidAid(_)
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
+            | PlayerIntent::Inspect(_)
             | PlayerIntent::Skin(_)
             | PlayerIntent::ClaimDepthsDrop { .. }
                 if !alive =>
@@ -252,6 +253,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidAid(_)
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
+            | PlayerIntent::Inspect(_)
             | PlayerIntent::Skin(_)
                 if self.players.get(&player_id).is_some_and(|p| p.weapon_drawn) =>
             {
@@ -268,6 +270,7 @@ impl ZoneSimulation {
             | PlayerIntent::RaidAid(_)
             | PlayerIntent::RaidPrepare(_)
             | PlayerIntent::Gather(_)
+            | PlayerIntent::Inspect(_)
             | PlayerIntent::Skin(_)
                 if self.in_handoff_corridor(player_id) =>
             {
@@ -360,6 +363,7 @@ impl ZoneSimulation {
             PlayerIntent::RaidAid(task) => self.aid_raid(player_id, task)?,
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             PlayerIntent::Gather(node) => self.gather(player_id, node)?,
+            PlayerIntent::Inspect(spot) => self.inspect(player_id, spot)?,
             PlayerIntent::Skin(creature) => self.skin(player_id, creature)?,
             // Eligible characters may answer even dead (Atlas 5.1.35).
             PlayerIntent::RollDepthsDrop { run, drop, choice } => {

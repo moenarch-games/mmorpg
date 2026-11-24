@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { QuestState } from "../src/world/units/quest-state";
+import { evidenceInReach, objectiveViews, QuestState } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -21,6 +21,22 @@ function projection(tick: number, fields: Partial<ZoneSnapshot> = {}, entities: 
 }
 
 describe("quest state", () => {
+  test("names inspect objectives and finds the open evidence in reach through the shared rule (#1019)", () => {
+    // Hilda's *Cut Sacks, Red Rags* (quest 33) over the hosted Greyhaven content.
+    expect(objectiveViews(33, [1, 0, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the cut sacks (done)", "Inspect the bait rack", "Inspect the red-ragged marker",
+    ]);
+    const open = sheet({ entries: [{ quest: 33, progress: [0, 0, 0] }] });
+    // Beside the cut sacks at the Wolfrun cart; projections place the body centre 90 units up.
+    const sacks = [-6030, 1036 + 90, 1150];
+    expect(evidenceInReach(open, sacks)).toBe(1);
+    // Read sacks leave the red-ragged marker beside them.
+    expect(evidenceInReach(sheet({ entries: [{ quest: 33, progress: [1, 0, 0] }] }), sacks)).toBe(3);
+    expect(evidenceInReach(sheet({ entries: [{ quest: 33, progress: [1, 1, 1] }] }), sacks)).toBeNull();
+    expect(evidenceInReach(open, [0, 90, 0])).toBeNull();
+    expect(evidenceInReach(null, sacks)).toBeNull();
+  });
+
   test("keeps the latest sheet and markers and ignores older ticks", () => {
     const state = new QuestState();
     state.update(projection(2, { inventory: Array(16).fill(null), quests: sheet({ markers: [{ npc: MARSHAL, marker: "available" }] }) }), catalog);

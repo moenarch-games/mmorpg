@@ -54,6 +54,8 @@ const SIT_INTENT: u8 = 29;
 const SET_WEAPON_DRAWN_INTENT: u8 = 30;
 const GATHER_INTENT: u8 = 31;
 const SKIN_INTENT: u8 = 32;
+/// Inspecting quest evidence (#1019): the spot ID (u32).
+const INSPECT_INTENT: u8 = 33;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -216,6 +218,11 @@ impl Codec for CanonicalPlayerSnapshot {
                 PlayerIntent::Gather(node) => {
                     payload.push(GATHER_INTENT);
                     payload.extend_from_slice(&node.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Inspect(spot) => {
+                    payload.push(INSPECT_INTENT);
+                    payload.extend_from_slice(&spot.to_be_bytes());
                     continue;
                 }
                 PlayerIntent::ReleaseSpirit => (RELEASE_SPIRIT_INTENT, None),
@@ -523,6 +530,12 @@ impl Codec for CanonicalPlayerSnapshot {
             }
             if code == GATHER_INTENT {
                 intents.push(PlayerIntent::Gather(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)));
+                continue;
+            }
+            if code == INSPECT_INTENT {
+                intents.push(PlayerIntent::Inspect(u32::from_be_bytes(take(
                     payload, offset,
                 )?)));
                 continue;
@@ -3075,6 +3088,7 @@ pub(crate) mod tests {
                 choice: u8::MAX,
             },
             PlayerIntent::AbandonQuest { quest: 0 },
+            PlayerIntent::Inspect(0x0506_0708),
         ]);
         snapshot.players[0].quests = mmorpg_core::QuestLog {
             entries: vec![
@@ -3095,6 +3109,7 @@ pub(crate) mod tests {
             &[0, ACCEPT_QUEST_INTENT, 1, 2, 3, 4, 0, 0, 0, 2][..],
             &[0, COMPLETE_QUEST_INTENT, 0, 0, 0, 1, 0, 0, 0, 9, 0xff],
             &[0, ABANDON_QUEST_INTENT, 0, 0, 0, 0],
+            &[0, INSPECT_INTENT, 5, 6, 7, 8],
         ]
         .concat();
         let log = LOG.to_vec();

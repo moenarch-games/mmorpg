@@ -2050,6 +2050,7 @@ fn content_with_spawns(
             .with_patrols(redbrand_patrol::members())?
             .with_signal_calls(signal_post::signal_calls())?
             .with_vendors(units::vendors())?
+            .with_evidence(quests::evidence())?
             .with_quests(quests::quests())?
             .with_doors(vec![
                 inn::door(ids::INN_DOOR),

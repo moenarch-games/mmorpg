@@ -317,6 +317,12 @@ pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String 
             QuestObjective::DefeatThorn => {
                 format!("Defeat {}. ", mmorpg_core::redbrand_depths::THORN_NAME)
             }
+            QuestObjective::Inspect { spot } => format!(
+                "Inspect {}. ",
+                content
+                    .evidence_spot(spot)
+                    .map_or("the evidence", |spot| spot.name.as_str())
+            ),
         });
     }
     text

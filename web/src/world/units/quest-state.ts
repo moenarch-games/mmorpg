@@ -76,6 +76,15 @@ export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: Ques
   };
 }
 
+/**
+ * The quest evidence (#1019) a viewer centred at `at` units would inspect now, or null: the nearest spot in
+ * reach an active quest of `sheet` still needs (the shared client model's rule; the zone checks it).
+ */
+export function evidenceInReach(sheet: QuestSheet | null, at: readonly number[]): number | null {
+  const spot = sheet ? wasm.evidenceInReach(sheet, at[0]!, at[1]!, at[2]!) : 0;
+  return spot === 0 ? null : spot;
+}
+
 /** The HUD tracker's rows: each active quest followed by its objectives. */
 export function trackerRows(sheet: QuestSheet): TrackerRow[] {
   return wasm.trackerRows(sheet);

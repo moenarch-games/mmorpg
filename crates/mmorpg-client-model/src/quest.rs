@@ -1,11 +1,12 @@
 //! Quest views: objective text and progress, the quest tracker, what an NPC
-//! offers and takes back, and which quest NPC Talk addresses.
+//! offers and takes back, which quest NPC Talk addresses and which quest evidence
+//! Interact inspects (#1019).
 //!
 //! Everything is derived from the received quest sheet and immutable content;
 //! nothing is predicted. The zone checks reach, availability and completion.
 use mmorpg_core::{
-    EntityKind, NpcId, QUEST_REACH_UNITS, Quest, QuestId, QuestMarker, QuestObjective, QuestSheet,
-    ZoneContent, ZoneSnapshot, item_template,
+    EntityKind, EvidenceId, NpcId, QUEST_REACH_UNITS, Quest, QuestEntry, QuestId, QuestMarker,
+    QuestObjective, QuestSheet, ZoneContent, ZoneSnapshot, item_template,
 };
 
 /// Whether `quest` is turned in according to `sheet`.
@@ -65,8 +66,8 @@ pub fn standing(sheet: &QuestSheet, quest: &Quest, npc: NpcId) -> QuestStanding 
     }
 }
 
-/// "Timber Wolf slain", "Wolf Pelt", "Speak with Farmer Osric Mill" or
-/// "Explore Stillwater Lake".
+/// "Timber Wolf slain", "Wolf Pelt", "Speak with Farmer Osric Mill", "Explore Stillwater Lake"
+/// or "Inspect the cut sacks".
 #[must_use]
 pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> String {
     let item = |item| {
@@ -100,6 +101,12 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
         QuestObjective::DefeatThorn => {
             format!("Defeat {}", mmorpg_core::redbrand_depths::THORN_NAME)
         }
+        QuestObjective::Inspect { spot } => format!(
+            "Inspect {}",
+            content
+                .evidence_spot(spot)
+                .map_or("the evidence", |spot| spot.name.as_str())
+        ),
     }
 }
 
@@ -134,13 +141,15 @@ pub fn objective_view(
         QuestObjective::Talk { .. }
         | QuestObjective::Explore { .. }
         | QuestObjective::DefeatThorn
+        | QuestObjective::Inspect { .. }
             if done =>
         {
             format!("{label} (done)")
         }
         QuestObjective::Talk { .. }
         | QuestObjective::Explore { .. }
-        | QuestObjective::DefeatThorn => label.clone(),
+        | QuestObjective::DefeatThorn
+        | QuestObjective::Inspect { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -353,6 +362,42 @@ pub fn dialog_view(
     }
 }
 
+/// The quest evidence (#1019) a player whose body centre is at `centre` units (as projections place
+/// it) would inspect now: the nearest spot within its reach that an objective of an active quest in `entries` still needs, so a press of
+/// Interact there reads it. Spots no quest needs are none; the zone checks everything again.
+#[must_use]
+pub fn evidence_in_reach(
+    content: &ZoneContent,
+    entries: &[QuestEntry],
+    centre: [i32; 3],
+) -> Option<EvidenceId> {
+    let feet = [
+        centre[0],
+        centre[1] - mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1],
+        centre[2],
+    ];
+    let open = entries.iter().flat_map(|entry| {
+        content
+            .quest(entry.quest)
+            .into_iter()
+            .flat_map(|quest| quest.objectives.iter().zip(entry.progress))
+            .filter_map(|(objective, progress)| match *objective {
+                QuestObjective::Inspect { spot } if progress == 0 => Some(spot),
+                _ => None,
+            })
+    });
+    open.filter_map(|spot| content.evidence_spot(spot))
+        .filter(|spot| spot.within(feet))
+        .min_by_key(|spot| {
+            let (dx, dz) = (
+                i64::from(spot.at[0] - feet[0]),
+                i64::from(spot.at[2] - feet[2]),
+            );
+            (dx * dx + dz * dz, spot.id)
+        })
+        .map(|spot| spot.id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,7 +446,8 @@ mod tests {
                     }
                     QuestObjective::Talk { .. }
                     | QuestObjective::Explore { .. }
-                    | QuestObjective::DefeatThorn => {
+                    | QuestObjective::DefeatThorn
+                    | QuestObjective::Inspect { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }
@@ -572,5 +618,32 @@ mod tests {
             dialog_npc(&snapshot, &content).map(|npc| npc.in_reach),
             Some(false)
         );
+    }
+
+    /// Interact inspects the nearest evidence in reach that an active quest still needs (#1019):
+    /// not evidence already read, nor any quest's evidence out of reach.
+    #[test]
+    fn interact_inspects_only_open_evidence_in_reach() {
+        use greyhaven_vale::quests::{self, CUT_SACKS, REDBRAND_MARKER};
+        let content = content();
+        let centre = |spot: EvidenceId| {
+            let [x, y, z] = content.evidence_spot(spot).unwrap().at;
+            [x + 20, y + mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1], z]
+        };
+        let open = [entry(quests::CUT_SACKS_RED_RAGS, &[0, 0, 0])];
+        let read = [entry(quests::CUT_SACKS_RED_RAGS, &[1, 0, 0])];
+        assert_eq!(
+            evidence_in_reach(&content, &open, centre(CUT_SACKS)),
+            Some(CUT_SACKS)
+        );
+        // The marker stands beside the sacks: once they are read, Interact reads the marker.
+        assert_eq!(
+            evidence_in_reach(&content, &read, centre(CUT_SACKS)),
+            Some(REDBRAND_MARKER)
+        );
+        assert_eq!(evidence_in_reach(&content, &[], centre(CUT_SACKS)), None);
+        let [x, y, z] = centre(CUT_SACKS);
+        assert_eq!(evidence_in_reach(&content, &open, [x + 2_000, y, z]), None);
+        assert_eq!(evidence_in_reach(&content, &open, [x, y + 400, z]), None);
     }
 }

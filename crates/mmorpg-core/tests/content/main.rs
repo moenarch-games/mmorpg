@@ -9,6 +9,7 @@ mod support;
 mod cave_bat;
 mod creature_streams;
 mod discovery_caches;
+mod evidence_quests;
 mod farmland;
 mod forest_lynx;
 mod garrick;

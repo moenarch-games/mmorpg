@@ -983,6 +983,24 @@ impl Presentation {
         })
     }
 
+    /// The `Inspect` of the quest evidence (#1019) the viewer stands at and an active quest of
+    /// `sheet` still needs, if any (`mmorpg-client-model`'s rule, shared with the browser).
+    #[must_use]
+    pub fn reachable_inspect(
+        &self,
+        sheet: Option<&mmorpg_core::QuestSheet>,
+    ) -> Option<mmorpg_core::ZoneCommand> {
+        let centre = self
+            .latest()?
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let spot =
+            mmorpg_client_model::quest::evidence_in_reach(&self.content, &sheet?.entries, centre)?;
+        Some(mmorpg_core::ZoneCommand::Inspect { spot: spot.get() })
+    }
+
     /// The `Gather` of the first full ore vein (#917) the viewer can reach, if any.
     #[must_use]
     pub fn reachable_gather(&self) -> Option<mmorpg_core::ZoneCommand> {

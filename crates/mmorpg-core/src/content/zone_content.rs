@@ -117,6 +117,8 @@ pub struct ZoneContent {
     dens: Vec<crate::WildlifeDen>,
     /// Optional discovery caches (#913), in ID order.
     caches: Vec<crate::DiscoveryCache>,
+    /// Quest evidence spots (#1019), in ID order.
+    evidence: Vec<crate::EvidenceSpot>,
     /// Named places clients mark on their maps (#1063).
     landmarks: Vec<crate::Landmark>,
 }
@@ -268,6 +270,7 @@ impl ZoneContent {
             depths_site: None,
             dens: Vec::new(),
             caches: Vec::new(),
+            evidence: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -334,6 +337,7 @@ impl ZoneContent {
             depths_site: None,
             dens: Vec::new(),
             caches: Vec::new(),
+            evidence: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -1751,7 +1755,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_landmark_fingerprint();
+        let fingerprint = self.compute_evidence_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -1851,6 +1855,69 @@ impl ZoneContent {
     #[must_use]
     pub fn caches(&self) -> &[crate::DiscoveryCache] {
         &self.caches
+    }
+
+    /// Adds quest evidence spots (#1019), before the quests that name them: each has a unique
+    /// nonzero ID, a short name, a reach of at most [`crate::MAX_EVIDENCE_REACH_UNITS`] and a
+    /// spot inside the content's bounds.
+    pub fn with_evidence(mut self, mut spots: Vec<crate::EvidenceSpot>) -> Result<Self, ZoneError> {
+        spots.sort_by_key(|spot| spot.id);
+        if spots.first().is_some_and(|spot| spot.id.get() == 0)
+            || spots.windows(2).any(|pair| pair[0].id == pair[1].id)
+        {
+            return Err(ZoneError::new("evidence IDs must be unique and nonzero"));
+        }
+        for spot in &spots {
+            if spot.name.trim().is_empty()
+                || spot.name.len() > MAX_UNIT_NAME_BYTES
+                || spot.reach <= 0
+                || spot.reach > crate::MAX_EVIDENCE_REACH_UNITS
+                || spot
+                    .at
+                    .iter()
+                    .any(|value| value.abs() > MAX_CONTENT_COORDINATE_UNITS)
+            {
+                return Err(ZoneError::new(
+                    "evidence needs a short name, a reach and a spot in bounds",
+                ));
+            }
+        }
+        self.evidence = spots;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Quest evidence spots (#1019), in ID order.
+    #[must_use]
+    pub fn evidence(&self) -> &[crate::EvidenceSpot] {
+        &self.evidence
+    }
+
+    #[must_use]
+    pub fn evidence_spot(&self, id: crate::EvidenceId) -> Option<&crate::EvidenceSpot> {
+        self.evidence
+            .binary_search_by_key(&id, |spot| spot.id)
+            .ok()
+            .map(|index| &self.evidence[index])
+    }
+
+    /// Quest evidence (#1019) enters the identity only when a zone has some.
+    fn compute_evidence_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_landmark_fingerprint();
+        if self.evidence.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/evidence-v1");
+        hash.u64(fingerprint);
+        hash.len(self.evidence.len());
+        for spot in &self.evidence {
+            hash.u32(spot.id.get());
+            hash.text(&spot.name);
+            hash.i32s(&spot.at);
+            hash.i32s(&[spot.reach]);
+        }
+        hash.finish()
     }
 
     /// Adds the named places clients mark on their maps (#1063): each a short name.
@@ -2514,6 +2581,7 @@ impl ZoneContent {
                         hash.u32(area.get());
                     }
                     crate::QuestObjective::DefeatThorn => {}
+                    crate::QuestObjective::Inspect { spot } => hash.u32(spot.get()),
                 }
             }
             hash.u32(quest.rewards.experience);

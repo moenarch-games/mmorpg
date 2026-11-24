@@ -16,6 +16,7 @@ command emote 3B
 command equip_item 3B
 command gather 6B
 command guard 3B
+command inspect 6B
 command jump 2B
 command loot 14B
 command move 6B

@@ -11,6 +11,9 @@
 //! like collect, their progress is the bag's count. A Thorn objective's progress is the
 //! character's durable victory evidence (5.1.37), so a victory won before the quest was taken
 //! counts without another fight.
+//!
+//! Inspect objectives (#1019) complete when the player inspects their authored evidence spot
+//! ([`crate::EvidenceSpot`]) with the quest active; the log stores that progress.
 
 use std::{collections::BTreeSet, error::Error, fmt};
 
@@ -76,6 +79,9 @@ pub enum QuestObjective {
     /// durable [`DepthsRecord::thorn_defeated`], never stored in the log, so a victory from
     /// before the quest was accepted satisfies it (5.1.37).
     DefeatThorn,
+    /// Inspect authored evidence `spot` (#1019) with [`crate::ZoneCommand::Inspect`]; the log
+    /// stores the progress.
+    Inspect { spot: crate::EvidenceId },
 }
 
 impl QuestObjective {
@@ -87,11 +93,13 @@ impl QuestObjective {
             Self::Talk { .. }
             | Self::Explore { .. }
             | Self::Retrieve { .. }
-            | Self::DefeatThorn => 1,
+            | Self::DefeatThorn
+            | Self::Inspect { .. } => 1,
         }
     }
 
-    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn.
+    /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
+    /// 7 inspect.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -101,6 +109,7 @@ impl QuestObjective {
             Self::Explore { .. } => 4,
             Self::Retrieve { .. } => 5,
             Self::DefeatThorn => 6,
+            Self::Inspect { .. } => 7,
         }
     }
 
@@ -256,6 +265,11 @@ pub(crate) fn validate_quests(
                             .any(|candidate| candidate.id() == area)
                 }
                 QuestObjective::DefeatThorn => true,
+                // One spot backs one objective of a quest, like an item.
+                QuestObjective::Inspect { spot } => {
+                    content.evidence_spot(spot).is_some()
+                        && !quest.objectives[..index].contains(objective)
+                }
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -994,7 +1008,8 @@ impl ZoneSimulation {
                         QuestObjective::Kill { .. }
                         | QuestObjective::Collect { .. }
                         | QuestObjective::Retrieve { .. }
-                        | QuestObjective::DefeatThorn => false,
+                        | QuestObjective::DefeatThorn
+                        | QuestObjective::Inspect { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

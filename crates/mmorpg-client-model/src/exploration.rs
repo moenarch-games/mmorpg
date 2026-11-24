@@ -241,7 +241,7 @@ fn points(content: &ZoneContent, areas: &[MapArea], sheet: Option<&QuestSheet>) 
 }
 
 /// One hint per open objective that has a place: explore and retrieve objectives name their
-/// area, kill and collect objectives the area most of their creatures spawn in. Talking to an
+/// area, inspect objectives (#1019) the area their evidence lies in, kill and collect objectives the area most of their creatures spawn in. Talking to an
 /// NPC already has its quest marker, and the depths boss is no place on this map.
 fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> Vec<QuestHint> {
     let mut hints = Vec::new();
@@ -262,6 +262,13 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                 | QuestObjective::Collect {
                     source: template, ..
                 } => creature_area(content, template),
+                // Evidence (#1019) hints at the area around its spot, never the spot itself.
+                QuestObjective::Inspect { spot } => content.evidence_spot(spot).and_then(|spot| {
+                    content
+                        .areas()
+                        .area_at(spot.at[0], spot.at[2])
+                        .map(Area::id)
+                }),
                 QuestObjective::Talk { .. } | QuestObjective::DefeatThorn => None,
             };
             let Some(area) = area.and_then(|id| areas.iter().find(|area| area.id == id)) else {

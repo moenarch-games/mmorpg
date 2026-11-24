@@ -64,7 +64,7 @@ describe("content catalog", () => {
     expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.id = 0; })).toThrow("item 0 id");
     const quests = (json: Record<string, unknown>) => json.quests as Record<string, unknown>[];
     expect(broken((json) => { quests(json)[0]!.giver = 3; })).toThrow("quest giver");
-    expect(broken((json) => { quests(json)[0]!.id = 33; })).toThrow("quest 0 id");
+    expect(broken((json) => { quests(json)[0]!.id = 0; })).toThrow("quest 0 id");
     expect(broken((json) => { quests(json)[1]!.id = 1; })).toThrow("unique");
     expect(broken((json) => { quests(json)[0]!.objectives = []; })).toThrow("needs an objective");
     expect(broken((json) => { quests(json)[0]!.objectives = [{ kind: "fish", target: 1, source: null, count: 1 }]; })).toThrow("kind");
@@ -79,6 +79,20 @@ describe("content catalog", () => {
     expect(broken((json) => { vendors(json)[0]!.offers[0]!.price = 0; })).toThrow("price");
     expect(broken((json) => { (json.items as Record<string, unknown>[])[0]!.sellPrice = -1; })).toThrow("sale value");
     expect(() => decodeCatalog("{")).toThrow("not JSON");
+  });
+
+  test("takes as many quests as content defines, with inspect objectives (#1019)", () => {
+    const json = catalogJson();
+    const [first] = json.quests as Record<string, unknown>[];
+    // Forty quests, past the 32 the catalog once capped, each after the one before.
+    json.quests = Array.from({ length: 40 }, (_, index) => ({
+      ...first, id: index + 1, prerequisite: index === 0 ? null : index,
+      objectives: [{ kind: "inspect", target: index + 1, source: null, count: 1 }],
+    }));
+    const decoded = decodeCatalog(JSON.stringify(json));
+    expect(decoded.quests.size).toBe(40);
+    expect(decoded.quests.get(40)?.prerequisite).toBe(39);
+    expect(decoded.quests.get(33)?.objectives).toEqual([{ kind: "inspect", target: 33, count: 1 }]);
   });
 });
 

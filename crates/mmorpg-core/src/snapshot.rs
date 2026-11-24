@@ -109,6 +109,8 @@ pub enum PlayerIntent {
     RaidPrepare(crate::RaidPrep),
     /// Gathering an ore vein (#917): its content index.
     Gather(u32),
+    /// Inspecting quest evidence (#1019): its ID.
+    Inspect(u32),
     /// Skinning a beast corpse (#917).
     Skin(crate::CreatureId),
     /// A Need/Greed/Pass answer to a boss drop (#404).

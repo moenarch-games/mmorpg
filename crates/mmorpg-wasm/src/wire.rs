@@ -2331,6 +2331,10 @@ pub enum WorldCommand {
     Gather {
         node: u32,
     },
+    /// Inspects quest evidence `spot` (#1019, from `evidenceInReach()`) an active quest needs.
+    Inspect {
+        spot: u32,
+    },
     /// Skins a beast corpse the player may loot (#917): once per death.
     Skin {
         creature_id: u32,
@@ -2484,6 +2488,7 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             },
             C::RaidAid { task } => Self::RaidAid { task },
             C::Gather { node } => Self::Gather { node },
+            C::Inspect { spot } => Self::Inspect { spot },
             C::Skin { creature_id } => Self::Skin {
                 creature: core::CreatureId::new(creature_id),
             },
