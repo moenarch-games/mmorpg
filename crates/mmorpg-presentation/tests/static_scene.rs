@@ -830,9 +830,17 @@ fn a_scene_rebuilt_from_its_skeleton_answers_as_the_derived_one() {
             .map(|draw| (draw.resource_key.clone(), (*draw.geometry).clone()))
             .collect::<Vec<_>>()
     };
+    // It holds no far levels (#855: the deriving instance hands them over) but builds the same
+    // on demand.
+    assert!(rebuilt.terrain.tiles.iter().all(|tile| tile.far.is_empty()));
+    assert!(rebuilt.terrain.chunks.is_empty());
     for index in [0, scene.terrain.tiles.len() / 2] {
         assert_eq!(
-            ids(&rebuilt.terrain.tiles[index].far),
+            ids(&rebuilt.terrain.far_level(index)),
+            ids(&scene.terrain.tiles[index].far)
+        );
+        assert_eq!(
+            ids(&scene.terrain.far_level(index)),
             ids(&scene.terrain.tiles[index].far)
         );
         assert_eq!(

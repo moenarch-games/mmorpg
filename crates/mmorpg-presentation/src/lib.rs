@@ -356,8 +356,10 @@ impl StaticScene {
     /// The scene of `scenery` from its [`Self::skeleton`] `bytes`, without draws: no group,
     /// water or animated part carries geometry, so motion, visibility, streaming, lights and
     /// the terrain tiles (built here over the skeleton's weights) answer as [`Self::new`]'s
-    /// would, but [`Self::frame`] draws nothing static. `None` for damaged bytes or another
-    /// content revision's.
+    /// would, but [`Self::frame`] draws nothing static. The tiles hold no far levels or far
+    /// chunks either: such a client receives them where the scene was derived, or builds one
+    /// with [`tiles::Tiles::far_level`] (#855). `None` for damaged bytes or another content
+    /// revision's.
     #[must_use]
     pub fn from_skeleton(bytes: &[u8], scenery: &Scenery) -> Option<Self> {
         let skeleton: Skeleton = postcard::from_bytes(bytes).ok()?;
@@ -369,7 +371,7 @@ impl StaticScene {
         if !skeleton.weights.fits(grid.columns * grid.rows) {
             return None;
         }
-        let mut terrain = tiles::Tiles::with_weights(scenery, &grid, skeleton.weights);
+        let mut terrain = tiles::Tiles::with_weights(scenery, &grid, skeleton.weights, false);
         terrain.set_prefix(&skeleton.prefix);
         Some(Self {
             prefix: skeleton.prefix,
