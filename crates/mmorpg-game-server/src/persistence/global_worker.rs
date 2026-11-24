@@ -69,7 +69,7 @@ impl BackendWorker {
                     }
                 };
                 backend.set_cancellation(Arc::clone(&worker_flag));
-                let tokens = backend.cancel_tokens();
+                let tokens = backend.cancellers();
                 let canceller = thread::Builder::new()
                     .name("mmorpg-global-cancel".into())
                     .spawn(move || {
@@ -77,7 +77,7 @@ impl BackendWorker {
                             match command {
                                 Cancel::Query => {
                                     for token in &tokens {
-                                        let _ = token.cancel_query(::postgres::NoTls);
+                                        let _ = token.cancel();
                                     }
                                 }
                                 Cancel::Stop => break,

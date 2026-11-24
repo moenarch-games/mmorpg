@@ -89,6 +89,14 @@
         "owners": ["moenarch-games/mmorpg"]
       },
       {
+        "id": "native-postgres",
+        "paths": ["crates/mmorpg-postgres/**"],
+        "instructions": ["docs/ARCHITECTURE.md", "docs/NATIVE_CLIENT.md"],
+        "conventionRefs": ["RUST-001", "RUST-002", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"]
+      },
+      {
         "id": "native-game-server",
         "paths": ["crates/mmorpg-game-server/**"],
         "instructions": ["docs/ARCHITECTURE.md", "docs/PROTOCOL.md", "docs/SCENARIOS.md"],

@@ -14,9 +14,10 @@ publish.workspace = true
 mmorpg-core.workspace = true
 mmorpg-protocol.workspace = true
 postgres = { workspace = true, optional = true }
+mmorpg-postgres = { workspace = true, optional = true }
 
 [features]
-postgres = ["dep:postgres"]
+postgres = ["dep:postgres", "dep:mmorpg-postgres"]
 
 [lints]
 workspace = true

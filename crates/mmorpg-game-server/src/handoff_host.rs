@@ -755,10 +755,8 @@ mod postgres_host {
         let zones = zone_ids.clone();
         let (directory, grants, entries, handoffs, parties, instances) =
             tokio::task::spawn_blocking(move || -> Result<_, String> {
-                let mut client =
-                    ::postgres::Client::connect(&url, ::postgres::NoTls).map_err(message)?;
-                mmorpg_control_plane::postgres::migrate(&mut client).map_err(message)?;
-                mmorpg_characters::postgres::migrate(&mut client).map_err(message)?;
+                // The serving login never migrates (#1142): each connection
+                // refuses a schema at another version than this build's.
                 let mut directory =
                     PostgresZoneDirectory::connect(&url, timeout).map_err(message)?;
                 let grants = zones
@@ -935,7 +933,7 @@ mod postgres_host {
             let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
                 return;
             };
-            let mut client = ::postgres::Client::connect(&url, ::postgres::NoTls).unwrap();
+            let mut client = mmorpg_postgres::connect(&url).unwrap();
             mmorpg_control_plane::postgres::migrate(&mut client).unwrap();
             client
                 .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a44_5445_5354_i64])
@@ -985,6 +983,123 @@ mod postgres_host {
             // Another host's grant is never taken, expired or not.
             let other = HostId::new("other-host").unwrap();
             assert!(acquire(&mut directory, zone(1), &other, short, true).is_err());
+        }
+
+        /// #1142: a serving host never migrates; it refuses a database whose
+        /// schema is behind this build, naming the migration step. Needs
+        /// PostgreSQL (`MMORPG_CHARACTERS_POSTGRES_URL`, a login that may create
+        /// databases); skipped without it.
+        #[tokio::test]
+        async fn a_serving_host_refuses_a_schema_it_would_have_to_migrate() {
+            let Ok(url) = std::env::var("MMORPG_CHARACTERS_POSTGRES_URL") else {
+                return;
+            };
+            let name = format!(
+                "mmorpg_unmigrated_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let mut scratch = url::Url::parse(&url).unwrap();
+            scratch.set_path(&format!("/{name}"));
+            let scratch = scratch.to_string();
+            let admin_url = url.clone();
+            let create = name.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut admin = mmorpg_postgres::connect(&admin_url).unwrap();
+                admin
+                    .batch_execute(&format!("CREATE DATABASE {create}"))
+                    .unwrap();
+            })
+            .await
+            .unwrap();
+
+            let serve = |database_url: String| async move {
+                let (_stop, shutdown) = mpsc::channel(1);
+                serve_handoff_character_host(
+                    HandoffHostConfig {
+                        database_url,
+                        host_id: HostId::new("unmigrated-host").unwrap(),
+                        zone_ids: vec![ZoneId::new(901)],
+                        link_address: "127.0.0.1:0".into(),
+                        routes: BTreeMap::new(),
+                        reconnect_grace_ticks: 1,
+                        grant_ttl: Duration::from_secs(3),
+                        timeout: Duration::from_secs(5),
+                        depths_grace: Duration::from_secs(1),
+                        confirmed_stopped: false,
+                    },
+                    game_server::MatchHostWebTransportConfig {
+                        bind_ip: None,
+                        port: 0,
+                        certificate_pem: "unused-cert.pem".into(),
+                        private_key_pem: "unused-key.pem".into(),
+                        route_prefix: game_server::BrowserRoutePrefix::new("/game").unwrap(),
+                        allowed_origins: None,
+                        drain_grace: Duration::ZERO,
+                    },
+                    game_server::MatchHostStatusConfig { port: 0 },
+                    shutdown,
+                )
+                .await
+                .expect_err("a serving host refuses the schema")
+                .to_string()
+            };
+
+            // Never migrated: nothing is created on the serving login's behalf.
+            let refused = serve(scratch.clone()).await;
+            assert!(refused.contains("is at version 0"), "{refused}");
+            assert!(
+                refused.contains("MMORPG_PERSISTENCE_MODE=migrate"),
+                "{refused}"
+            );
+
+            // One migration behind: refused, and the database is left as it was.
+            let behind = scratch.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut client = mmorpg_postgres::connect(&behind).unwrap();
+                mmorpg_control_plane::postgres::migrate(&mut client).unwrap();
+                mmorpg_characters::postgres::migrate(&mut client).unwrap();
+                client
+                    .batch_execute(
+                        "DELETE FROM mmorpg_coordination.migrations \
+                         WHERE version = (SELECT max(version) FROM mmorpg_coordination.migrations)",
+                    )
+                    .unwrap();
+            })
+            .await
+            .unwrap();
+            let refused = serve(scratch.clone()).await;
+            let previous = mmorpg_control_plane::postgres::SCHEMA_VERSION - 1;
+            assert!(
+                refused.contains(&format!("mmorpg_coordination is at version {previous}")),
+                "{refused}"
+            );
+            let check = scratch.clone();
+            let applied: Option<i32> = tokio::task::spawn_blocking(move || {
+                mmorpg_postgres::connect(&check)
+                    .unwrap()
+                    .query_one(
+                        "SELECT max(version) FROM mmorpg_coordination.migrations",
+                        &[],
+                    )
+                    .unwrap()
+                    .get(0)
+            })
+            .await
+            .unwrap();
+            assert_eq!(applied, Some(previous));
+
+            tokio::task::spawn_blocking(move || {
+                let mut admin = mmorpg_postgres::connect(&url).unwrap();
+                admin
+                    .batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)"))
+                    .unwrap();
+            })
+            .await
+            .unwrap();
         }
     }
 }

@@ -329,7 +329,7 @@ Credentials follow the S3 SDK's provider chain, including `AWS_ACCESS_KEY_ID` / 
 `MMORPG_CHECKPOINT_S3_REGION` defaults to `us-east-1`; local HTTP needs explicit `MMORPG_CHECKPOINT_ALLOW_HTTP=1`.
 The initial tested provider is RustFS `1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b`.
 
-Use `MMORPG_PERSISTENCE_MODE=migrate` with `MMORPG_MIGRATION_DATABASE_URL` pointing to a privileged migration connection before starting the host. Normal startup never changes schemas.
+Use `MMORPG_PERSISTENCE_MODE=migrate` with `MMORPG_MIGRATION_DATABASE_URL` pointing to a privileged migration connection before starting the host ([migration and TLS](#postgresql-migration-and-tls)). Normal startup never changes schemas.
 Then use `bootstrap` for a new stream, and `recover` for subsequent starts. Bootstrap refuses an existing checkpoint; recovery never silently creates or resets a world.
 Graceful termination checkpoints committed state, stops/join storage workers, then retires ownership. A crashed host needs explicit `retire` after its process is stopped: configure one zone, `MMORPG_EXPECTED_ZONE_EPOCH`, and `MMORPG_CONFIRM_SOURCE_STOPPED=1`.
 `reset` also requires that confirmation and already-retired assignments; it publishes a verified empty-world checkpoint in a new timeline while preserving character records, world identity and grant receipts.
@@ -351,9 +351,28 @@ Lease/commit failures fence the host. Object-store failures retain the last veri
 Acknowledged economy depends on the designated standby's durable receipt and replay. Promotion must preserve that confirmed history and fence the former primary; automatic database failover is not implemented here.
 The focused `persistence_host` test exercises a real WebTransport claim, complete host-process loss, journal recovery, reconnect and durable logout against PostgreSQL plus RustFS, without a GPU.
 
+## PostgreSQL migration and TLS
+
+Every PostgreSQL host (journals above, handoff hosts below) serves with logins that cannot change schemas (#1142). Migration is a separate step with its own login: `MMORPG_PERSISTENCE_MODE=migrate` with `MMORPG_MIGRATION_DATABASE_URL` applies every schema a host reads (zone directory, characters, journal) and exits. Run it before the first start and after updating the build. A serving host checks each schema's version and refuses to start on a mismatch, naming this step.
+
+```sh
+MMORPG_PERSISTENCE_MODE=migrate MMORPG_MIGRATION_DATABASE_URL=postgres://migrator@db/mmorpg?sslmode=verify-full \
+  cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
+```
+
+Each connection string chooses TLS with libpq's `sslmode` (`mmorpg-postgres`, rustls; no OpenSSL library needed):
+
+| `sslmode` | Connection |
+| --- | --- |
+| unset, `disable` | Plain, for local development |
+| `allow`, `prefer` | TLS when the server offers it, plain otherwise |
+| `require`, `verify-ca`, `verify-full` | TLS only |
+
+TLS always verifies the server's certificate and host name, stricter than libpq's `require`, against the system's trusted authorities plus the PEM file `sslrootcert` names, for example `postgres://host@db/mmorpg?sslmode=verify-full&sslrootcert=/etc/mmorpg/db-ca.pem`. `scripts/smoke-handoff.py` runs this flow: migrate with the superuser, then serve over `verify-full` TLS with a login holding only the serving roles.
+
 ## Trusted-LAN handoff hosts (#145)
 
-Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). The host migrates the character and coordination schemas at start. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated and unencrypted: run the hosts and their transfer links on a private network only. A destination stages the pending transfer from the shared store, never the offered copy, and refuses and logs an offer that differs from it (#1143). Hosts on separate machines set `MMORPG_BIND_IP` to their LAN address, and their transfer links and zone routes to addresses the peers reach.
+Hosts of neighbouring logical zones hand characters to each other through seams and waystones when each runs the `postgres` build with `MMORPG_HANDOFF_DATABASE_URL`, one PostgreSQL database they share ([ADR 0007](adr/0007-seam-corridors-and-character-transfer.md#shared-control-plane-and-live-hosts-part-3b)). Migrate the database first ([below](#postgresql-migration-and-tls)); the host never changes schemas and refuses a database at another schema version. Its login needs only the `mmorpg_zone_directory` and `mmorpg_characters_store` roles. It cannot be combined with `MMORPG_CHARACTER_DIR` or `MMORPG_RECOVERY_DIR`. Claims and the transfer link are unauthenticated and unencrypted: run the hosts and their transfer links on a private network only. A destination stages the pending transfer from the shared store, never the offered copy, and refuses and logs an offer that differs from it (#1143). Hosts on separate machines set `MMORPG_BIND_IP` to their LAN address, and their transfer links and zone routes to addresses the peers reach.
 
 | Environment variable | Meaning | Default |
 | --- | --- | --- |
@@ -365,9 +384,11 @@ Hosts of neighbouring logical zones hand characters to each other through seams 
 | `MMORPG_HANDOFF_TIMEOUT_MS` | Database statements and transfer link requests | 2000 |
 | `MMORPG_DEPTHS_GRACE_MS` | How long an emptied Redbrand Depths run stays resumable (#404); add depths slot IDs (20000–20031) to `MMORPG_ZONE_IDS` and `MMORPG_ZONE_ROUTES` to host runs | 900000 |
 
-For example, Seam Test West and East on one machine (certificates as for any host):
+For example, Seam Test West and East on one machine (certificates as for any host), after migrating:
 
 ```sh
+MMORPG_PERSISTENCE_MODE=migrate MMORPG_MIGRATION_DATABASE_URL=postgres://migrator@… \
+  cargo run -p mmorpg-game-server --features postgres --locked --bin mmorpg-zone-host
 MMORPG_HANDOFF_DATABASE_URL=postgres://… MMORPG_HOST_ID=west MMORPG_ZONE_IDS=901 MMORPG_PORT=4433 \
   MMORPG_STATUS_PORT=9101 MMORPG_TRANSFER_LINK=127.0.0.1:4501 \
   MMORPG_ZONE_ROUTES=902=127.0.0.1:4502@https://127.0.0.1:4434/game/matches/zone-902 \

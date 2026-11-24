@@ -656,7 +656,7 @@ fn run(
         }
     };
     journal.set_cancellation(Arc::clone(&cancelled));
-    let tokens = journal.cancel_tokens();
+    let tokens = journal.cancellers();
     let canceller = match thread::Builder::new()
         .name("mmorpg-persistence-cancel".into())
         .spawn(move || {
@@ -664,7 +664,7 @@ fn run(
                 match command {
                     Cancel::Query => {
                         for token in &tokens {
-                            let _ = token.cancel_query(::postgres::NoTls);
+                            let _ = token.cancel();
                         }
                     }
                     Cancel::Stop => break,
@@ -946,7 +946,7 @@ mod tests {
         };
         let setup_url = primary.clone();
         let fence = tokio::task::spawn_blocking(move || {
-            let mut client = ::postgres::Client::connect(&setup_url, ::postgres::NoTls).unwrap();
+            let mut client = mmorpg_postgres::connect(&setup_url).unwrap();
             migrate(&mut client).unwrap();
             client
                 .execute("SELECT pg_advisory_lock($1)", &[&0x4d4d_5a4a_5445_5354_i64])
@@ -1088,7 +1088,7 @@ mod tests {
         let setup_url = primary.clone();
         let old = fence.clone();
         let successor = tokio::task::spawn_blocking(move || {
-            let mut client = ::postgres::Client::connect(&setup_url, ::postgres::NoTls).unwrap();
+            let mut client = mmorpg_postgres::connect(&setup_url).unwrap();
             record_retirement(&mut client, &old).unwrap();
             install_writer(
                 &mut client,

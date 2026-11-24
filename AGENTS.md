@@ -33,6 +33,7 @@ Lookup is read-only and does not replace the full completion gate or required na
 | `mmorpg-game-server` | Adapter from a zone simulation into `game-server` |
 | `mmorpg-control-plane` | Placement, leases, fencing, handoff metadata and logical-zone partition maps (in-memory reference model) |
 | `mmorpg-characters` | Durable character records under exclusive fenced character leases; storage-backend neutral, WASM-compatible |
+| `mmorpg-postgres` | PostgreSQL connections for native hosts: reads `sslmode`, builds the verifying rustls connector and checks schema versions; never in WASM |
 | `mmorpg-scenery` | Presentation-only scenery derived from core content (props, roads, water, relief, terrain grid); clients only (native client, `mmorpg-wasm`'s scenery export), never network hosts |
 | `mmorpg-presentation` | Shared procedural presentation drawn by both clients: static world (terrain, roads, water, props) and units (models, poses, effects, imported-model clip choice, equipment tables), lighting curves and the day clock; renderer-neutral, WASM-compatible, clients only |
 | `mmorpg-client-model` | Client rules both clients share (#543): action bar and cast bar, chat parsing and logs, movement outbox, quest views; pure, no I/O or rendering, clients only (the browser through `mmorpg-wasm`) |

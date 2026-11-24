@@ -1,0 +1,19 @@
+[package]
+name = "mmorpg-postgres"
+description = "PostgreSQL connections for native hosts: one place that reads sslmode and builds the TLS connector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Native only: the storage crates depend on this under their `postgres` features, never from WASM.
+[dependencies]
+postgres.workspace = true
+# Latest compatible releases, not exact pins (owner decision 2026-11-23, #1126); Cargo.lock fixes the build.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
+tokio-postgres-rustls = "0.14.0"
+
+[lints]
+workspace = true
