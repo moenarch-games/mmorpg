@@ -1,6 +1,6 @@
 # Merge-safe format identities
 
-Status: accepted (owner, 2026-10-24).
+Status: accepted (owner, 2026-10-24). The wire identity is amended by [ADR 0012](0012-derived-protocol-id.md): `PROTOCOL_ID` is now derived from the wire layout and the byte fixtures, not a random token, and `scripts/new-protocol-id.sh` is retired.
 
 ## Problem
 
