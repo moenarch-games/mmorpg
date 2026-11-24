@@ -310,14 +310,13 @@ function quadPass(drawn: THREE.Object3D, mainDone: boolean, mainStarted: boolean
 }
 
 /**
- * Which of the sky's passes a quad draws, for its GPU label: the aerial-perspective march and store (32 slices each),
+ * Which of the sky's passes a quad draws, for its GPU label: the aerial-perspective march (its 32 slices, several a pass),
  * the environment cube and its filters, or otherwise its target's size (256x128 transmittance, 32x32 multiple
  * scattering, 400x200 sky view in three-lighting's atmosphere).
  */
 function skyLut(drawn: THREE.Object3D, target: THREE.WebGLRenderTarget | null): string {
   const uniforms = ((drawn as THREE.Mesh).material as THREE.ShaderMaterial | undefined)?.uniforms ?? {};
   if ("throughputIn" in uniforms) { return "aerial-march"; }
-  if ("totalIn" in uniforms) { return "aerial-store"; }
   if ("face" in uniforms) { return "environment"; }
   return target ? `${target.width}x${target.height}` : "canvas";
 }
