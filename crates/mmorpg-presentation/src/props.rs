@@ -735,7 +735,7 @@ pub(crate) fn ground_cover(b: &mut Batcher, s: &Scenery, g: &TerrainGrid) {
             || mmorpg_core::greyhaven_vale::beyond_core(x, z) > 0
             || (SPAWN_PLAZA.contains(x, z) && !in_brook_cover(x, z))
             || s.road_distance([x, z]) < if in_brook_cover(x, z) { 35 } else { 240 }
-            || s.water_distance([x, z]) < if in_brook_cover(x, z) { 100 } else { 230 }
+            || s.water_distance_within([x, z], 230) < if in_brook_cover(x, z) { 100 } else { 230 }
             || if in_brook_cover(x, z) {
                 bank_channels.iter().any(|channel| channel.contains(x, z))
             } else {

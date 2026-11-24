@@ -276,6 +276,16 @@ fn blur(g: &TerrainGrid, field: &[f64], radius: isize) -> Vec<f64> {
     pass(&pass(field, true), false)
 }
 
+/// The grid overlays [`weights`] derives, in draw order.
+const OVERLAYS: [Layer; 6] = [
+    Layer::Forest,
+    Layer::Gravel,
+    Layer::Mud,
+    Layer::Sand,
+    Layer::Path,
+    Layer::Rock,
+];
+
 pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
     let count = g.columns * g.rows;
     let grounds = ground_biomes(g);
@@ -304,14 +314,24 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
     // Foothills are rough grass (#816); only the high ground takes the gravel.
     let highland = blur(g, &indicator(&grounds, &["highland"]), 2);
     let bare = blur(g, &indicator(&g.biomes, &["rock"]), 1);
-    let mut layers: BTreeMap<Layer, Vec<f64>> = BTreeMap::new();
-    let mut colors: BTreeMap<Layer, Vec<u32>> = BTreeMap::new();
+    // Each overlay's untinted colour, in `OVERLAYS` order.
+    let overlay_colors = [
+        mix(0x4d653b, 0x6e5a3c, 0.28),
+        0x8f8a7c,
+        0x5e5038,
+        0xcdbb88,
+        0x827154,
+        0x8b877e,
+    ];
+    let mut layers: [Vec<f64>; OVERLAYS.len()] = std::array::from_fn(|_| vec![0.; count]);
+    let mut colors: [Vec<u32>; OVERLAYS.len()] = std::array::from_fn(|_| vec![0; count]);
     for i in 0..count {
         let (ux, uz) = position(i);
         let (x, z) = (metres(ux), metres(uz));
         // Breakup at two scales so no edge follows the 4 m grid.
         let breakup = noise(x, z, 11., 41.) * 0.65 + noise(x, z, 4., 43.) * 0.35 - 0.5;
-        let water = s.water_distance([ux, uz]);
+        // Shores, mud and sand reach no farther than 12 m from water (#855).
+        let water = s.water_distance_within([ux, uz], 1_200);
         let shore = if water == i64::MAX {
             f64::INFINITY
         } else {
@@ -379,20 +399,19 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         let recipe = crate::terrain_patch::weights(s, ux, uz);
         let gravel = gravel.max(recipe[0]);
         let rock = rock.max(recipe[1]);
-        for (layer, weight, color) in [
-            (Layer::Forest, forest, mix(0x4d653b, 0x6e5a3c, 0.28)),
-            (Layer::Gravel, gravel, 0x8f8a7c),
-            (Layer::Mud, mud, 0x5e5038),
-            (Layer::Sand, sand, 0xcdbb88),
-            (Layer::Path, path, 0x827154),
-            (Layer::Rock, rock, 0x8b877e),
-        ] {
-            layers.entry(layer).or_insert_with(|| vec![0.; count])[i] = weight;
-            colors.entry(layer).or_insert_with(|| vec![0; count])[i] =
-                tinted(color, x, z, f64::from(layer as u8) * 7.);
+        for (at, (weight, color)) in [forest, gravel, mud, sand, path, rock]
+            .into_iter()
+            .zip(overlay_colors)
+            .enumerate()
+        {
+            layers[at][i] = weight;
+            colors[at][i] = tinted(color, x, z, f64::from(OVERLAYS[at] as u8) * 7.);
         }
     }
-    Weights { layers, colors }
+    Weights {
+        layers: OVERLAYS.into_iter().zip(layers).collect(),
+        colors: OVERLAYS.into_iter().zip(colors).collect(),
+    }
 }
 
 /// Overlaps of two open rectangles `[min x, min z, max x, max z]`.
