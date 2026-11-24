@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { evidenceInReach, objectiveViews, QuestState } from "../src/world/units/quest-state";
+import { evidenceInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -35,6 +35,29 @@ describe("quest state", () => {
     expect(evidenceInReach(sheet({ entries: [{ quest: 33, progress: [1, 1, 1] }] }), sacks)).toBeNull();
     expect(evidenceInReach(open, [0, 90, 0])).toBeNull();
     expect(evidenceInReach(null, sacks)).toBeNull();
+  });
+
+  test("labels the NPC quest actions and picks the one Interact performs, in the quest's order (#1019)", () => {
+    // *A Guard's Last Watch* (quest 35): bandage Tam Hollis (NPC 44), then lead him home.
+    expect(objectiveViews(35, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Give Clean Bandage to Guardsman Tam Hollis (done)", "Escort Guardsman Tam Hollis to Greyhaven Outpost",
+    ]);
+    const fresh = sheet({ entries: [{ quest: 35, progress: [0, 0, 0] }] });
+    expect(questActionAt(fresh, 44)).toBe("Give Clean Bandage to Guardsman Tam Hollis");
+    expect(questActionAt(sheet({ entries: [{ quest: 35, progress: [1, 0, 0] }] }), 44)).toBe(
+      "Escort Guardsman Tam Hollis to Greyhaven Outpost",
+    );
+    expect(questActionAt(sheet({ entries: [{ quest: 35, progress: [1, 1, 0] }] }), 44)).toBeNull();
+    // *The Miller's Medicine* (quest 42): Jory gets his draught only after Hanne has the word.
+    expect(questActionAt(sheet({ entries: [{ quest: 42, progress: [0, 0, 0] }] }), 41)).toBeNull();
+    expect(questActionAt(sheet({ entries: [{ quest: 42, progress: [1, 0, 0] }] }), 41)).toBe("Give Fever Draught to Farmhand Jory");
+    expect(questActionAt(null, 44)).toBeNull();
+    // Trial kills, boulder hits and the watch post's walls read as counted objectives.
+    expect(objectiveViews(37, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Redbrand Bandit slain with the loaned weapon: 1/2", "Speak with Smith Wulfric Hale",
+    ]);
+    expect(objectiveViews(38, [0])[0]?.text).toBe("Redbrand Bandit crushed by a boulder: 0/2");
+    expect(objectiveViews(39, [1, 0])[0]?.text).toBe("Bring down the watch post's west wall (done)");
   });
 
   test("keeps the latest sheet and markers and ignores older ticks", () => {

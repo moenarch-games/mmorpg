@@ -269,7 +269,25 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                         .area_at(spot.at[0], spot.at[2])
                         .map(Area::id)
                 }),
-                QuestObjective::Talk { .. } | QuestObjective::DefeatThorn => None,
+                // The trial's and the boulder's foes (#1019) like kills; a structure the area it
+                // stands in; an escort the area it leads to. NPC actions have their marker.
+                QuestObjective::DefeatWithLoan { template, .. }
+                | QuestObjective::Crush { template, .. } => creature_area(content, template),
+                QuestObjective::Demolish { piece } => content
+                    .pieces()
+                    .iter()
+                    .find(|candidate| candidate.id == piece)
+                    .and_then(|piece| {
+                        content
+                            .areas()
+                            .area_at(piece.position[0], piece.position[2])
+                            .map(Area::id)
+                    }),
+                QuestObjective::Escort { area, .. } => Some(area),
+                QuestObjective::Talk { .. }
+                | QuestObjective::DefeatThorn
+                | QuestObjective::UseItem { .. }
+                | QuestObjective::Interview { .. } => None,
             };
             let Some(area) = area.and_then(|id| areas.iter().find(|area| area.id == id)) else {
                 continue;

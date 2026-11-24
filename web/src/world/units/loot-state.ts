@@ -197,4 +197,7 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "missing-materials": null,
   "wrong-form": null,
   "rewards-busy": "The realm cannot record that reward right now. The corpse keeps its rewards; try again in a moment.",
+  distrusted: null,
+  "npc-busy": null,
+  "escort-lost": null,
 };

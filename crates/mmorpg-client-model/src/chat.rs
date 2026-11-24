@@ -154,6 +154,10 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::MovementImmune => "It cannot be moved right now.".into(),
         ErrorCode::WrongForm => "You cannot do that in this form.".into(),
         ErrorCode::RewardsBusy => "The realm cannot record that reward right now. Try again in a moment.".into(),
+        // NPC quest actions (#1019).
+        ErrorCode::Distrusted => "They will not hear you. Bring a party member they trust to stand beside you, or earn a recommendation first.".into(),
+        ErrorCode::NpcBusy => "Someone else is already escorting them.".into(),
+        ErrorCode::EscortLost => "The escort is lost: you went too far ahead or fell. Find them at their post and try again.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -442,8 +446,15 @@ impl Logs {
                     (LineKind::Quest, format!("{} completed.", quest_name(quest)))
                 }
                 ZoneEvent::Raid { notice } => (LineKind::System, raid_notice_text(notice).into()),
-                ZoneEvent::Error { code, .. } => {
-                    let text = refusal_text(code);
+                ZoneEvent::Error { code, target } => {
+                    // An NPC quest refusal (#1019) names the NPC.
+                    let text = match (code, target) {
+                        (
+                            ErrorCode::Distrusted | ErrorCode::NpcBusy | ErrorCode::EscortLost,
+                            Some(npc @ EntityRef::Npc(_)),
+                        ) => format!("{}: {}", name(npc), refusal_text(code)),
+                        _ => refusal_text(code),
+                    };
                     refusals.push(text.clone());
                     (LineKind::Refusal, text)
                 }
