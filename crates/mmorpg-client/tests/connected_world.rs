@@ -811,6 +811,7 @@ async fn fragmented_projection_reaches_the_native_client() {
         doors: Vec::new(),
         projectiles: Vec::new(),
         debris: Vec::new(),
+        loads: Vec::new(),
         pieces: Vec::new(),
         depleted_veins: Vec::new(),
         summoned: Vec::new(),

@@ -126,6 +126,21 @@ describe("content catalog", () => {
     expect(broken({ kind: "escort", target: 6, source: 9, count: 1 })).toThrow("unknown NPC or area");
     expect(broken({ kind: "interview", target: 5, source: 1, count: 1 })).toThrow("has a source only");
   });
+
+  test("takes delivery objectives: an NPC taking a load from a load source (#1077)", () => {
+    const json = catalogJson();
+    (json.quests as Record<string, unknown>[])[0]!.objectives = [{ kind: "deliver", target: 6, source: 1, count: 1 }];
+    expect(decodeCatalog(JSON.stringify(json)).quests.get(1)?.objectives).toEqual([
+      { kind: "deliver", target: 6, source: 1, count: 1 },
+    ]);
+    const broken = (objective: Record<string, unknown>) => {
+      const copy = catalogJson();
+      (copy.quests as Record<string, unknown>[])[0]!.objectives = [objective];
+      return () => decodeCatalog(JSON.stringify(copy));
+    };
+    expect(broken({ kind: "deliver", target: 99, source: 1, count: 1 })).toThrow("unknown NPC");
+    expect(broken({ kind: "deliver", target: 6, source: 0, count: 1 })).toThrow("load source");
+  });
 });
 
 describe("ability input and HUD text", () => {

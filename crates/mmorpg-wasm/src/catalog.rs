@@ -67,7 +67,8 @@ pub struct QuestExport {
 /// and credits of #1019: `use_item` (`target` is an item given to NPC `source`), `escort`
 /// (`target` is an NPC led into area `source`), `interview` (`target` is an NPC),
 /// `defeat_with_loan` and `crush` (`target` is a creature template, slain with the quest's loan
-/// or hit by a boulder) or `demolish` (`target` is a structure piece). `questActionAt` picks the
+/// or hit by a boulder) or `demolish` (`target` is a structure piece), or `deliver` (#1077,
+/// `target` is the NPC taking a load from load source `source`). `questActionAt` picks the
 /// action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -95,6 +96,7 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         }
         QuestObjective::Crush { template, .. } => ("crush", template.get(), None),
         QuestObjective::Demolish { piece } => ("demolish", piece.get(), None),
+        QuestObjective::DeliverLoad { source, npc } => ("deliver", npc.get(), Some(source.get())),
     };
     ObjectiveExport {
         kind,

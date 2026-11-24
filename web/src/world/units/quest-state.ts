@@ -1,6 +1,6 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ObjectiveView, QuestView as ModelQuestView, TrackerRow } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type ZoneSnapshot } from "../../replication";
+import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type SetDownLoad, type ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 
@@ -83,6 +83,18 @@ export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: Ques
 export function evidenceInReach(sheet: QuestSheet | null, at: readonly number[]): number | null {
   const spot = sheet ? wasm.evidenceInReach(sheet, at[0]!, at[1]!, at[2]!) : 0;
   return spot === 0 ? null : spot;
+}
+
+/**
+ * The load (#1077) Interact lifts for a viewer centred at `at` units, seeing the set-down `loads`: 0 for its own
+ * set-down load in reach, otherwise the nearest load source in reach an open delivery of `sheet` names; null when
+ * there is none or while it is `carrying` one (the shared client model's rule; the zone checks it).
+ */
+export function liftInReach(
+  sheet: QuestSheet | null, at: readonly number[], carrying: boolean, loads: readonly SetDownLoad[],
+): number | null {
+  const source = sheet ? wasm.liftInReach(sheet, at[0]!, at[1]!, at[2]!, carrying, [...loads]) : -1;
+  return source < 0 ? null : source;
 }
 
 /**

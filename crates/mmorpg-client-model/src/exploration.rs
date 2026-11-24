@@ -284,6 +284,15 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                             .map(Area::id)
                     }),
                 QuestObjective::Escort { area, .. } => Some(area),
+                // A delivery (#1077) hints at where its load is fetched; its NPC has its marker.
+                QuestObjective::DeliverLoad { source, .. } => {
+                    content.load_spot(source).and_then(|spot| {
+                        content
+                            .areas()
+                            .area_at(spot.at[0], spot.at[2])
+                            .map(Area::id)
+                    })
+                }
                 QuestObjective::Talk { .. }
                 | QuestObjective::DefeatThorn
                 | QuestObjective::UseItem { .. }

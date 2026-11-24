@@ -81,7 +81,8 @@ export type AbilityRecord = {
  * (victory: Captain Thorn beaten in the Redbrand Depths, target 0) or a quest evidence spot (inspect, #1019).
  * The quest actions and credits of #1019: an item given to NPC `source` (use_item), an NPC led into area
  * `source` (escort), an NPC heard (interview), a creature template slain with the quest's loan
- * (defeat_with_loan) or hit by a boulder (crush), and a structure piece (demolish).
+ * (defeat_with_loan) or hit by a boulder (crush), and a structure piece (demolish). A delivery (#1077) names the NPC
+ * taking a load from load source `source` (deliver).
  */
 export type QuestObjectiveRecord =
   | {
@@ -89,7 +90,7 @@ export type QuestObjectiveRecord =
       target: number;
       count: number;
     }
-  | { kind: "collect" | "retrieve" | "use_item" | "escort"; target: number; source: number; count: number };
+  | { kind: "collect" | "retrieve" | "use_item" | "escort" | "deliver"; target: number; source: number; count: number };
 
 export type QuestRecord = {
   id: number;
@@ -137,6 +138,7 @@ const OBJECTIVE_KINDS = [
   "defeat_with_loan",
   "crush",
   "demolish",
+  "deliver",
 ] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
@@ -401,8 +403,16 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { kind, target, source: area, count };
       }
+      // A delivery (#1077): the NPC taking a load from a load source.
+      if (kind === "deliver") {
+        const source = int(objective.source, `${label} load source`, 1, 0xffff_ffff);
+        if (!npcsById.has(target)) {
+          fail(`${label} names an unknown NPC`);
+        }
+        return { kind, target, source, count };
+      }
       if (objective.source !== null) {
-        fail(`${label} has a source only when it collects, retrieves, gives an item or escorts`);
+        fail(`${label} has a source only when it collects, retrieves, gives an item, escorts or delivers`);
       }
       return { kind, target, count };
     });

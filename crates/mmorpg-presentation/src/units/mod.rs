@@ -17,6 +17,7 @@ pub mod effects;
 pub mod imported;
 pub mod kit;
 pub mod kit_effects;
+pub mod loads;
 pub mod player;
 pub mod presets;
 pub mod signal;
@@ -2111,6 +2112,12 @@ impl UnitPresenter {
                                         )
                                     })
                             }
+                            // A player's carried load (#1077) in both arms.
+                            EntityRef::Player(_) => unit
+                                .record
+                                .flags
+                                .load
+                                .and_then(|load| chores::Chores::get().load(load)),
                             _ => self
                                 .horns
                                 .get(&entity)
@@ -2346,6 +2353,12 @@ impl UnitPresenter {
             let centre = self.rendered(view.position);
             out.draws
                 .extend(breakables::piece(&mut self.resources, view, centre));
+        }
+        // Loads set down on the ground (#1077).
+        for (index, load) in snapshot.loads.iter().enumerate() {
+            let base = self.rendered(load.at);
+            out.draws
+                .extend(loads::set_down(&mut self.resources, index, load, base));
         }
         // A merchant on its cart journey (#992) pushes its handcart.
         for unit in input.units {

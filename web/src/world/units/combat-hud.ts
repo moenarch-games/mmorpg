@@ -74,6 +74,11 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "npc-busy": "Someone else is already escorting them.",
   "escort-lost": "The escort is lost: you went too far ahead or fell. Find them at their post and try again.",
   "not-sellable": "Vendors will not buy quest supplies or lent arms. Finish or abandon the quest to hand them back.",
+  // Carried loads (#1077).
+  "hands-full": "Your arms are full. Set the load down first (Interact).",
+  "not-carrying": "You are not carrying the load they need. Fetch it and bring it in your arms.",
+  "no-footing": "Stand on firm ground, out of the water, to lift or set down a load.",
+  "load-lost": "The water took your load. Fetch another where you found it.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

@@ -669,6 +669,14 @@ impl App {
                     // with the quest giver beside it selected.
                     self.send_interaction(command);
                     return true;
+                } else if let Some(command) = self
+                    .presentation
+                    .reachable_lift(self.npc_context.quests.as_ref())
+                {
+                    // Lifts the player's set-down load, or a delivery's load at its source, in
+                    // reach (#1077).
+                    self.send_interaction(command);
+                    return true;
                 } else if let Some(EntityRef::Npc(npc)) =
                     self.presentation.latest().and_then(|s| s.viewer.target)
                 {
@@ -693,6 +701,10 @@ impl App {
                     // A context owns the number keys until closed.
                     self.controls.focus_lost();
                     self.update_movement();
+                } else if self.presentation.carrying() {
+                    // With a load in both arms and no NPC to take it, Interact sets it down (#1077).
+                    self.send_interaction(mmorpg_core::ZoneCommand::SetDown);
+                    return true;
                 } else if let Some(command) = self.presentation.reachable_door() {
                     // Without a selected NPC, interact swings the door in reach (#158).
                     self.send_interaction(command);

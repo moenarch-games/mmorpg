@@ -287,6 +287,10 @@ mirror!(
         NpcBusy,
         EscortLost,
         NotSellable,
+        HandsFull,
+        NotCarrying,
+        NoFooting,
+        LoadLost,
     }
 );
 mirror!(
@@ -320,6 +324,18 @@ mirror!(
         Knife,
         Flask,
         Bomb
+    }
+);
+mirror!(
+    /// A load a player carries or set down (#1077).
+    #[serde(rename_all = "snake_case")]
+    LoadKind = core::LoadKind {
+        Crate,
+        Sack,
+        Firewood,
+        Hay,
+        Basket,
+        WaterJug
     }
 );
 mirror!(
@@ -414,6 +430,10 @@ pub struct EntityFlags {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[tsify(optional)]
     pub shapeshifted: bool,
+    /// The load a player carries in both arms (#1077); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[tsify(optional)]
+    pub load: Option<LoadKind>,
     /// An aggressive creature.
     pub hostile: bool,
     /// The viewer may attack it (living creatures).
@@ -469,6 +489,7 @@ impl From<&core::EntitySnapshot> for EntityState {
                 named_weapon: flags.named_weapon.map(Into::into),
                 great_weapon: flags.great_weapon.map(Into::into),
                 shapeshifted: flags.shapeshifted,
+                load: flags.load.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -502,6 +523,7 @@ impl From<&EntityState> for core::EntitySnapshot {
                 named_weapon: flags.named_weapon.map(Into::into),
                 great_weapon: flags.great_weapon.map(Into::into),
                 shapeshifted: flags.shapeshifted,
+                load: flags.load.map(Into::into),
                 hostile: flags.hostile,
                 attackable: flags.attackable,
                 tapped_by_other: flags.tapped_by_other,
@@ -942,6 +964,18 @@ pub struct DebrisState {
     pub rotation: [i16; 4],
     /// Ticks since the break, saturating at 255.
     pub age: u8,
+}
+
+/// A load set down near the viewer (#1077): base in units and u16 yaw; `own` when the viewer set it
+/// down and may lift it again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct SetDownLoad {
+    pub kind: LoadKind,
+    pub own: bool,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub facing: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
@@ -1739,6 +1773,10 @@ pub struct ZoneSnapshot {
     pub projectiles: Vec<ProjectileState>,
     /// Pieces of broken props, nearest first (#288).
     pub debris: Vec<DebrisState>,
+    /// Loads set down near the viewer, nearest first (#1077).
+    #[serde(default)]
+    #[tsify(optional)]
+    pub loads: Vec<SetDownLoad>,
 }
 
 impl From<&core::ZoneSnapshot> for ZoneSnapshot {
@@ -1966,6 +2004,21 @@ impl ZoneSnapshot {
                     }
                 })
                 .collect(),
+            loads: snapshot
+                .loads
+                .iter()
+                .map(|load| {
+                    let [x, y, z] = load.at;
+                    SetDownLoad {
+                        kind: load.kind.into(),
+                        own: load.own,
+                        x,
+                        y,
+                        z,
+                        facing: load.facing,
+                    }
+                })
+                .collect(),
         }
     }
 }
@@ -2141,6 +2194,16 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                     position: [debris.x, debris.y, debris.z],
                     rotation: debris.rotation,
                     age: debris.age,
+                })
+                .collect(),
+            loads: snapshot
+                .loads
+                .iter()
+                .map(|load| core::LoadView {
+                    kind: load.kind.into(),
+                    own: load.own,
+                    at: [load.x, load.y, load.z],
+                    facing: load.facing,
                 })
                 .collect(),
             pieces: snapshot
@@ -2344,6 +2407,13 @@ pub enum WorldCommand {
     QuestAction {
         npc_id: u32,
     },
+    /// Lifts a load (#1077, see `liftInReach()`): from load source `source`, or with 0 the
+    /// player's own set-down load.
+    Lift {
+        source: u32,
+    },
+    /// Sets the carried load down at the player's feet (#1077).
+    SetDown,
     /// Skins a beast corpse the player may loot (#917): once per death.
     Skin {
         creature_id: u32,
@@ -2501,6 +2571,10 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             C::QuestAction { npc_id } => Self::QuestAction {
                 npc: core::NpcId::new(npc_id),
             },
+            C::Lift { source } => Self::Lift {
+                source: (source != 0).then(|| core::LoadSpotId::new(source)),
+            },
+            C::SetDown => Self::SetDown,
             C::Skin { creature_id } => Self::Skin {
                 creature: core::CreatureId::new(creature_id),
             },
