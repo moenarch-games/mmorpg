@@ -152,12 +152,7 @@ mod tests {
         let path = mmorpg_core::golden::workspace_root()
             .join("fixtures/protocol")
             .join(name);
-        let hex = std::fs::read_to_string(path).expect("fixture");
-        let hex = hex.trim();
-        (0..hex.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hex"))
-            .collect()
+        mmorpg_protocol::fixture::bytes(&std::fs::read_to_string(path).expect("fixture"))
     }
 
     #[test]

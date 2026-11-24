@@ -1234,6 +1234,8 @@ pub(crate) fn take<const N: usize>(
     let array = bytes
         .try_into()
         .map_err(|_| ProtocolError::new("invalid payload width"))?;
+    #[cfg(test)]
+    crate::layout::trace::read(payload, *offset, N);
     *offset = end;
     Ok(array)
 }

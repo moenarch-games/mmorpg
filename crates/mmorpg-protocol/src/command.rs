@@ -708,7 +708,7 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use mmorpg_core::{
         CreatureId, EntityRef, MinionOrder, NpcId, StrikeAim, StrikeHeight, StrikeSide,
@@ -879,7 +879,7 @@ mod tests {
 
     /// The shared Rust/browser command fixture: one command per line as
     /// `<hex> <name> [fields]`.
-    fn command_fixture() -> String {
+    pub(crate) fn command_fixture() -> String {
         let commands = [
             ZoneCommand::Move {
                 forward: 1,
@@ -1124,10 +1124,7 @@ mod tests {
                 Some(tick) => encode_observed_command(command, tick),
                 None => encode_command(command),
             };
-            let hex = bytes
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>();
+            let hex = crate::fixture::command_hex(&bytes);
             let prefix = observed.map_or_else(String::new, |tick| format!("observed {tick} "));
             let fields = match command {
                 ZoneCommand::Move {
@@ -1272,11 +1269,7 @@ mod tests {
         );
         assert_eq!(checked_in, command_fixture());
         for line in checked_in.lines().filter(|line| !line.starts_with('#')) {
-            let hex = line.split_whitespace().next().unwrap();
-            let bytes = (0..hex.len())
-                .step_by(2)
-                .map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap())
-                .collect::<Vec<_>>();
+            let bytes = crate::fixture::bytes(line.split_whitespace().next().unwrap());
             let encoded = match decode_observed_command(&bytes).unwrap() {
                 (command, Some(tick)) => encode_observed_command(command, tick),
                 (command, None) => encode_command(command),
