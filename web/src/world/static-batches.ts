@@ -476,9 +476,13 @@ export class BatchedScenery {
     this.root.add(this.#animated.root);
   }
 
-  /** The white material of `node`'s emissive, double-sided and vertex-colour variant; one per variant. */
-  #material(node: Pick<RendererSceneNode, "emissive" | "doubleSided" | "unlit" | "color">, vertexColors: boolean): THREE.Material {
-    const white = { ...node, color: "#ffffff" } as unknown as RendererSceneNode;
+  /**
+   * The white material of `node`'s emissive, double-sided and vertex-colour variant; one per variant. Only the fields
+   * `presentationMaterial` reads are copied: spreading the node would decode its lazy geometry (#855).
+   */
+  #material(node: Pick<RendererSceneNode, "emissive" | "doubleSided" | "unlit" | "color" | "opacity">, vertexColors: boolean): THREE.Material {
+    const { emissive, doubleSided, unlit, opacity } = node;
+    const white = { emissive, doubleSided, unlit, opacity, color: "#ffffff" } as unknown as RendererSceneNode;
     const key = JSON.stringify([white.emissive ?? null, white.doubleSided ?? false, white.unlit ?? false, vertexColors]);
     let material = this.#materials.get(key);
     if (!material) {
