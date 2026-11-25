@@ -131,19 +131,60 @@ pub(crate) fn decode_entries(
 }
 
 /// Canonical and durable: turned-in quests, then entries.
+/// The canonical log: turned-in quests, entries, then the decisions' outcomes (#1019): `count u16 ·
+/// count × (quest u32 · option u8)`, in ascending quest order.
 pub(crate) fn encode_log(payload: &mut Vec<u8>, log: &QuestLog) -> Result<(), ProtocolError> {
     encode_completed(payload, &log.completed)?;
-    encode_entries(payload, &log.entries)
+    encode_entries(payload, &log.entries)?;
+    payload.extend_from_slice(
+        &encode_u16_count(
+            log.outcomes.len(),
+            usize::from(u16::MAX),
+            "too many quest outcomes",
+        )?
+        .to_be_bytes(),
+    );
+    for (quest, outcome) in &log.outcomes {
+        payload.extend_from_slice(&quest.get().to_be_bytes());
+        payload.push(*outcome);
+    }
+    Ok(())
 }
 
+/// A log; character records before #1019 have no outcomes (`outcomes` false).
 pub(crate) fn decode_log(
     payload: &[u8],
     offset: &mut usize,
     width: QuestIdWidth,
+    outcomes: bool,
 ) -> Result<QuestLog, ProtocolError> {
     let completed = decode_completed(payload, offset, width)?;
     let entries = decode_entries(payload, offset, width)?;
-    Ok(QuestLog { entries, completed })
+    let mut log = QuestLog {
+        entries,
+        completed,
+        outcomes: std::collections::BTreeMap::new(),
+    };
+    if outcomes {
+        let count = decode_u16_count(
+            payload,
+            offset,
+            usize::from(u16::MAX),
+            "too many quest outcomes",
+        )?;
+        for _ in 0..count {
+            let quest = decode_quest(u32::from_be_bytes(take(payload, offset)?))?;
+            if log
+                .outcomes
+                .last_key_value()
+                .is_some_and(|(last, _)| *last >= quest)
+            {
+                return Err(ProtocolError::new("quest outcomes are not ordered"));
+            }
+            log.outcomes.insert(quest, read_u8(payload, offset)?);
+        }
+    }
+    Ok(log)
 }
 
 /// Fails when the sheet outgrows [`crate::sheet::MAX_BUDGETED_SHEET_BYTES`], what the packet
@@ -241,14 +282,16 @@ mod tests {
         encode_sheet(&mut payload, &sheet).unwrap();
         assert!(payload.len() <= crate::sheet::MAX_BUDGETED_SHEET_BYTES);
 
+        let first = sheet.completed.first().copied().unwrap();
         let log = QuestLog {
             entries: Vec::new(),
             completed: sheet.completed,
+            outcomes: [(first, 2)].into(),
         };
         let mut payload = Vec::new();
         encode_log(&mut payload, &log).unwrap();
         assert_eq!(
-            decode_log(&payload, &mut 0, QuestIdWidth::Word).unwrap(),
+            decode_log(&payload, &mut 0, QuestIdWidth::Word, true).unwrap(),
             log
         );
     }

@@ -382,7 +382,7 @@ fn the_warden_turns_every_blow_aside_until_the_vault_glyph_bares_it() {
         code: ErrorCode::Warded,
         target: Some(target),
     }));
-    assert_eq!(world.zone.ward_views()[0].exposed, 0);
+    assert!(!world.zone.ward_views()[0].exposed_at(world.zone.snapshot().unwrap().tick));
 
     // The vault glyph bares its weak point; the next blow lands, and the kill counts.
     world.at_spot(1, world.glyph(vault::VAULT_GLYPH));
@@ -393,7 +393,7 @@ fn the_warden_turns_every_blow_aside_until_the_vault_glyph_bares_it() {
         },
     );
     assert_eq!(refusal(&events), None, "{events:?}");
-    assert!(world.zone.ward_views()[0].exposed > 0);
+    assert!(world.zone.ward_views()[0].exposed_at(world.zone.snapshot().unwrap().tick));
     world.stand_at(1, [spawn[0] + 120, spawn[1]]);
     let (dead, _) = strike(&mut world);
     assert!(dead, "the exposed warden falls");

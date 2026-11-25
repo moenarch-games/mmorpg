@@ -131,11 +131,20 @@ pub struct SealView {
     pub open: bool,
 }
 
-/// A ward as every player sees it (#1019): its weak point's remaining exposure, in ticks.
+/// A ward as every player sees it (#1019): the tick its weak point closes again (0: never
+/// exposed), so the view changes only when its glyph is worked.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WardView {
     pub mechanism: MechanismId,
-    pub exposed: u16,
+    pub exposed_until: u64,
+}
+
+impl WardView {
+    /// Whether the weak point is exposed at `tick`.
+    #[must_use]
+    pub const fn exposed_at(self, tick: u64) -> bool {
+        self.exposed_until > tick
+    }
 }
 
 type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
@@ -343,8 +352,7 @@ impl ZoneSimulation {
             .iter()
             .map(|state| WardView {
                 mechanism: state.mechanism,
-                exposed: u16::try_from(state.exposed_until.saturating_sub(self.tick))
-                    .unwrap_or(u16::MAX),
+                exposed_until: state.exposed_until,
             })
             .collect()
     }

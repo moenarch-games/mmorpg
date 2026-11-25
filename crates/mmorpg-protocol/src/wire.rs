@@ -213,6 +213,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::NoFooting => 60,
         ErrorCode::LoadLost => 61,
         ErrorCode::SiteNotReady => 62,
+        ErrorCode::SealOpen => 63,
+        ErrorCode::Warded => 64,
     }
 }
 
@@ -280,6 +282,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         60 => ErrorCode::NoFooting,
         61 => ErrorCode::LoadLost,
         62 => ErrorCode::SiteNotReady,
+        63 => ErrorCode::SealOpen,
+        64 => ErrorCode::Warded,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1427,6 +1431,63 @@ pub(crate) fn decode_minion_order(
 
 /// The not-intact pieces of a projection (#305): count (`u16`), then per piece its ID (`u32`)
 /// and stage (`u8`), in ascending ID order.
+/// The shrine's seals and wards (#1019): `count u8 · count × (piece u32 · set mask u8 · open u8)`,
+/// then `count u8 · count × (mechanism u32 · exposed-until tick u64)`, in content order.
+pub(crate) fn encode_shrine_views(
+    payload: &mut Vec<u8>,
+    seals: &[mmorpg_core::SealView],
+    wards: &[mmorpg_core::WardView],
+) -> Result<(), ProtocolError> {
+    payload.push(encode_u8_count(
+        seals.len(),
+        mmorpg_core::MAX_SEALS,
+        "too many seals",
+    )?);
+    for seal in seals {
+        payload.extend_from_slice(&seal.piece.get().to_be_bytes());
+        payload.push(seal.set);
+        payload.push(u8::from(seal.open));
+    }
+    payload.push(encode_u8_count(
+        wards.len(),
+        mmorpg_core::MAX_SEALS,
+        "too many wards",
+    )?);
+    for ward in wards {
+        payload.extend_from_slice(&ward.mechanism.get().to_be_bytes());
+        payload.extend_from_slice(&ward.exposed_until.to_be_bytes());
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_shrine_views(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<(Vec<mmorpg_core::SealView>, Vec<mmorpg_core::WardView>), ProtocolError> {
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_SEALS, "too many seals")?;
+    let seals = (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::SealView {
+                piece: mmorpg_core::PieceId::new(u32::from_be_bytes(take(payload, offset)?)),
+                set: read_u8(payload, offset)?,
+                open: read_bool(payload, offset)?,
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    let count = decode_u8_count(payload, offset, mmorpg_core::MAX_SEALS, "too many wards")?;
+    let wards = (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::WardView {
+                mechanism: mmorpg_core::MechanismId::new(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)),
+                exposed_until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    Ok((seals, wards))
+}
+
 pub(crate) fn encode_piece_views(
     payload: &mut Vec<u8>,
     pieces: &[mmorpg_core::PieceView],
@@ -1726,11 +1787,13 @@ mod tests {
             (60, ErrorCode::NoFooting),
             (61, ErrorCode::LoadLost),
             (62, ErrorCode::SiteNotReady),
+            (63, ErrorCode::SealOpen),
+            (64, ErrorCode::Warded),
         ] {
             assert_eq!(error_code(code), wire);
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 63, u16::MAX] {
+        for unknown in [0, 65, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

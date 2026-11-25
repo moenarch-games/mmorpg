@@ -91,9 +91,12 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         ));
     }
     let schema = u16::from_be_bytes(take(payload, offset)?);
+    let has_outcomes = schema == CHARACTER_RECORD_SCHEMA_VERSION;
     let (has_physique, quest_set, wide_ids, has_discoveries, has_caches, has_mastery) = match schema
     {
-        CHARACTER_RECORD_SCHEMA_VERSION => (true, true, true, true, true, true),
+        CHARACTER_RECORD_SCHEMA_VERSION | PRE_OUTCOME_SCHEMA_VERSION => {
+            (true, true, true, true, true, true)
+        }
         PRE_MASTERY_SCHEMA_VERSION => (true, true, true, true, true, false),
         PRE_CACHE_SCHEMA_VERSION => (true, true, true, true, false, false),
         PRE_DISCOVERY_SCHEMA_VERSION => (true, true, true, false, false, false),
@@ -134,12 +137,13 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
     let inventory = decode_inventory_ids(payload, offset, items)?;
     let equipment = decode_equipment_ids(payload, offset, items)?;
     let quests = if quest_set {
-        decode_log(payload, offset, quest_ids)?
+        decode_log(payload, offset, quest_ids, has_outcomes)?
     } else {
         let completed = decode_completed_mask(payload, offset)?;
         QuestLog {
             entries: decode_entries(payload, offset, quest_ids)?,
             completed,
+            outcomes: std::collections::BTreeMap::new(),
         }
     };
     let waystones = if wide_ids {
@@ -227,6 +231,10 @@ pub fn decode_character_record(payload: &[u8]) -> Result<CharacterRecord, Protoc
         physique,
     })
 }
+
+/// The record schema before quest decisions' outcomes (#1019). Such records still load with none
+/// decided; they are written again in the current schema.
+const PRE_OUTCOME_SCHEMA_VERSION: u16 = 0x47e2;
 
 /// The record schema before weapon mastery (#915). Such records still load untrained; they are
 /// written again in the current schema.

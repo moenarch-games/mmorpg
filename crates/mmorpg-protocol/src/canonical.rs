@@ -62,6 +62,10 @@ const QUEST_ACTION_INTENT: u8 = 34;
 const LIFT_INTENT: u8 = 35;
 /// Setting the carried load down (#1077).
 const SET_DOWN_INTENT: u8 = 36;
+/// A quest decision at an NPC (#1019): NPC (u32), option (u8).
+const DECIDE_INTENT: u8 = 37;
+/// Working a mechanism (#1019): its ID (u32).
+const OPERATE_INTENT: u8 = 38;
 const ALIVE: u8 = 1;
 const CORPSE: u8 = 2;
 const DESPAWNED: u8 = 3;
@@ -130,6 +134,8 @@ pub fn encode_canonical_snapshot(
     encode_escorts(&mut payload, &snapshot.escorts)?;
     encode_loads(&mut payload, &snapshot.loads)?;
     encode_constructions(&mut payload, &snapshot.constructions)?;
+    encode_seals(&mut payload, &snapshot.seals)?;
+    encode_wards(&mut payload, &snapshot.wards)?;
     Ok(payload)
 }
 
@@ -237,6 +243,17 @@ impl Codec for CanonicalPlayerSnapshot {
                 PlayerIntent::Inspect(spot) => {
                     payload.push(INSPECT_INTENT);
                     payload.extend_from_slice(&spot.to_be_bytes());
+                    continue;
+                }
+                PlayerIntent::Decide(npc, option) => {
+                    payload.push(DECIDE_INTENT);
+                    payload.extend_from_slice(&npc.get().to_be_bytes());
+                    payload.push(option);
+                    continue;
+                }
+                PlayerIntent::Operate(mechanism) => {
+                    payload.push(OPERATE_INTENT);
+                    payload.extend_from_slice(&mechanism.to_be_bytes());
                     continue;
                 }
                 PlayerIntent::Lift(source) => {
@@ -571,6 +588,17 @@ impl Codec for CanonicalPlayerSnapshot {
                 )?)));
                 continue;
             }
+            if code == DECIDE_INTENT {
+                let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+                intents.push(PlayerIntent::Decide(npc, read_u8(payload, offset)?));
+                continue;
+            }
+            if code == OPERATE_INTENT {
+                intents.push(PlayerIntent::Operate(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)));
+                continue;
+            }
             if code == LIFT_INTENT {
                 intents.push(PlayerIntent::Lift(
                     match u32::from_be_bytes(take(payload, offset)?) {
@@ -885,7 +913,8 @@ impl Codec for CanonicalPlayerSnapshot {
         for _ in 0..chat_count {
             chat.push(crate::chat::decode_line(payload, offset)?);
         }
-        let quests = crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word)?;
+        let quests =
+            crate::quest::decode_log(payload, offset, crate::quest::QuestIdWidth::Word, true)?;
         let waystones = crate::wire::decode_waystones(payload, offset)?;
         let discoveries = crate::wire::decode_discoveries(payload, offset)?;
         let caches = crate::wire::decode_caches(payload, offset)?;
@@ -1397,6 +1426,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let escorts = decode_escorts(payload, &mut offset)?;
     let loads = decode_loads(payload, &mut offset)?;
     let constructions = decode_constructions(payload, &mut offset)?;
+    let seals = decode_seals(payload, &mut offset)?;
+    let wards = decode_wards(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1427,6 +1458,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         escorts,
         loads,
         constructions,
+        seals,
+        wards,
         depths,
         rewind_history,
         gathering,
@@ -1516,6 +1549,145 @@ fn encode_escorts(
         }
     }
     Ok(())
+}
+
+/// Every seal (#1019): a count (`u16`), then per seal in content order its piece (`u32`), its
+/// mechanisms' set ticks (count `u8`, each a flag `u8` and, when set, the tick `u64`), its
+/// openers (count `u16`, each `u32`) and whether it is open (`u8`), an open one adding the tick
+/// it opened (`u64`).
+fn encode_seals(
+    payload: &mut Vec<u8>,
+    seals: &[mmorpg_core::SealState],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            seals.len(),
+            mmorpg_core::MAX_SEALS,
+            "seals exceed their count",
+        )?
+        .to_be_bytes(),
+    );
+    for seal in seals {
+        payload.extend_from_slice(&seal.piece.get().to_be_bytes());
+        payload.push(encode_u8_count(
+            seal.set.len(),
+            mmorpg_core::MAX_SEAL_MECHANISMS,
+            "seal mechanisms exceed their count",
+        )?);
+        for set in &seal.set {
+            payload.push(u8::from(set.is_some()));
+            if let Some(at) = set {
+                payload.extend_from_slice(&at.to_be_bytes());
+            }
+        }
+        payload.extend_from_slice(
+            &encode_u16_count(
+                seal.openers.len(),
+                usize::from(u16::MAX),
+                "seal openers exceed their count",
+            )?
+            .to_be_bytes(),
+        );
+        for opener in &seal.openers {
+            payload.extend_from_slice(&opener.to_be_bytes());
+        }
+        payload.push(u8::from(seal.opened.is_some()));
+        if let Some(opened) = seal.opened {
+            payload.extend_from_slice(&opened.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn decode_seals(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::SealState>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_SEALS,
+        "seals exceed their count",
+    )?;
+    let tick = |payload: &[u8], offset: &mut usize| -> Result<Option<u64>, ProtocolError> {
+        Ok(if read_bool(payload, offset)? {
+            Some(u64::from_be_bytes(take(payload, offset)?))
+        } else {
+            None
+        })
+    };
+    (0..count)
+        .map(|_| {
+            let piece = mmorpg_core::PieceId::new(u32::from_be_bytes(take(payload, offset)?));
+            let mechanisms = decode_u8_count(
+                payload,
+                offset,
+                mmorpg_core::MAX_SEAL_MECHANISMS,
+                "seal mechanisms exceed their count",
+            )?;
+            let set = (0..mechanisms)
+                .map(|_| tick(payload, offset))
+                .collect::<Result<_, _>>()?;
+            let openers = decode_u16_count(
+                payload,
+                offset,
+                usize::from(u16::MAX),
+                "seal openers exceed their count",
+            )?;
+            let openers = (0..openers)
+                .map(|_| take(payload, offset).map(u32::from_be_bytes))
+                .collect::<Result<_, _>>()?;
+            Ok(mmorpg_core::SealState {
+                piece,
+                set,
+                openers,
+                opened: tick(payload, offset)?,
+            })
+        })
+        .collect()
+}
+
+/// Every ward (#1019): a count (`u16`), then per ward in content order its mechanism (`u32`) and
+/// the tick its weak point closes again (`u64`).
+fn encode_wards(
+    payload: &mut Vec<u8>,
+    wards: &[mmorpg_core::WardState],
+) -> Result<(), ProtocolError> {
+    payload.extend_from_slice(
+        &encode_u16_count(
+            wards.len(),
+            mmorpg_core::MAX_SEALS,
+            "wards exceed their count",
+        )?
+        .to_be_bytes(),
+    );
+    for ward in wards {
+        payload.extend_from_slice(&ward.mechanism.get().to_be_bytes());
+        payload.extend_from_slice(&ward.exposed_until.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_wards(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::WardState>, ProtocolError> {
+    let count = decode_u16_count(
+        payload,
+        offset,
+        mmorpg_core::MAX_SEALS,
+        "wards exceed their count",
+    )?;
+    (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::WardState {
+                mechanism: mmorpg_core::MechanismId::new(u32::from_be_bytes(take(
+                    payload, offset,
+                )?)),
+                exposed_until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect()
 }
 
 /// Every construction site (#1019): a count (`u16`), then per site in content order its piece
@@ -3091,6 +3263,16 @@ pub(crate) mod tests {
                     raised: Some(70),
                 },
             ],
+            seals: vec![mmorpg_core::SealState {
+                piece: mmorpg_core::PieceId::new(6),
+                set: vec![Some(60), None],
+                openers: vec![1, 2],
+                opened: None,
+            }],
+            wards: vec![mmorpg_core::WardState {
+                mechanism: mmorpg_core::MechanismId::new(3),
+                exposed_until: 75,
+            }],
             depths: None,
             rewind_history: vec![mmorpg_core::RewindFrame {
                 tick: 41,
@@ -3378,9 +3560,11 @@ pub(crate) mod tests {
         }
     }
 
-    /// The quest log below: two turned-in quests, then quests 3 and 32 with their progress.
-    const LOG: [u8; 25] = [
-        0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 32, 0xff, 2, 7,
+    /// The quest log below: two turned-in quests, quests 3 and 32 with their progress, then quest
+    /// 2's outcome (#1019).
+    const LOG: [u8; 32] = [
+        0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0, 32, 0xff, 2, 7, 0, 1, 0, 0,
+        0, 2, 1,
     ];
 
     #[test]
@@ -3397,6 +3581,8 @@ pub(crate) mod tests {
             PlayerIntent::AbandonQuest { quest: 0 },
             PlayerIntent::Inspect(0x0506_0708),
             PlayerIntent::QuestAction(mmorpg_core::NpcId::new(0x0102_0304)),
+            PlayerIntent::Decide(mmorpg_core::NpcId::new(0x0102_0305), 2),
+            PlayerIntent::Operate(0x0A0B_0C0E),
             PlayerIntent::Lift(Some(mmorpg_core::LoadSpotId::new(0x0A0B_0C0D))),
             PlayerIntent::Lift(None),
             PlayerIntent::SetDown,
@@ -3413,6 +3599,7 @@ pub(crate) mod tests {
                 },
             ],
             completed: [mmorpg_core::QuestId::new(1), mmorpg_core::QuestId::new(2)].into(),
+            outcomes: [(mmorpg_core::QuestId::new(2), 1)].into(),
         };
         let encoded = encode_canonical_snapshot(&snapshot).unwrap();
         assert_eq!(decode_canonical_snapshot(&encoded).unwrap(), snapshot);
@@ -3422,6 +3609,8 @@ pub(crate) mod tests {
             &[0, ABANDON_QUEST_INTENT, 0, 0, 0, 0],
             &[0, INSPECT_INTENT, 5, 6, 7, 8],
             &[0, QUEST_ACTION_INTENT, 1, 2, 3, 4],
+            &[0, DECIDE_INTENT, 1, 2, 3, 5, 2],
+            &[0, OPERATE_INTENT, 0x0A, 0x0B, 0x0C, 0x0E],
             &[0, LIFT_INTENT, 0x0A, 0x0B, 0x0C, 0x0D],
             &[0, LIFT_INTENT, 0, 0, 0, 0],
             &[0, SET_DOWN_INTENT],

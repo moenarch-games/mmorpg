@@ -1260,7 +1260,13 @@ fn trees() -> Vec<StaticCollider> {
         .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
         .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
         .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
-        .chain(shrine::vault::walls())
+        // Nothing grows out of the sealed vault's rock cover (#1019).
+        .chain(
+            shrine::collision_meshes()
+                .into_iter()
+                .filter(|mesh| ids::SHRINE_VAULT_COVER.contains(&mesh.id))
+                .map(|mesh| mesh.bounds().expect("valid shrine vault cover bounds")),
+        )
         .chain(
             fort::meshes()
                 .into_iter()

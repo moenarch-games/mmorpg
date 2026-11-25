@@ -715,7 +715,7 @@ fn decode_projection(
         && (!abilities.cooldowns.is_empty() || !abilities.auras.is_empty()))
         || (dead && !abilities.auras.is_empty())
         || abilities.target != target;
-    let (doors, pieces, raid, depleted_veins) = sheet_bytes(Sheet::World)
+    let (doors, pieces, raid, depleted_veins, (seals, wards)) = sheet_bytes(Sheet::World)
         .map(|received| crate::sheet::decode_world_sheet(&received.bytes))
         .transpose()?
         .unwrap_or_default();
@@ -807,6 +807,8 @@ fn decode_projection(
         loads,
         pieces,
         depleted_veins,
+        seals,
+        wards,
         summoned,
         traps,
         raid,
@@ -1027,6 +1029,15 @@ pub(crate) mod tests {
                 },
             ],
             depleted_veins: vec![1],
+            seals: vec![mmorpg_core::SealView {
+                piece: mmorpg_core::PieceId::new(6),
+                set: 0b10,
+                open: false,
+            }],
+            wards: vec![mmorpg_core::WardView {
+                mechanism: mmorpg_core::MechanismId::new(3),
+                exposed_until: 1_234,
+            }],
             traps: vec![mmorpg_core::TrapView {
                 id: mmorpg_core::TrapId::new(1),
                 age: 30,
@@ -1531,10 +1542,11 @@ pub(crate) mod tests {
     const COOLDOWNS: usize = ABILITIES + ENTITY_REF_BYTES;
     const AURAS: usize = COOLDOWNS + 1 + 2 * 6;
     const TARGET_AURAS: usize = AURAS + 1 + 9;
-    /// The world sheet (#882): two doors, two pieces, the raid signal with one braced spot and
-    /// one spent vein (#917).
+    /// The world sheet (#882): two doors, two pieces, the raid signal with one braced spot,
+    /// one spent vein (#917), and one seal and one ward (#1019).
     const WORLD: usize = TARGET_AURAS + 1 + 9;
-    const WORLD_BYTES: usize = (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4) + (2 + 4);
+    const WORLD_BYTES: usize =
+        (2 + 2 * 5) + (2 + 2 * 5) + (4 + 2 + 2 + 4) + (2 + 4) + (1 + 6) + (1 + 12);
     /// The waystone sheet (#882): none unlocked and no area discovered (#983).
     const WAYSTONES: usize = WORLD + WORLD_BYTES;
     const SHEETS_END: usize = WAYSTONES + 2 + 2;
@@ -2372,21 +2384,23 @@ pub(crate) mod tests {
             quests: None,
             pieces: Vec::new(),
             depleted_veins: Vec::new(),
+            seals: Vec::new(),
+            wards: Vec::new(),
             summoned: Vec::new(),
             traps: Vec::new(),
         };
         let packed = pack_snapshot(&snapshot).unwrap();
-        // (1,077 − 114 − 9 − 73 − 2 − 16 × 17) / 29 = 20 records fit beside the empty loot and
-        // ability sheets, the world sheet with nine doors and a raid signal (#882), the empty
-        // waystone sheet and a full event section.
-        assert_eq!(packed.packed_entities, 20);
+        // 19 records fit beside the empty loot and ability sheets, the world sheet with nine doors,
+        // a raid signal (#882) and the seal and ward counts (#1019, which took the twentieth's last
+        // bytes), the empty waystone sheet and a full event section.
+        assert_eq!(packed.packed_entities, 19);
         assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
         assert!(
             packed.payload.len() + SESSION_SNAPSHOT_HEADER_BYTES + DATAGRAM_SAFETY_MARGIN_BYTES
                 <= MEASURED_MIN_DATAGRAM_BYTES
         );
         let decoded = decode_snapshot(&packed.payload).unwrap();
-        assert_eq!(decoded.entities[..], snapshot.entities[..20]);
+        assert_eq!(decoded.entities[..], snapshot.entities[..19]);
         assert_eq!(
             decoded.entities[1].entity(),
             target,
@@ -2398,7 +2412,7 @@ pub(crate) mod tests {
             "player projection exceeds the byte budget"
         );
         // Without events, doors, a raid signal or a bag sheet the budget holds 31 records beside
-        // the empty loot (1 byte), ability (8), world (7) and waystone (2) sheets, and all 32
+        // the empty loot (1 byte), ability (8), world (9, #1019) and waystone (2) sheets, and all 32
         // once the client holds those sheets.
         let quiet = ZoneSnapshot {
             events: Vec::new(),
@@ -2410,7 +2424,7 @@ pub(crate) mod tests {
         assert_eq!(packed.packed_entities, 31);
         assert_eq!(
             packed.payload.len(),
-            PLAYER_SNAPSHOT_FIXED_BYTES + 20 + 31 * ENTITY_RECORD_BYTES
+            PLAYER_SNAPSHOT_FIXED_BYTES + 22 + 31 * ENTITY_RECORD_BYTES
         );
         let mut holder = SnapshotDecoder::new();
         holder.decode(&packed.payload).unwrap();
@@ -2442,10 +2456,11 @@ pub(crate) mod tests {
             assert_eq!(decoded.events, with_sheet.events);
             assert_eq!(decoded.entities[1].entity(), target);
             assert!(packed.payload.len() <= MAX_PLAYER_PROJECTION_BYTES);
-            // The full bag and quest sheets (136 + 203 bytes beside the other 16) leave room for
-            // 20 whole records, and for 10 beside a full event section.
+            // The full bag and quest sheets (136 + 203 bytes beside the other 18) leave room for
+            // 19 whole records (#1019: the world sheet's seal and ward counts took the twentieth's
+            // last bytes), and for 10 beside a full event section.
             if events == 0 {
-                assert_eq!(packed.packed_entities, 20);
+                assert_eq!(packed.packed_entities, 19);
             }
             if events == 16 {
                 assert_eq!(packed.packed_entities, 10);

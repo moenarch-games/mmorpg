@@ -215,6 +215,8 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([1, 4], vec![item(3, FUR, [1, 2]), nothing(1)]),
         // The Redbrand Courier (#1019): coin, no gear.
         ([4, 9], vec![nothing(1)]),
+        // The Shrine Warden (#1019): an elite's purse and, often, a Pine Buckler.
+        ([20, 30], vec![item(1, ItemId::new(5), [1, 1]), nothing(1)]),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

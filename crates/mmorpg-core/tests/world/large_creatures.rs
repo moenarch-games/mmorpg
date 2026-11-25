@@ -234,7 +234,8 @@ fn ogres_are_large_and_ordinary_creatures_are_not() {
         .filter(|template| template.is_large())
         .map(|template| template.name.as_str())
         .collect();
-    assert_eq!(large, ["Hill Ogre"]);
+    // The Shrine Warden (#1019) has an ogre's frame.
+    assert_eq!(large, ["Hill Ogre", "Shrine Warden"]);
     assert_eq!(
         content.creature_ability(mmorpg_core::greyhaven_vale::units::templates::HILL_OGRE),
         Some(ids::STOMP)
