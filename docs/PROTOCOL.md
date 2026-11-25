@@ -443,6 +443,8 @@ The ring and the barrow (#1019, slice 5a) add no command, projected record or sn
 
 The debt and the Downs road (#1019, slice 5b) add no command or projected record. They add error codes 70 `PatrolResting` and 71 `PatrolArrived`. The canonical snapshot ends with the supply patrols' runs after the further raid sites: a count (`u8`, at most 16), then per run in lookout order its lookout NPC (`u32`), start tick (`u64`), its members' marches (count `u8`, at most 6, each the next waypoint `u8` and anchor XZ `i32` each) and its rest end tick (`u64`). Objective codes 27 (sight: lookout NPC) and 28 (ambush: lookout NPC) and each supply patrol (lookout, members, route, sight and post radii) enter the content identity.
 
+The village and the river (#1019, slice 6a) add no command, error code, projected record or canonical byte. A decision option's turn-in reward enters the content identity only where authored (`reward` and its copper), so earlier content keeps its identity bytes.
+
 ## Procedural action observations: snapshot v15, command v9 unchanged
 
 Wire and core schema version 15 apply to both canonical and player-visible snapshots. They add event tags 16 and 17 within the existing 14-byte event record, without changing section layouts, entity sizes, content revision, gameplay/RNG, commands or the datagram budget. Ordinary attack occurrences are distinct from generic damage: periodic damage, ranged abilities and channel pulses never imply a new melee swing. Cast and action observations support per-actor presentation; damage observations support target-local impacts without participant HUD attribution. Queue priority and conservative packet filtering keep critical participant feedback and required viewer/target entities.
