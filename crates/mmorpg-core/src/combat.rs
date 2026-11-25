@@ -1408,6 +1408,9 @@ impl ZoneSimulation {
         if let Some(kind) = template.prop() {
             return self.prop_breaks(creature_id, kind, killer.unwrap_or(entity), now);
         }
+        // Whether the final blow landed outside its front arc (#1019): its striker stood off its
+        // authoritative facing, measured from its centre, as a flank is.
+        let flanked = self.final_blow_flanks(creature_id, killer)?;
         let body = self
             .world
             .remove_body(body_id(entity))
@@ -1511,13 +1514,14 @@ impl ZoneSimulation {
         }
         self.mark_corpse(creature_id, corruptors);
         if pays_rewards {
+            let life = (creature_id, generation, flanked);
             if let Some(player_id) = tapper
                 && self.kill_credit_eligible(player_id, spot)?
             {
-                self.kill_credit(player_id, level, template, creature_id, generation)?;
+                self.kill_credit(player_id, level, template, life)?;
             }
             for &mate in &party_shares {
-                self.kill_credit(mate, level, template, creature_id, generation)?;
+                self.kill_credit(mate, level, template, life)?;
             }
             // Every meaningful boss contributor earns the kill objective, across parties
             // (#276, 5.1.74); `credit_kill` records each life once per quest log.
@@ -1526,7 +1530,7 @@ impl ZoneSimulation {
                     && !party_shares.contains(&player_id)
                     && self.kill_credit_eligible(player_id, spot)?
                 {
-                    self.credit_kill(player_id, template, creature_id, generation)?;
+                    self.credit_kill(player_id, template, creature_id, generation, flanked)?;
                 }
             }
         }
@@ -1538,15 +1542,41 @@ impl ZoneSimulation {
         self.boss_defeated(creature_id, now)
     }
 
-    /// One player's kill XP and kill-objective credit, each at most once per creature life.
+    /// Whether `killer`'s final blow on creature `creature_id` landed outside its front arc
+    /// (#1019): the killer (a minion's summoner counts through the minion's own position) stands
+    /// more than [`crate::FLANK_FRONT_HALF_ARC`] off the creature's facing.
+    fn final_blow_flanks(
+        &self,
+        creature_id: CreatureId,
+        killer: Option<EntityRef>,
+    ) -> Result<bool, ZoneError> {
+        let (Some(killer), Some(creature)) = (killer, self.creatures.get(&creature_id)) else {
+            return Ok(false);
+        };
+        if killer == EntityRef::Creature(creature_id) {
+            return Ok(false);
+        }
+        let facing = creature.facing;
+        let here = self.unit_position(EntityRef::Creature(creature_id))?;
+        let Ok(at) = self.unit_position(killer) else {
+            return Ok(false);
+        };
+        Ok(
+            crate::trig::yaw_from_vector(at[0] - here[0], at[2] - here[2])
+                .is_some_and(|bearing| crate::flanks(facing, bearing)),
+        )
+    }
+
+    /// One player's kill XP and kill-objective credit, each at most once per creature life:
+    /// `life` is the creature, its generation and whether the final blow flanked it.
     fn kill_credit(
         &mut self,
         player_id: PlayerId,
         level: u8,
         template: crate::CreatureTemplateId,
-        creature_id: CreatureId,
-        generation: u64,
+        life: (CreatureId, u64, bool),
     ) -> Result<(), ZoneError> {
+        let (creature_id, generation, flanked) = life;
         let key = crate::RewardKey::KillExperience {
             creature: creature_id,
             life: generation,
@@ -1562,7 +1592,7 @@ impl ZoneSimulation {
             };
             self.pay_zone_reward(player_id, key, payout)?;
         }
-        self.credit_kill(player_id, template, creature_id, generation)
+        self.credit_kill(player_id, template, creature_id, generation, flanked)
     }
 
     /// The camp reacts to its boss's actual death (#276, 5.1.79): idle creatures of its family
@@ -1768,7 +1798,8 @@ impl ZoneSimulation {
                 || content.is_cart_bandit(creature_id)
                 || content.is_confrontation_foe(creature_id)
                 || content.is_prowler(creature_id)
-                || content.supply_patrol_of(creature_id).is_some();
+                || content.supply_patrol_of(creature_id).is_some()
+                || content.crossing_of(creature_id).is_some();
             if let Life::Despawned { died_at } = creature.life
                 && !waits_for_incident
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))
@@ -1784,5 +1815,72 @@ impl ZoneSimulation {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::greyhaven_vale::{self, quests};
+    use crate::quest::{MAX_QUEST_OBJECTIVES, QuestEntry};
+    use crate::{CreatureId, EntityRef, ZoneId, ZoneSimulation};
+
+    /// A zone with player 1 on *The River's Teeth* (#1019) standing `offset` units from crayfish
+    /// `id`, which it tapped and which faces north.
+    fn struck_from(id: CreatureId, offset: [i32; 2]) -> ZoneSimulation {
+        let content = greyhaven_vale::content();
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(1), Arc::clone(&content)).unwrap();
+        zone.add_player(1).unwrap();
+        let at = content
+            .creature_spawns()
+            .iter()
+            .find(|spawn| spawn.id == id)
+            .unwrap()
+            .position;
+        let mut state = zone.snapshot().unwrap();
+        let [x, z] = [at[0] + offset[0], at[1] + offset[1]];
+        let y = content.definition().ground_at(x, z) + crate::PLAYER_HALF_EXTENTS_UNITS[1];
+        state.players[0].position = crate::physics::from_units([x, y, z]);
+        let mut zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+        zone.players
+            .get_mut(&1)
+            .unwrap()
+            .quests
+            .entries
+            .push(QuestEntry {
+                quest: quests::THE_RIVERS_TEETH,
+                progress: [0; MAX_QUEST_OBJECTIVES],
+            });
+        let creature = zone.creatures.get_mut(&id).unwrap();
+        creature.facing = 32_768;
+        creature.tapped_by = Some(1);
+        zone
+    }
+
+    #[test]
+    fn only_a_final_blow_from_outside_the_front_arc_counts_for_an_outflank() {
+        let crayfish = CreatureId::new(3_160);
+        // From in front of a crayfish facing north, the kill is no flank …
+        let mut zone = struck_from(crayfish, [0, -150]);
+        let now = zone.tick;
+        zone.creature_dies(crayfish, Some(EntityRef::Player(1)), now)
+            .unwrap();
+        assert_eq!(zone.players[&1].quests.entries[0].progress[0], 0);
+        // … from its side or its back it is; one without a striker never is.
+        for offset in [[150, 0], [-150, 0], [0, 150]] {
+            let mut zone = struck_from(crayfish, offset);
+            let now = zone.tick;
+            zone.creature_dies(crayfish, Some(EntityRef::Player(1)), now)
+                .unwrap();
+            assert_eq!(
+                zone.players[&1].quests.entries[0].progress[0], 1,
+                "{offset:?}"
+            );
+        }
+        let mut zone = struck_from(crayfish, [150, 0]);
+        let now = zone.tick;
+        zone.creature_dies(crayfish, None, now).unwrap();
+        assert_eq!(zone.players[&1].quests.entries[0].progress[0], 0);
     }
 }

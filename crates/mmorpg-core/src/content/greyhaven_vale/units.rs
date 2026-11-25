@@ -545,6 +545,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::barrowdown::spawns())
         // The Downs road's supply patrol, standing only while it marches (#1019).
         .chain(super::downs::spawns())
+        // Fenford's crossing raiders, standing only while Carter Aldo crosses (#1019).
+        .chain(super::fenford::spawns())
         .collect()
 }
 
@@ -571,7 +573,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::barrowdown::npcs())
         // The Downs road's lookout (#1019).
         .chain(super::downs::npcs())
-        // Fenford's watchman at the ford and the boatman above it (#1019).
+        // Fenford's watchman at the ford, the boatman above it, the carter on the south bank and
+        // the reed-cutter on the Marsh Lake's island (#1019).
         .chain(super::fenford::npcs())
         .collect()
 }

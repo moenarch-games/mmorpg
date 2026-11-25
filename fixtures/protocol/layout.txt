@@ -902,6 +902,16 @@ canonical @2410 1B
 canonical @2411 4B
 canonical @2415 4B
 canonical @2419 8B
+canonical @2427 1B
+canonical @2428 4B
+canonical @2432 8B
+canonical @2440 4B
+canonical @2444 4B
+canonical @2448 2B
+canonical @2450 8B
+canonical @2458 1B
+canonical @2459 4B
+canonical @2463 8B
 player-snapshot @0 3B
 player-snapshot @3 1B
 player-snapshot @4 4B

@@ -67,8 +67,9 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
     // The Outpost's 21, then the region's people (#819) and the smith (#917).
     // ... the Core Vale's wounded watchman and courier, Millbrook's farmfolk, the farmland
     // tower's watchman, Lise's four ewes, the Tollys, the granary hands, Barrowdown's grave
-    // robber, the Downs road's lookout and Fenford's watchman and boatman (#1019).
-    assert_eq!(content.npcs().len(), 63);
+    // robber, the Downs road's lookout, Fenford's watchman, boatman and carter, and Netter Ilsa's
+    // sister on the Marsh Lake (#1019).
+    assert_eq!(content.npcs().len(), 65);
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }

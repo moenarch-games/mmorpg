@@ -235,6 +235,8 @@ pub mod ids {
     /// rock cover cells.
     pub const SHRINE_VAULT_WALLS: RangeInclusive<u32> = 470..=478;
     pub const SHRINE_VAULT_COVER: RangeInclusive<u32> = 479..=482;
+    /// The barricade on Fenford's ford (#1019), a construction site.
+    pub const FORD_BARRICADE: u32 = 483;
 
     /// The Greyfang standing stones (#159).
     pub const STANDING_STONES: RangeInclusive<u32> = 500..=506;
@@ -2299,6 +2301,10 @@ fn content_with_spawns(
             .with_flock(flock::strays(), Some(flock::watch()))?
             // The Downs road's supply patrol (#1019), after the livestock and every reserved group.
             .with_supply_patrols(vec![downs::patrol()])?
+            // Carter Aldo's crossing of Fenford's ford and the crayfish lure's casting stakes
+            // (#1019), after the supply patrol, the evidence and the quests.
+            .with_crossings(vec![fenford::crossing()])?
+            .with_lures(fenford::lures())?
             // Who leaves a character's world after its decision (#1019), after the quests.
             .with_departures(quests::departures())?
             .with_caches(discoveries::caches())?

@@ -258,10 +258,10 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46), slice 3b's
     // shrine and ledger (47–50), slice 4a's farmland stories (51, 52, 54, 56–58), slice 4b's
     // flock (53, 55), slice 4c's missing family and granary (59–62), slice 5a's ring and
-    // barrow (63–66), slice 5b's debt and Downs road (67–70) and slice 6a's village and river (71,
-    // 72, 74, 75, 77).
-    assert_eq!(content.quests().len(), 75);
-    assert_eq!(content.evidence().len(), 31);
+    // barrow (63–66), slice 5b's debt and Downs road (67–70), slice 6a's village and river (71,
+    // 72, 74, 75, 77) and slice 6b's crossings under threat (73, 76, 78, 79).
+    assert_eq!(content.quests().len(), 79);
+    assert_eq!(content.evidence().len(), 34);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {
             let (dx, dz) = (
@@ -284,17 +284,19 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
             spot.name,
             art.map(|art| &art.id)
         );
-        let named = content.quests().iter().any(|quest| {
-            quest.objectives.iter().any(|objective| match *objective {
-                QuestObjective::Inspect { spot: named }
-                | QuestObjective::Transcribe { spot: named, .. }
-                | QuestObjective::Lay { spot: named, .. } => named == spot.id,
-                _ => false,
-            })
-        });
+        // A lure's casting stake (#1019) is cast at with a quest's supplied bait instead.
+        let named = content.lure(spot.id).is_some()
+            || content.quests().iter().any(|quest| {
+                quest.objectives.iter().any(|objective| match *objective {
+                    QuestObjective::Inspect { spot: named }
+                    | QuestObjective::Transcribe { spot: named, .. }
+                    | QuestObjective::Lay { spot: named, .. } => named == spot.id,
+                    _ => false,
+                })
+            });
         assert!(
             named,
-            "{}: no quest inspects, transcribes or lays at it",
+            "{}: no quest inspects, transcribes, lays or casts at it",
             spot.name
         );
     }

@@ -300,17 +300,13 @@ fn fenfords_spots_stand_on_their_ground_and_its_people_at_their_posts() {
     for item in [quests::ROPE_BLOCK, quests::SMUGGLERS_TOKEN] {
         assert_eq!(sell_price(item), 0);
     }
-    // The catalogue holds IDs 1-72, 74, 75 and 77; 73, 76, 78 and 79 are slice 6b's.
+    // The catalogue holds IDs 1-79 since slice 6b (`fenford_crossings`).
     let ids: Vec<u32> = content
         .quests()
         .iter()
         .map(|quest| quest.id.get())
         .collect();
-    assert_eq!(
-        ids,
-        (1..=72).chain([74, 75, 77]).collect::<Vec<_>>(),
-        "75 quests"
-    );
+    assert_eq!(ids, (1..=79).collect::<Vec<_>>(), "79 quests");
 }
 
 #[test]

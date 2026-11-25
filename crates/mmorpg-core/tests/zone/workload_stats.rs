@@ -37,6 +37,12 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
             .supply_patrols()
             .iter()
             .map(|patrol| patrol.members.len())
+            .sum::<usize>()
+        // Fenford's crossing raiders (#1019) until Carter Aldo crosses.
+        + content
+            .crossings()
+            .iter()
+            .map(|crossing| crossing.raiders.len())
             .sum::<usize>();
     // Far-away idle creatures sleep and near ones decide on their staggered tick (#814).
     let thinking = content.creature_spawns().len() - props - raiders;

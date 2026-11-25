@@ -38,6 +38,10 @@
     {"id":"quest-ford-stake-south","asset":"discoveries.kit.fen-marker","position":[108200,165,29350],"yaw":32768,"scale":[900,900,900]},
     {"id":"quest-crated-wheel","asset":"settlement.props.crate","position":[104200,977,19700],"yaw":0,"scale":[1000,1000,1000]},
     {"id":"quest-alder-spring","asset":"settlement.props.water-trough","position":[96000,815,22000],"yaw":16384,"scale":[900,900,900]},
-    {"id":"quest-spring-jugs","asset":"settlement.props.pottery","position":[96000,815,22150],"yaw":0,"scale":[1000,1000,1000]}
+    {"id":"quest-spring-jugs","asset":"settlement.props.pottery","position":[96000,815,22150],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"quest-casting-stake-first","asset":"discoveries.kit.fen-marker","position":[93351,487,24371],"yaw":16384,"scale":[700,700,700]},
+    {"id":"quest-casting-stake-second","asset":"discoveries.kit.fen-marker","position":[95351,507,24791],"yaw":16384,"scale":[700,700,700]},
+    {"id":"quest-casting-stake-third","asset":"discoveries.kit.fen-marker","position":[97351,487,25211],"yaw":16384,"scale":[700,700,700]},
+    {"id":"quest-lane-hurdles","asset":"settlement.props.firewood","position":[107300,327,27500],"yaw":16384,"scale":[1100,1100,1100]}
   ]
 }

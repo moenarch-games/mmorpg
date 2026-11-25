@@ -737,6 +737,16 @@
       "rewards": {"experience": 300, "copper": 20, "choices": []}
     },
     {
+      "id": 73,
+      "name": "A Crossing Under Fire",
+      "text": "Carter Aldo waits on the south bank with the first load over my marked ford, and Redbrands lie in the reeds for it. Tell him to drive on and keep them off his cart until it is up the north bank. If it breaks, he mends it and tries again.",
+      "giver": 29,
+      "ender": 29,
+      "prerequisite": 72,
+      "objectives": [{"crossing": {"npc": 64}}],
+      "rewards": {"experience": 450, "copper": 30, "choices": []}
+    },
+    {
       "id": 74,
       "name": "The Missing Mill Wheel",
       "text": "My mill's brake wheel cracked in the gale, and I have had the sails chocked since. The new wheel came crated on the cart by the inn. Carry it over and set it down against the mill's north wall, and we will fit it.",
@@ -757,6 +767,17 @@
       "rewards": {"experience": 250, "copper": 20, "choices": []}
     },
     {
+      "id": 76,
+      "name": "The River's Teeth",
+      "text": "The crayfish upstream cut my nets, and their shells turn a blade from the front. Cast this baited line at a stake by one and it turns to the bait. Bring two down with a blow to the side or back, by the line or your own footwork.",
+      "giver": 30,
+      "ender": 30,
+      "prerequisite": 17,
+      "objectives": [{"outflank": {"template": 25, "count": 2}}],
+      "supplies": [{"item": 51}],
+      "rewards": {"experience": 350, "copper": 25, "choices": []}
+    },
+    {
       "id": 77,
       "name": "The Smuggler's Token",
       "text": "Goods come over my ford by night and pay me nothing. Find where they are hidden upstream, ask their owner about them, then tell the Watch's man at the ford whether he gets the token, or whether I settle it myself.",
@@ -766,6 +787,26 @@
       "objectives": [{"find": {"spot": 31, "item": 50}}, {"interview": {"npc": 63}}, {"decide": {"npc": 62}}],
       "decision": [{"label": "Hand the token to the Watch", "reward": 20}, {"label": "Say nothing; Osk settles it", "reward": 10}],
       "rewards": {"experience": 350, "copper": 15, "choices": []}
+    },
+    {
+      "id": 78,
+      "name": "Across the Reeds",
+      "text": "My sister Nell went up to the Marsh Lake for reeds and sheltered on the drowned tower's island. She cannot swim. Lead her off by the causeway and the shallows, never through the deep water, and east into Fenwater Crossing.",
+      "giver": 30,
+      "ender": 30,
+      "prerequisite": 17,
+      "objectives": [{"escort": {"npc": 65, "area": 26}}],
+      "rewards": {"experience": 400, "copper": 25, "choices": []}
+    },
+    {
+      "id": 79,
+      "name": "The Ford Watch",
+      "text": "Aldo brings his next load over, and the Redbrands will try again. Raise a barricade from the hurdles at the lane's foot on the bank east of my stakes, then tell Aldo to drive on and hold the ford until his cart is over.",
+      "giver": 29,
+      "ender": 29,
+      "prerequisite": 73,
+      "objectives": [{"build": {"piece": 11}}, {"crossing": {"npc": 64}}],
+      "rewards": {"experience": 500, "copper": 35, "choices": []}
     }
   ],
   "departures": [
@@ -812,7 +853,10 @@
     {"id": 28, "name": "the ford's north stake", "at": [108200, 150, 28150], "reach": 200},
     {"id": 29, "name": "the ford's middle stake", "at": [108200, 9, 28750], "reach": 200},
     {"id": 30, "name": "the ford's south stake", "at": [108200, 165, 29350], "reach": 200},
-    {"id": 31, "name": "the alder roots", "at": [103200, 518, 26500], "reach": 200, "directions": "in sailcloth among the alder roots, upstream of the boatman's mooring"}
+    {"id": 31, "name": "the alder roots", "at": [103200, 518, 26500], "reach": 200, "directions": "in sailcloth among the alder roots, upstream of the boatman's mooring"},
+    {"id": 32, "name": "the casting stake by the first crayfish", "at": [93351, 487, 24371], "reach": 200},
+    {"id": 33, "name": "the casting stake by the second crayfish", "at": [95351, 507, 24791], "reach": 200},
+    {"id": 34, "name": "the casting stake by the third crayfish", "at": [97351, 487, 25211], "reach": 200}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},
@@ -821,6 +865,7 @@
     {"id": 4, "name": "timber from the hamlet barn", "kind": "firewood", "at": [14600, 739, 41900], "reach": 300},
     {"id": 5, "name": "the sack of loaves", "kind": "sack", "at": [-4950, 462, 55700], "reach": 300},
     {"id": 6, "name": "the crated brake wheel", "kind": "crate", "at": [104200, 977, 19700], "reach": 300},
-    {"id": 7, "name": "a jug from the alder spring", "kind": "water_jug", "at": [96000, 815, 22000], "reach": 300}
+    {"id": 7, "name": "a jug from the alder spring", "kind": "water_jug", "at": [96000, 815, 22000], "reach": 300},
+    {"id": 8, "name": "hurdles at the lane's foot", "kind": "firewood", "at": [107300, 327, 27500], "reach": 300}
   ]
 }
