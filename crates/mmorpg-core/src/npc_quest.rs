@@ -25,6 +25,9 @@
 //!   ([`crate::LoadState`]); empty arms are refused with [`crate::ErrorCode::NotCarrying`].
 //! - **Defence**: starts the raid site's defence ([`crate::raid`]) at once when the site is ready;
 //!   otherwise [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
+//! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
+//!   ([`crate::DecisionOption::copper`]) takes its copper at once, or is refused with
+//!   [`crate::ErrorCode::NotEnoughMoney`].
 //!
 //! The escorts are canonical zone state, so snapshots, replay and recovery continue them; the
 //! log stores the completed objectives like a talk objective's.
@@ -292,12 +295,15 @@ impl ZoneSimulation {
                 }
                 self.complete_objective(player_id, quest, index);
             }
-            // A decision (#1019) stores the chosen option until the turn-in keeps it.
+            // A decision (#1019) stores the chosen option until the turn-in keeps it; a paid
+            // option takes its copper now or is refused.
             QuestObjective::Decide { .. } => {
-                let Some(option) = decision.filter(|option| {
-                    content.quest(quest).is_some_and(|definition| {
-                        (1..=definition.decision.len()).contains(&usize::from(*option))
-                    })
+                let Some((option, cost)) = decision.and_then(|option| {
+                    let chosen = content
+                        .quest(quest)?
+                        .decision
+                        .get(usize::from(option).checked_sub(1)?)?;
+                    Some((option, chosen.copper))
                 }) else {
                     return Ok(Some((ErrorCode::InvalidQuest, target)));
                 };
@@ -305,6 +311,16 @@ impl ZoneSimulation {
                     .players
                     .get_mut(&player_id)
                     .ok_or_else(|| ZoneError::new("deciding player is absent"))?;
+                if cost > 0 {
+                    let Some(copper) = player.copper.checked_sub(cost) else {
+                        return Ok(Some((ErrorCode::NotEnoughMoney, target)));
+                    };
+                    let Some(revision) = player.inventory_revision.checked_add(1) else {
+                        return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
+                    };
+                    player.copper = copper;
+                    player.inventory_revision = revision;
+                }
                 if let Some(entry) = player
                     .quests
                     .entries

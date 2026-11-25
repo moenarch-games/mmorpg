@@ -185,7 +185,10 @@ pub use equipment::{
     PRIMARY_STAT_PER_DAMAGE, StatTotals,
 };
 pub use events::{ErrorCode, MAX_EVENTS_PER_PLAYER, ZoneEvent};
-pub use evidence::{EVIDENCE_HEIGHT_UNITS, EvidenceId, EvidenceSpot, MAX_EVIDENCE_REACH_UNITS};
+pub use evidence::{
+    EVIDENCE_HEIGHT_UNITS, EvidenceId, EvidenceSpot, MAX_EVIDENCE_DIRECTIONS_BYTES,
+    MAX_EVIDENCE_REACH_UNITS,
+};
 pub use finds::{
     ITEM_FINDS, ItemFind, ItemQuality, ItemTrait, NamedWeapon, STANDARD_FIND_WEIGHT, find_text,
     item_find, roll_variant, rolls_as, shaped_strike,
@@ -272,11 +275,11 @@ pub use projection::{
     SheetStamp, SheetStamps, TargetDetail, ViewerState, ZoneSnapshot,
 };
 pub use quest::{
-    MAX_DECISION_BYTES, MAX_DECISION_OPTIONS, MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG,
-    MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES, MAX_QUEST_REQUIRES, MAX_QUEST_SUPPLIES,
-    MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcDeparture, NpcMarker, QUEST_REACH_UNITS, Quest,
-    QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective, QuestRewards,
-    QuestSheet, QuestSupply,
+    DecisionOption, MAX_DECISION_BYTES, MAX_DECISION_COPPER, MAX_DECISION_OPTIONS,
+    MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES,
+    MAX_QUEST_REQUIRES, MAX_QUEST_SUPPLIES, MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcDeparture,
+    NpcMarker, QUEST_REACH_UNITS, Quest, QuestContentError, QuestEntry, QuestId, QuestLog,
+    QuestMarker, QuestObjective, QuestRewards, QuestSheet, QuestSupply,
 };
 pub use raid::{
     AidChore, AidKind, AidTask, Civilian, RaidApproach, RaidIncident, RaidLeg, RaidMember,

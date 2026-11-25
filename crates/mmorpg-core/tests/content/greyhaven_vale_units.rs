@@ -729,6 +729,12 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::vale::MILLBROOK_FARM)
             ),
+            // The farmland tower's watchman, who takes its bread (#1019).
+            (
+                "Watchman Dunstan",
+                NpcRole::QuestGiver,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -921,7 +927,8 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
         guard("Watchman Pell", settlements::GREYFANG_WATCH),
         giver("Goodwife Ena", FARMLAND_AND_HAMLETS),
         resident("Ploughman Garr", FARMLAND_AND_HAMLETS),
-        resident("Old Bertil", FARMLAND_AND_HAMLETS),
+        // Old Bertil gives *Bertil's Heirloom* (#1019).
+        giver("Old Bertil", FARMLAND_AND_HAMLETS),
         giver("Shepherd Lise", FARMLAND_AND_HAMLETS),
         giver("Miller Hanne", FARMLAND_AND_HAMLETS),
         resident("Farmhand Jory", FARMLAND_AND_HAMLETS),

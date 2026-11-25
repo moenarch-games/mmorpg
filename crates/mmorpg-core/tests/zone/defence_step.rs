@@ -15,7 +15,7 @@ fn defence_work_follows_the_raiders_and_not_the_idle_population() {
             run.raid_raiders_visited, raiders,
             "{raiders}/{idle}: {run:?}"
         );
-        // Greyhaven's two barricades, every tick.
-        assert_eq!(run.constructions_visited, 2, "{raiders}/{idle}: {run:?}");
+        // Greyhaven's two barricades and the fold's two hurdles (#1019), every tick.
+        assert_eq!(run.constructions_visited, 4, "{raiders}/{idle}: {run:?}");
     }
 }

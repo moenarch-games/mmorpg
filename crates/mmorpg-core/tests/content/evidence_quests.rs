@@ -256,9 +256,9 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     let content = greyhaven_vale::content();
     // The 32 quests before #1019, slice 1's three evidence quests, slice 2's seven (35, 37–42)
     // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46) and slice
-    // 3b's shrine and ledger (47–50).
-    assert_eq!(content.quests().len(), 50);
-    assert_eq!(content.evidence().len(), 10);
+    // 3b's shrine and ledger (47–50), and slice 4a's farmland stories (51, 52, 54, 56–58).
+    assert_eq!(content.quests().len(), 56);
+    assert_eq!(content.evidence().len(), 13);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {
             let (dx, dz) = (
@@ -267,13 +267,19 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
             );
             dx.hypot(dz) <= 100.0
         });
-        assert!(art.is_some(), "{}: no art within 1 m", spot.name);
+        // A hidden spot (#1019) has no art to give it away; the quest log's directions find it.
+        assert_eq!(
+            art.is_some(),
+            !spot.hidden(),
+            "{}: art within 1 m only when in plain sight",
+            spot.name
+        );
         let ground = content.definition().ground_at(spot.at[0], spot.at[2]);
         assert!(
             (spot.at[1] - ground).abs() <= 50,
-            "{} ({}) floats off the ground at {ground}",
+            "{} ({:?}) floats off the ground at {ground}",
             spot.name,
-            art.unwrap().id
+            art.map(|art| &art.id)
         );
         let named = content.quests().iter().any(|quest| {
             quest.objectives.iter().any(|objective| match *objective {

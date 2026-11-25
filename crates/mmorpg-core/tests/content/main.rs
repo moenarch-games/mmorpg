@@ -18,6 +18,7 @@ mod forest_lynx;
 mod garrick;
 mod greyhaven_vale;
 mod greyhaven_vale_units;
+mod hamlet_stories;
 mod highland_bandits;
 mod highlands;
 mod hunt_outing;

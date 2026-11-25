@@ -12,6 +12,11 @@
     {"id":"quest-greyfang-toll-book","asset":"discoveries.kit.hunter-chest","position":[13500,8299,-88200],"yaw":32768,"scale":[900,900,900]},
     {"id":"quest-lakeward-glyph","asset":"discoveries.kit.fen-marker","position":[-8500,200,-4960],"yaw":0,"scale":[800,800,800]},
     {"id":"quest-cave-glyph","asset":"discoveries.kit.fen-marker","position":[-12000,200,-5080],"yaw":32768,"scale":[800,800,800]},
-    {"id":"quest-vault-glyph","asset":"discoveries.kit.fen-marker","position":[-16200,200,-5060],"yaw":32768,"scale":[800,800,800]}
+    {"id":"quest-vault-glyph","asset":"discoveries.kit.fen-marker","position":[-16200,200,-5060],"yaw":32768,"scale":[800,800,800]},
+    {"id":"quest-choked-millrace","asset":"settlement.props.firewood","position":[-560,-20,6050],"yaw":9000,"scale":[700,700,700]},
+    {"id":"quest-gate-tracks","asset":"discoveries.kit.hunter-clue","position":[13300,588,49900],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"quest-enas-grain","asset":"settlement.props.grain-sacks","position":[-9900,601,35400],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"quest-hamlet-timber","asset":"settlement.props.firewood","position":[14600,739,41900],"yaw":0,"scale":[1300,1300,1300]},
+    {"id":"quest-hannes-loaves","asset":"settlement.props.bread-basket","position":[-4950,462,55700],"yaw":0,"scale":[1000,1000,1000]}
   ]
 }
