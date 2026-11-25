@@ -324,13 +324,15 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                         content.areas().area_at(x, z).map(Area::id)
                     }),
                 // A homecoming (#1019) hints at the area its destination NPC stands in, a recruit
-                // at where its NPC stands: it carries no quest marker.
-                QuestObjective::EscortTo { to: npc, .. } | QuestObjective::Recruit { npc } => {
-                    content
-                        .npc(npc)
-                        .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
-                        .map(Area::id)
-                }
+                // at where its NPC stands: it carries no quest marker. The Downs road's patrol
+                // (#1019) is watched and called out at its lookout.
+                QuestObjective::EscortTo { to: npc, .. }
+                | QuestObjective::Recruit { npc }
+                | QuestObjective::Sight { npc }
+                | QuestObjective::Ambush { npc } => content
+                    .npc(npc)
+                    .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
+                    .map(Area::id),
                 // A rubbing (#1019) hints at the area round its inscription, an unsealing at the area
                 // its seal's first glyph lies in. A hidden find hints at nothing: its quest log reads
                 // the landmark directions instead.

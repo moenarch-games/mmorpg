@@ -332,6 +332,11 @@ pub struct ZoneTickWork {
     pub stray_ways_tested: usize,
     /// Prowlers the flock step visited (#1019): each prowler of a running watch once.
     pub prowlers_visited: usize,
+    /// Supply patrols the supply step visited (#1019): each content patrol once, every tick.
+    pub supply_patrols_visited: usize,
+    /// Patrol members the supply step visited (#1019): each member of a run under way or at rest
+    /// once.
+    pub supply_members_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -408,6 +413,8 @@ pub struct ZoneSimulation {
     pub(crate) strays: BTreeMap<crate::NpcId, crate::StrayState>,
     /// The running or settling watch over the flock (#1019), canonical.
     pub(crate) watch: Option<crate::WatchState>,
+    /// Supply patrols' runs under way or at rest (#1019), by lookout, canonical.
+    pub(crate) supply_runs: BTreeMap<crate::NpcId, crate::SupplyRun>,
     /// Every player's one load, carried or set down (#1077), canonical.
     pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
     /// Every construction site's material and raising (#1019), canonical.
@@ -470,6 +477,7 @@ impl ZoneSimulation {
                 || zone.content.is_cart_bandit(id)
                 || zone.content.is_confrontation_foe(id)
                 || zone.content.is_prowler(id)
+                || zone.content.supply_patrol_of(id).is_some()
             {
                 zone.reserve_raider(id)?;
             } else {
@@ -622,6 +630,7 @@ impl ZoneSimulation {
             escorts: BTreeMap::new(),
             strays: BTreeMap::new(),
             watch: None,
+            supply_runs: BTreeMap::new(),
             loads: BTreeMap::new(),
             constructions,
             seals,
@@ -1113,6 +1122,8 @@ impl ZoneSimulation {
         self.advance_npc_quests(now)?;
         // Strays shy, are penned or bolt, and a watch over the flock runs (#1019).
         self.advance_flock(now)?;
+        // Supply patrols are sighted, stopped, arrive or rest (#1019).
+        self.advance_supply(now)?;
         // Set-down loads run out, and fallen or drowned carriers lose theirs (#1077).
         self.advance_loads(now)?;
         self.advance_depths(now)?;

@@ -182,6 +182,8 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::StrayBolted => "Left alone too long, the ewe bolted back to where you found her.".into(),
         ErrorCode::OutOfOrder => "The stones fall silent: that was not the inscription's order. Begin again from its first stone.".into(),
         ErrorCode::StaffShown => "They will not speak with a staff held in plain sight. Put it away, or bring a party member they trust or a good word they accept.".into(),
+        ErrorCode::PatrolResting => "\"The last patrol has only just passed. Give them time to form up again.\"".into(),
+        ErrorCode::PatrolArrived => "\"They made the camp in the hollow. I will watch for the next patrol; ask me when you are ready.\"".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -478,7 +480,9 @@ impl Logs {
                             | ErrorCode::StaffShown
                             | ErrorCode::NpcBusy
                             | ErrorCode::EscortLost
-                            | ErrorCode::NotCarrying,
+                            | ErrorCode::NotCarrying
+                            | ErrorCode::PatrolResting
+                            | ErrorCode::PatrolArrived,
                             Some(npc @ EntityRef::Npc(_)),
                         ) => format!("{}: {}", name(npc), refusal_text(code)),
                         _ => refusal_text(code),

@@ -191,6 +191,23 @@ pub const SCATTERED_OFFERING: EvidenceId = EvidenceId::new(22);
 pub const RING_INSCRIPTION: EvidenceId = EvidenceId::new(23);
 pub const TURNED_EARTH: EvidenceId = EvidenceId::new(24);
 
+/// The debt and the Downs road (#1019, slice 5b): Gwen's unpaid round settled between two
+/// villagers, the Downs signal lit and the supply patrol watched from the lookout, the patrol
+/// stopped before its camp for its orders, and the peace Maud sends Gwen once the torc and the
+/// debt are settled ([`super::downs`]).
+pub const THE_UNPAID_ALE: QuestId = QuestId::new(67);
+pub const THE_ROADSIDE_SIGNAL: QuestId = QuestId::new(68);
+pub const THE_DOWNS_AMBUSH: QuestId = QuestId::new(69);
+pub const PEACE_AT_THE_REST: QuestId = QuestId::new(70);
+/// The two villagers Gwen's slate names.
+pub const SHEPHERD_CORIN: NpcId = NpcId::new(23);
+pub const FARMER_TOBIN: NpcId = NpcId::new(25);
+/// The signal's tinder, a supply, and the patrol's orders, from the packbearer's body.
+pub const SIGNAL_TINDER: ItemId = ItemId::new(47);
+pub const ORDER_POUCH: ItemId = ItemId::new(48);
+/// The cold beacon by the lookout.
+pub const DOWNS_BEACON: EvidenceId = EvidenceId::new(25);
+
 pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
 pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
 /// Their supplies: the bait and the snare, worth nothing to a vendor.
@@ -488,6 +505,12 @@ enum ObjectiveSource {
         sequence: u32,
         count: u8,
     },
+    Sight {
+        npc: u32,
+    },
+    Ambush {
+        npc: u32,
+    },
 }
 
 /// An aid objective's chore (#1019).
@@ -630,6 +653,13 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::WorkInOrder { sequence, count } => Self::WorkInOrder {
                 sequence: crate::SequenceId::new(sequence),
                 count,
+            },
+            // The Downs road's supply patrol (#1019).
+            ObjectiveSource::Sight { npc } => Self::Sight {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Ambush { npc } => Self::Ambush {
+                npc: NpcId::new(npc),
             },
         }
     }

@@ -66,9 +66,9 @@ fn brook_bridge_ford_gate_culvert_and_recovery() {
     let content = greyhaven_vale::content();
     // The Outpost's 21, then the region's people (#819) and the smith (#917).
     // ... the Core Vale's wounded watchman and courier, Millbrook's farmfolk, the farmland
-    // tower's watchman, Lise's four ewes, the Tollys, the granary hands and Barrowdown's grave
-    // robber (#1019).
-    assert_eq!(content.npcs().len(), 60);
+    // tower's watchman, Lise's four ewes, the Tollys, the granary hands, Barrowdown's grave
+    // robber and the Downs road's lookout (#1019).
+    assert_eq!(content.npcs().len(), 61);
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }

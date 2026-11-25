@@ -299,6 +299,8 @@ mirror!(
         StrayBolted,
         OutOfOrder,
         StaffShown,
+        PatrolResting,
+        PatrolArrived,
     }
 );
 mirror!(

@@ -245,6 +245,15 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .sequence(sequence)
                 .map_or("the stones", |sequence| sequence.name.as_str())
         ),
+        // The Downs road (#1019): "Watch the supply patrol come up the road with Lookout Brenna",
+        // "Stop the supply patrol before it reaches its camp"; Interact at the lookout calls it out.
+        QuestObjective::Sight { npc } => format!(
+            "Watch the supply patrol come up the road with {}",
+            objective_npc(content, npc)
+        ),
+        QuestObjective::Ambush { .. } => {
+            "Stop the supply patrol before it reaches its camp".to_owned()
+        }
     }
 }
 
@@ -329,6 +338,8 @@ pub fn objective_view(
         | QuestObjective::Lay { .. }
         | QuestObjective::EscortTo { .. }
         | QuestObjective::Recruit { .. }
+        | QuestObjective::Sight { .. }
+        | QuestObjective::Ambush { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -350,7 +361,9 @@ pub fn objective_view(
         | QuestObjective::Watch { .. }
         | QuestObjective::Lay { .. }
         | QuestObjective::EscortTo { .. }
-        | QuestObjective::Recruit { .. } => label.clone(),
+        | QuestObjective::Recruit { .. }
+        | QuestObjective::Sight { .. }
+        | QuestObjective::Ambush { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -940,7 +953,9 @@ mod tests {
                     | QuestObjective::Watch { .. }
                     | QuestObjective::Lay { .. }
                     | QuestObjective::EscortTo { .. }
-                    | QuestObjective::Recruit { .. } => {
+                    | QuestObjective::Recruit { .. }
+                    | QuestObjective::Sight { .. }
+                    | QuestObjective::Ambush { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

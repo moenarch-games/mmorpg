@@ -1103,6 +1103,7 @@ impl ZoneSimulation {
             .get(&id)
             .and_then(|creature| creature.raid)
             .map(|member| member.anchor)
+            .or_else(|| self.supply_anchor(id))
             .or_else(|| self.den_home(id))
             .unwrap_or(spawn.position)
     }

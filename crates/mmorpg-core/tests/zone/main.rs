@@ -35,6 +35,7 @@ mod quests;
 mod recovery;
 mod routines;
 mod seal_step;
+mod supply_step;
 mod vendor;
 mod waystones;
 mod workload_stats;

@@ -182,6 +182,16 @@ pub enum QuestObjective {
         sequence: crate::SequenceId,
         count: u8,
     },
+    /// Watch the supply patrol lookout `npc` calls out come up the road (#1019,
+    /// [`crate::SupplyPatrol`]): [`crate::ZoneCommand::QuestAction`] at the lookout calls it out
+    /// once the quest's earlier objectives are done, and the objective is done for each player
+    /// watching with the lookout when a member comes within its sight. The log stores it.
+    Sight { npc: NpcId },
+    /// Stop the supply patrol lookout `npc` calls out before it reaches its camp (#1019):
+    /// [`crate::ZoneCommand::QuestAction`] at the lookout calls it out, and the objective is done
+    /// for each player near the carrier when it falls on the way. A patrol that arrives fails it
+    /// ([`crate::ErrorCode::PatrolArrived`]) and is called again. The log stores it.
+    Ambush { npc: NpcId },
 }
 
 impl QuestObjective {
@@ -214,14 +224,17 @@ impl QuestObjective {
             | Self::Watch { .. }
             | Self::Lay { .. }
             | Self::EscortTo { .. }
-            | Self::Recruit { .. } => 1,
+            | Self::Recruit { .. }
+            | Self::Sight { .. }
+            | Self::Ambush { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
     /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
-    /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit, 26 work in order.
+    /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit, 26 work in order,
+    /// 27 sight, 28 ambush.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -251,6 +264,8 @@ impl QuestObjective {
             Self::EscortTo { .. } => 24,
             Self::Recruit { .. } => 25,
             Self::WorkInOrder { .. } => 26,
+            Self::Sight { .. } => 27,
+            Self::Ambush { .. } => 28,
         }
     }
 
@@ -267,7 +282,9 @@ impl QuestObjective {
             | Self::Decide { npc }
             | Self::Watch { npc }
             | Self::EscortTo { npc, .. }
-            | Self::Recruit { npc } => Some(npc),
+            | Self::Recruit { npc }
+            | Self::Sight { npc }
+            | Self::Ambush { npc } => Some(npc),
             _ => None,
         }
     }
@@ -668,6 +685,11 @@ pub(crate) fn validate_quests(
                 // livestock binding checks they are a stray and the shepherd), a lay once per spot
                 // with a plain bag item.
                 QuestObjective::Herd { npc } | QuestObjective::Watch { npc } => {
+                    content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                // The road's supply patrol (#1019): each once per quest at a known NPC (the patrol
+                // binding checks it is a patrol's lookout).
+                QuestObjective::Sight { npc } | QuestObjective::Ambush { npc } => {
                     content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
                 }
                 QuestObjective::Lay { spot, item } => {
@@ -1618,7 +1640,9 @@ impl ZoneSimulation {
                         | QuestObjective::Lay { .. }
                         | QuestObjective::EscortTo { .. }
                         | QuestObjective::Recruit { .. }
-                        | QuestObjective::WorkInOrder { .. } => false,
+                        | QuestObjective::WorkInOrder { .. }
+                        | QuestObjective::Sight { .. }
+                        | QuestObjective::Ambush { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

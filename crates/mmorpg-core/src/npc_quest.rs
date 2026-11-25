@@ -42,6 +42,9 @@
 //!   [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
 //! - **Watch**: starts the watch over the flock ([`crate::flock`]) at once when the flock stands
 //!   and no watch runs; otherwise [`crate::ErrorCode::FlockUnsettled`]. It completes nothing itself.
+//! - **Sight and ambush**: calls the road's supply patrol out at its lookout ([`crate::supply`]),
+//!   or joins the run under way; while the last run rests, [`crate::ErrorCode::PatrolResting`]. It
+//!   completes nothing itself.
 //! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
 //!   ([`crate::DecisionOption::copper`]) takes its copper at once, or is refused with
 //!   [`crate::ErrorCode::NotEnoughMoney`]. An option that hands over an item puts it in the bag
@@ -481,6 +484,13 @@ impl ZoneSimulation {
             QuestObjective::Watch { .. } => {
                 if !self.begin_watch() {
                     return Ok(Some((ErrorCode::FlockUnsettled, target)));
+                }
+            }
+            // The road's supply patrol (#1019) is called out at its lookout, or joined while it
+            // marches; it completes when it is sighted or stopped.
+            QuestObjective::Sight { .. } | QuestObjective::Ambush { .. } => {
+                if !self.call_supply_patrol(npc)? {
+                    return Ok(Some((ErrorCode::PatrolResting, target)));
                 }
             }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),

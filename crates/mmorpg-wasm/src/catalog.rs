@@ -81,7 +81,8 @@ pub struct QuestExport {
 /// the watch) or `lay` (`target` is an evidence spot taking item `source`), or for the missing
 /// family and the muster (#1019) `escort_to` (`target` is an NPC led home to NPC `source`) or
 /// `recruit` (`target` is an NPC won to the muster), or for the ring's measure (#1019)
-/// `work_in_order` (`target` is a mechanism sequence worked in its order).
+/// `work_in_order` (`target` is a mechanism sequence worked in its order), or for the Downs road
+/// (#1019) `sight` or `ambush` (`target` is the lookout who calls the supply patrol out).
 /// `questActionAt` picks the action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -133,6 +134,9 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Recruit { npc } => ("recruit", npc.get(), None),
         // The ring's measure (#1019).
         QuestObjective::WorkInOrder { sequence, .. } => ("work_in_order", sequence.get(), None),
+        // The Downs road (#1019).
+        QuestObjective::Sight { npc } => ("sight", npc.get(), None),
+        QuestObjective::Ambush { npc } => ("ambush", npc.get(), None),
     };
     ObjectiveExport {
         kind,
@@ -564,6 +568,8 @@ mod tests {
                 item(44, "Tainted Mutton", Value::Null, stats(0, 0, 0, 0)),
                 item(45, "Wolf Snare", Value::Null, stats(0, 0, 0, 0)),
                 item(46, "Barrow Torc", Value::Null, stats(0, 0, 0, 0)),
+                item(47, "Signal Tinder", Value::Null, stats(0, 0, 0, 0)),
+                item(48, "Redbrand Order Pouch", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -593,6 +599,20 @@ mod tests {
             quests[63]["objectives"][1],
             json!({"kind": "work_in_order", "target": 1, "source": null, "count": 4})
         );
+        // The Downs road (#1019): Lookout Brenna calls the supply patrol out to be watched, then
+        // to be stopped for the packbearer's pouch.
+        assert_eq!(
+            quests[67]["objectives"][1],
+            json!({"kind": "sight", "target": 61, "source": null, "count": 1})
+        );
+        assert_eq!(
+            quests[68]["objectives"],
+            json!([
+                {"kind": "ambush", "target": 61, "source": null, "count": 1},
+                {"kind": "collect", "target": 48, "source": 30, "count": 1},
+            ])
+        );
+        assert_eq!(quests[69]["requires"], json!([65]));
         assert_eq!(
             quests[46]["objectives"],
             json!([{"kind": "transcribe", "target": 9, "source": 42, "count": 1}])

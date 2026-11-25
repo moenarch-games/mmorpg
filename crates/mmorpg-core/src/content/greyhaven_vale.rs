@@ -36,6 +36,7 @@ pub mod crossings;
 pub mod dens;
 pub mod design;
 pub mod discoveries;
+pub mod downs;
 pub mod dressing;
 pub mod farmland;
 pub mod fen_pack;
@@ -2290,6 +2291,8 @@ fn content_with_spawns(
             .with_escort_companions(granary::companions())?
             // Lise's flock (#1019), after the NPC quests and every reserved group.
             .with_flock(flock::strays(), Some(flock::watch()))?
+            // The Downs road's supply patrol (#1019), after the livestock and every reserved group.
+            .with_supply_patrols(vec![downs::patrol()])?
             // Who leaves a character's world after its decision (#1019), after the quests.
             .with_departures(quests::departures())?
             .with_caches(discoveries::caches())?
