@@ -13,8 +13,8 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::{self, flock, quests};
 use mmorpg_core::{
     CharacterId, CharacterLocation, EntityKind, ErrorCode, EvidenceId, GAP_HOLD_TICKS, ItemId,
-    NpcId, QuestId, QuestLog, RECOVER_TICKS, STRAY_TIMEOUT_TICKS, StrayState, ZoneCommand,
-    ZoneEvent, ZoneId, ZoneSimulation, sell_price,
+    NpcId, QuestId, QuestLog, STRAY_TIMEOUT_TICKS, StrayState, ZoneCommand, ZoneEvent, ZoneId,
+    ZoneSimulation, sell_price,
 };
 use support::classes;
 
@@ -479,7 +479,6 @@ fn a_fallen_flock_fails_the_watch_and_it_is_tried_again_once_the_ewes_are_up() {
     });
     world.zone.advance_tick().unwrap();
     assert!(world.zone.watch().is_none());
-    assert!(RECOVER_TICKS > 0);
     let events = world.send(1, ZoneCommand::QuestAction { npc: LISE });
     assert_eq!(refusal(&events), None, "{events:?}");
     assert_eq!(world.zone.watch().unwrap().flock, vec![40; 3]);
