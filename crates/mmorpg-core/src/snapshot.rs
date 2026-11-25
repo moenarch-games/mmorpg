@@ -423,6 +423,8 @@ pub struct CanonicalZoneSnapshot {
     pub next_minion: u32,
     /// The night raid (#530).
     pub raid: crate::RaidState,
+    /// Each further raid site's state (#1019), in content order; empty with one site or none.
+    pub site_raids: Vec<crate::RaidState>,
     /// When each ore vein is full again and which corpses were skinned (#917).
     pub gathering: crate::GatheringState,
     /// Private-home residents a knock woke, in NPC-ID order (#158).
@@ -727,6 +729,7 @@ impl ZoneSimulation {
             minions: self.canonical_minions()?,
             next_minion: self.next_minion,
             raid: self.raid.clone(),
+            site_raids: self.site_raids.clone(),
             gathering: (*self.gathering).clone(),
             wakes: self.canonical_wakes(),
             escorts: self.canonical_escorts(),
@@ -765,6 +768,27 @@ impl ZoneSimulation {
             return Err(ZoneError::new("snapshot raid state needs a raid site"));
         }
         zone.raid = snapshot.raid;
+        // Each further site's state (#1019), one per site after the first.
+        if snapshot.site_raids.len() != zone.content.raids().len().saturating_sub(1) {
+            return Err(ZoneError::new(
+                "snapshot raid sites do not match the content",
+            ));
+        }
+        let further = zone.content.raids().get(1..).unwrap_or_default();
+        for (state, site) in snapshot.site_raids.iter().zip(further) {
+            // Quest defence sites are never forewarned and pay no raid rewards.
+            if !state.scouted.is_empty()
+                || state.warned
+                || !state.rewarded.is_empty()
+                || !state.cart_rewarded.is_empty()
+            {
+                return Err(ZoneError::new(
+                    "a defence site's raid state is out of range",
+                ));
+            }
+            state.validate(snapshot.tick, Some(site))?;
+        }
+        zone.site_raids = snapshot.site_raids;
         let mut spawn_slots = BTreeSet::new();
         for player in snapshot.players {
             zone.restore_player(player, &mut spawn_slots)?;

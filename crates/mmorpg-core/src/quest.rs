@@ -164,6 +164,15 @@ pub enum QuestObjective {
         spot: crate::EvidenceId,
         item: ItemId,
     },
+    /// Lead `npc` home to `to` (#1019): as [`QuestObjective::Escort`], but the escort arrives once
+    /// the NPC stands within quest reach of `to` and its [`crate::EscortCompanion`]s, a family
+    /// walking in a line behind it, all stand near it. The log stores the arrival.
+    EscortTo { npc: NpcId, to: NpcId },
+    /// Win `npc` over to a muster (#1019) with [`crate::ZoneCommand::QuestAction`]: an NPC with an
+    /// [`crate::NpcAttitude`] may refuse the player. A recruit counts for the recruiter and for
+    /// every party mate in the zone with the same objective open, so a party gathers its recruits
+    /// in parallel while each character's log keeps its own. A quest's recruits come in any order.
+    Recruit { npc: NpcId },
 }
 
 impl QuestObjective {
@@ -193,14 +202,16 @@ impl QuestObjective {
             | Self::Decide { .. }
             | Self::Herd { .. }
             | Self::Watch { .. }
-            | Self::Lay { .. } => 1,
+            | Self::Lay { .. }
+            | Self::EscortTo { .. }
+            | Self::Recruit { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
     /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
-    /// 20 decide, 21 herd, 22 watch, 23 lay.
+    /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -227,6 +238,8 @@ impl QuestObjective {
             Self::Herd { .. } => 21,
             Self::Watch { .. } => 22,
             Self::Lay { .. } => 23,
+            Self::EscortTo { .. } => 24,
+            Self::Recruit { .. } => 25,
         }
     }
 
@@ -241,7 +254,9 @@ impl QuestObjective {
             | Self::DeliverLoad { npc, .. }
             | Self::Defend { npc }
             | Self::Decide { npc }
-            | Self::Watch { npc } => Some(npc),
+            | Self::Watch { npc }
+            | Self::EscortTo { npc, .. }
+            | Self::Recruit { npc } => Some(npc),
             _ => None,
         }
     }
@@ -527,8 +542,15 @@ pub(crate) fn validate_quests(
                             .any(|candidate| candidate.id() == area)
                         && !quest.objectives[..index].contains(objective)
                 }
-                QuestObjective::Interview { npc } => {
+                QuestObjective::Interview { npc } | QuestObjective::Recruit { npc } => {
                     content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                // A homecoming (#1019) leads one NPC to another.
+                QuestObjective::EscortTo { npc, to } => {
+                    npc != to
+                        && content.npc(npc).is_some()
+                        && content.npc(to).is_some()
+                        && !quest.objectives[..index].contains(objective)
                 }
                 // The trial needs a weapon to lend.
                 QuestObjective::DefeatWithLoan { template, count } => {
@@ -1525,7 +1547,9 @@ impl ZoneSimulation {
                         | QuestObjective::Decide { .. }
                         | QuestObjective::Herd { .. }
                         | QuestObjective::Watch { .. }
-                        | QuestObjective::Lay { .. } => false,
+                        | QuestObjective::Lay { .. }
+                        | QuestObjective::EscortTo { .. }
+                        | QuestObjective::Recruit { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

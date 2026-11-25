@@ -1136,9 +1136,11 @@ impl Presentation {
             .find(|e| e.entity() == EntityRef::Player(self.player_id))?
             .position;
         let reach = i64::from(mmorpg_core::raid::AID_REACH_UNITS).pow(2);
+        // The site whose signal reaches the viewer (#1019).
         let task = self
             .content
-            .raid()?
+            .raid_near([feet[0], feet[2]])?
+            .1
             .tasks()
             .iter()
             .enumerate()

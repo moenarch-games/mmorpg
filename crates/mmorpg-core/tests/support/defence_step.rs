@@ -1,7 +1,7 @@
 //! The `defence-step` workload (#1019, `.performance/contract.json`): in Greyhaven, a defence of
 //! Millbrook Farm runs with `raiders` of its reserved raiders standing at the barn's walls, beside
 //! the farmfolk, while `idle` players stand in the Outpost far from the fight. Each measured tick
-//! counts the raid step's assault raiders visited and the construction step's sites visited.
+//! counts the raid step's assault raiders and raid sites visited and the construction step's sites visited.
 //! Shared by `mmorpg-core`'s `defence_step` test and `defence_step_work` example. Counters only;
 //! nothing is timed.
 #![allow(dead_code)]
@@ -20,6 +20,8 @@ pub const MEASURED_TICKS: usize = 16;
 pub struct DefenceStepRun {
     pub raid_raiders_visited: usize,
     pub constructions_visited: usize,
+    /// Raid sites the raid step visited (#1019).
+    pub raid_sites_visited: usize,
     /// Whether the defence still ran after the last measured tick.
     pub running: bool,
 }
@@ -127,6 +129,7 @@ pub fn measure(raiders: usize, idle: usize) -> Result<DefenceStepRun, Box<dyn Er
         let work = zone.tick_work();
         run.raid_raiders_visited = run.raid_raiders_visited.max(work.raid_raiders_visited);
         run.constructions_visited = run.constructions_visited.max(work.constructions_visited);
+        run.raid_sites_visited = run.raid_sites_visited.max(work.raid_sites_visited);
     }
     run.running = zone
         .raid()
@@ -140,8 +143,8 @@ pub fn measure(raiders: usize, idle: usize) -> Result<DefenceStepRun, Box<dyn Er
 pub fn sample(raiders: usize, idle: usize) -> Result<String, Box<dyn Error>> {
     let run = measure(raiders, idle)?;
     Ok(format!(
-        "{{\"dimensions\":{{\"raiders\":{raiders},\"idle\":{idle}}},\"metrics\":{{\"raid_raiders_visited\":{},\"constructions_visited\":{}}}}}",
-        run.raid_raiders_visited, run.constructions_visited
+        "{{\"dimensions\":{{\"raiders\":{raiders},\"idle\":{idle}}},\"metrics\":{{\"raid_raiders_visited\":{},\"constructions_visited\":{},\"raid_sites_visited\":{}}}}}",
+        run.raid_raiders_visited, run.constructions_visited, run.raid_sites_visited
     ))
 }
 

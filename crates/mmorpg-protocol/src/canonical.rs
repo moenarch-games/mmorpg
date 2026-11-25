@@ -137,7 +137,40 @@ pub fn encode_canonical_snapshot(
     encode_seals(&mut payload, &snapshot.seals)?;
     encode_wards(&mut payload, &snapshot.wards)?;
     encode_flock(&mut payload, &snapshot.strays, snapshot.watch.as_ref())?;
+    encode_site_raids(&mut payload, &snapshot.site_raids)?;
     Ok(payload)
+}
+
+/// Each further raid site's state (#1019): a count (`u8`, at most one fewer than
+/// [`mmorpg_core::raid::MAX_RAID_SITES`]), then each state as the night raid's.
+fn encode_site_raids(
+    payload: &mut Vec<u8>,
+    states: &[mmorpg_core::RaidState],
+) -> Result<(), ProtocolError> {
+    payload.push(crate::wire::encode_u8_count(
+        states.len(),
+        mmorpg_core::raid::MAX_RAID_SITES - 1,
+        "raid sites exceed their count",
+    )?);
+    for state in states {
+        crate::raid::encode_state(payload, state)?;
+    }
+    Ok(())
+}
+
+fn decode_site_raids(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::RaidState>, ProtocolError> {
+    let count = crate::wire::decode_u8_count(
+        payload,
+        offset,
+        mmorpg_core::raid::MAX_RAID_SITES - 1,
+        "raid sites exceed their count",
+    )?;
+    (0..count)
+        .map(|_| crate::raid::decode_state(payload, offset))
+        .collect()
 }
 
 /// Canonical gathering (#917): `count u16 · count × ready tick u64`, one per content vein, then
@@ -1430,6 +1463,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let seals = decode_seals(payload, &mut offset)?;
     let wards = decode_wards(payload, &mut offset)?;
     let (strays, watch) = decode_flock(payload, &mut offset)?;
+    let site_raids = decode_site_raids(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1455,6 +1489,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         minions,
         next_minion,
         raid,
+        site_raids,
         parties,
         wakes,
         escorts,
@@ -3349,6 +3384,19 @@ pub(crate) mod tests {
                 warned: true,
                 braced: std::collections::BTreeSet::from([0, 70_000]),
             },
+            // A defence site (#1019) after a held defence, its aftermath open.
+            site_raids: vec![mmorpg_core::RaidState {
+                incidents: 1,
+                damage: 300,
+                last: Some(mmorpg_core::RaidResolution {
+                    incident: 1,
+                    at: 2,
+                    outcome: mmorpg_core::RaidOutcome::Defended,
+                    defence: true,
+                }),
+                aftermath: std::collections::BTreeSet::from([0, 3]),
+                ..mmorpg_core::RaidState::default()
+            }],
             wakes: vec![mmorpg_core::NpcWake {
                 npc: mmorpg_core::NpcId::new(1),
                 knocked: 2,

@@ -248,9 +248,9 @@ export class QuestPanel {
     }
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
-    this.#defence = defenceStatus(snapshot.raid ?? null);
-    this.#shrine = shrineStatus(snapshot);
     const at = snapshot.entities[0]?.position;
+    this.#defence = defenceStatus(snapshot.raid ?? null, at);
+    this.#shrine = shrineStatus(snapshot);
     const glyph = at ? mechanismInReach(at) : null;
     this.#glyph = glyph ? `E: work ${glyph.name}` : null;
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;

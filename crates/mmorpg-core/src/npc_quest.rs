@@ -21,10 +21,22 @@
 //!   at its post. A player more than [`ESCORT_LEASH_UNITS`] ahead for [`ESCORT_LEASH_TICKS`], a
 //!   dead, absent or quitting player fails it ([`crate::ErrorCode::EscortLost`]): the NPC is back
 //!   at its post at once and the player asks again. One player escorts an NPC at a time.
+//! - **Homecoming** (#1019, [`crate::QuestObjective::EscortTo`]): an escort that ends within quest
+//!   reach of another NPC instead of an area. The escorted NPC's [`EscortCompanion`]s, a family,
+//!   start with it and walk in a line, each following the trail of the one ahead of it as the
+//!   lead follows the player's. The line arrives once the lead reached its destination with every
+//!   companion within [`ESCORT_GATHER_UNITS`] of it, and rests together; any of it left too far
+//!   behind fails the whole line.
+//! - **Recruit** (#1019): an NPC with an [`NpcAttitude`] may refuse as for an interview (its
+//!   recommendation or a sponsor still admits). The recruit completes the objective for the
+//!   recruiter and for every party mate in the zone with the same recruit open, so a party splits
+//!   up to gather a muster in parallel; each character's own log stores what it was credited.
+//!   A quest's recruits are open in any order.
 //! - **Delivery** (#1077): takes the load of the objective's source out of the player's arms
 //!   ([`crate::LoadState`]); empty arms are refused with [`crate::ErrorCode::NotCarrying`].
-//! - **Defence**: starts the raid site's defence ([`crate::raid`]) at once when the site is ready;
-//!   otherwise [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
+//! - **Defence**: starts the defence of the raid site its NPC keeps ([`crate::raid`],
+//!   [`crate::RaidSite::steward`]) at once when that site is ready; otherwise
+//!   [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
 //! - **Watch**: starts the watch over the flock ([`crate::flock`]) at once when the flock stands
 //!   and no watch runs; otherwise [`crate::ErrorCode::FlockUnsettled`]. It completes nothing itself.
 //! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
@@ -57,6 +69,28 @@ pub const ESCORT_TRAIL_SPACING_UNITS: i64 = 100;
 pub const MAX_ESCORT_TRAIL: usize = 64;
 /// An escorted NPC rests where it arrived this long (1 min) before it is back at its post.
 pub const ESCORT_REST_TICKS: u32 = crate::long_ticks_from_ms(60_000);
+/// A content's escort companions number at most this many (#1019).
+pub const MAX_ESCORT_COMPANIONS: usize = 8;
+/// An escort's companions have gathered once each stands within 6 m of its lead (#1019).
+pub const ESCORT_GATHER_UNITS: i64 = 600;
+
+/// An NPC who walks in an escorted NPC's line (#1019): when an escort of the line's lead starts,
+/// it follows the NPC ahead of it, `follows`, the way an escorted NPC follows its player. The
+/// line arrives together, and the line's escort fails if any of it is lost.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EscortCompanion {
+    pub npc: NpcId,
+    pub follows: NpcId,
+}
+
+/// Where an escort ends (#1019).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Destination {
+    /// Inside a named area.
+    Area(crate::AreaId),
+    /// Within quest reach of an NPC.
+    Npc(NpcId),
+}
 
 /// How an NPC regards those who would interview it (#1019).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -224,10 +258,16 @@ impl ZoneSimulation {
                 {
                     continue;
                 }
-                let ready = quest.objectives[..index]
-                    .iter()
-                    .zip(current)
-                    .all(|(earlier, count)| count >= earlier.required());
+                // A muster's recruits (#1019) come in any order.
+                let recruiting = matches!(objective, QuestObjective::Recruit { .. });
+                let ready =
+                    quest.objectives[..index]
+                        .iter()
+                        .zip(current)
+                        .all(|(earlier, count)| {
+                            count >= earlier.required()
+                                || (recruiting && matches!(earlier, QuestObjective::Recruit { .. }))
+                        });
                 if ready {
                     open = Some((quest.id, index, *objective));
                     break 'quests;
@@ -264,8 +304,13 @@ impl ZoneSimulation {
                 }
                 self.complete_objective(player_id, quest, index);
             }
-            QuestObjective::Escort { .. } => {
-                if let Some(escort) = self.escorts.get(&npc) {
+            // An escort starts its NPC and, for a homecoming, the companions in its line (#1019).
+            QuestObjective::Escort { .. } | QuestObjective::EscortTo { .. } => {
+                let line = content.escort_line(npc);
+                if let Some(escort) = std::iter::once(&npc)
+                    .chain(&line)
+                    .find_map(|member| self.escorts.get(member))
+                {
                     let code = if escort.player == player_id {
                         ErrorCode::InvalidQuest
                     } else {
@@ -273,22 +318,38 @@ impl ZoneSimulation {
                     };
                     return Ok(Some((code, target)));
                 }
-                let placement = self
-                    .npc_placement(npc)
-                    .ok_or_else(|| ZoneError::new("escorted npc has no placement"))?;
-                self.escorts.insert(
-                    npc,
-                    EscortState {
-                        npc,
-                        player: player_id,
-                        position: placement.position,
-                        facing: placement.facing,
-                        velocity: [0, 0],
-                        trail: Vec::new(),
-                        behind: 0,
-                        rests_until: 0,
-                    },
-                );
+                for member in std::iter::once(npc).chain(line) {
+                    let placement = self
+                        .npc_placement(member)
+                        .ok_or_else(|| ZoneError::new("escorted npc has no placement"))?;
+                    self.escorts.insert(
+                        member,
+                        EscortState {
+                            npc: member,
+                            player: player_id,
+                            position: placement.position,
+                            facing: placement.facing,
+                            velocity: [0, 0],
+                            trail: Vec::new(),
+                            behind: 0,
+                            rests_until: 0,
+                        },
+                    );
+                }
+            }
+            // A recruit (#1019) counts for the recruiter and each party mate with it open.
+            QuestObjective::Recruit { .. } => {
+                if self.admission(player_id, npc)? == Admission::Refused {
+                    return Ok(Some((ErrorCode::Distrusted, target)));
+                }
+                self.complete_objective(player_id, quest, index);
+                for mate in self.party_mates(player_id) {
+                    if mate != player_id {
+                        self.complete_objectives(mate, |objective| {
+                            objective == QuestObjective::Recruit { npc }
+                        });
+                    }
+                }
             }
             // A delivery takes the load of its source out of the player's arms (#1077).
             QuestObjective::DeliverLoad { source, .. } => {
@@ -341,8 +402,8 @@ impl ZoneSimulation {
                 }
             }
             // A defence (#1019) starts at its NPC; it completes when it holds.
-            QuestObjective::Defend { .. } => {
-                if !self.begin_defence()? {
+            QuestObjective::Defend { npc } => {
+                if !self.begin_defence(npc)? {
                     return Ok(Some((ErrorCode::SiteNotReady, target)));
                 }
             }
@@ -401,6 +462,16 @@ impl ZoneSimulation {
         player_id: PlayerId,
         matches: impl Fn(QuestObjective) -> bool,
     ) {
+        self.complete_quest_objectives(player_id, |_, objective| matches(objective));
+    }
+
+    /// Completes every open objective of the player's active quests that `matches` with its
+    /// quest (#1019), once each.
+    pub(crate) fn complete_quest_objectives(
+        &mut self,
+        player_id: PlayerId,
+        matches: impl Fn(&crate::Quest, QuestObjective) -> bool,
+    ) {
         let content = Arc::clone(&self.content);
         let Some(player) = self.players.get(&player_id) else {
             return;
@@ -416,7 +487,7 @@ impl ZoneSimulation {
                     .iter()
                     .enumerate()
                     .filter(|(index, objective)| {
-                        matches(**objective) && entry.progress[*index] < objective.required()
+                        matches(quest, **objective) && entry.progress[*index] < objective.required()
                     })
                     .map(|(index, _)| (quest.id, index))
                     .collect::<Vec<_>>()
@@ -444,12 +515,12 @@ impl ZoneSimulation {
         self.engage(foe, EntityRef::Player(player_id), false)
     }
 
-    /// The open escort objective of `npc` in the player's log: its quest, index and area.
+    /// The open escort objective of `npc` in the player's log: its quest, index and destination.
     fn open_escort(
         &self,
         player_id: PlayerId,
         npc: NpcId,
-    ) -> Option<(QuestId, usize, crate::AreaId)> {
+    ) -> Option<(QuestId, usize, Destination)> {
         let player = self.players.get(&player_id)?;
         player.quests.entries.iter().find_map(|entry| {
             let quest = self.content.quest(entry.quest)?;
@@ -457,20 +528,36 @@ impl ZoneSimulation {
                 .objectives
                 .iter()
                 .enumerate()
-                .find_map(|(index, objective)| match *objective {
-                    QuestObjective::Escort { npc: wanted, area }
-                        if wanted == npc && entry.progress[index] == 0 =>
-                    {
-                        Some((quest.id, index, area))
-                    }
-                    _ => None,
+                .find_map(|(index, objective)| {
+                    let destination = match *objective {
+                        QuestObjective::Escort { npc: wanted, area } if wanted == npc => {
+                            Destination::Area(area)
+                        }
+                        QuestObjective::EscortTo { npc: wanted, to } if wanted == npc => {
+                            Destination::Npc(to)
+                        }
+                        _ => return None,
+                    };
+                    (entry.progress[index] == 0).then_some((quest.id, index, destination))
                 })
         })
     }
 
-    /// Ends `npc`'s escort; a failed one tells its player.
-    fn end_escort(&mut self, npc: NpcId, failed: bool) {
-        let Some(escort) = self.escorts.remove(&npc) else {
+    /// The escorted NPC leading `npc`'s line (#1019): itself unless it is a companion.
+    fn line_lead(&self, npc: NpcId) -> NpcId {
+        let mut lead = npc;
+        while let Some(ahead) = self.content.companion_of(lead) {
+            lead = ahead;
+        }
+        lead
+    }
+
+    /// Ends the escort of `lead` and its line's companions (#1019); a failed one tells its player.
+    fn end_escort(&mut self, lead: NpcId, failed: bool) {
+        for companion in self.content.escort_line(lead) {
+            self.escorts.remove(&companion);
+        }
+        let Some(escort) = self.escorts.remove(&lead) else {
             return;
         };
         if failed && let Some(player) = self.players.get_mut(&escort.player) {
@@ -478,15 +565,16 @@ impl ZoneSimulation {
                 &mut player.events,
                 ZoneEvent::Error {
                     code: ErrorCode::EscortLost,
-                    target: Some(EntityRef::Npc(npc)),
+                    target: Some(EntityRef::Npc(lead)),
                 },
             );
         }
     }
 
-    /// Tick step: every escort follows its player's trail one step, arrives, fails or ends its
-    /// rest (see the module documentation), and a confronted foe that gave up its fight leaves
-    /// the world so its NPC is back.
+    /// Tick step: every escorted NPC follows a step's worth of the trail of the one it follows,
+    /// its player or the companion ahead of it in its line (#1019); the line arrives together,
+    /// fails or ends its rest (see the module documentation). A confronted foe that gave up its
+    /// fight leaves the world so its NPC is back.
     pub(crate) fn advance_npc_quests(&mut self, now: u64) -> Result<(), ZoneError> {
         let npcs: Vec<NpcId> = self.escorts.keys().copied().collect();
         for npc in npcs {
@@ -494,26 +582,32 @@ impl ZoneSimulation {
                 continue;
             };
             self.tick_work.escorts_advanced += 1;
+            let lead = self.line_lead(npc);
             if escort.rests_until > 0 {
                 if now >= escort.rests_until {
-                    self.end_escort(npc, false);
+                    self.end_escort(lead, false);
                 }
                 continue;
             }
-            let leader = self
-                .players
-                .get(&escort.player)
-                .filter(|player| player.is_alive())
-                .map(|_| self.player_position(escort.player))
-                .transpose()?;
-            let (Some(leader), Some((quest, index, area))) =
-                (leader, self.open_escort(escort.player, npc))
+            // The one it follows: its player, or the NPC ahead of it in its line, which the
+            // NPC order has already moved this tick.
+            let ahead = match self.content.companion_of(npc) {
+                Some(ahead) => self.escorts.get(&ahead).map(|ahead| ahead.position),
+                None => self
+                    .players
+                    .get(&escort.player)
+                    .filter(|player| player.is_alive())
+                    .map(|_| self.player_position(escort.player))
+                    .transpose()?
+                    .map(|leader| [leader.x, leader.z]),
+            };
+            let (Some(feet), Some((quest, index, destination))) =
+                (ahead, self.open_escort(escort.player, lead))
             else {
-                self.end_escort(npc, true);
+                self.end_escort(lead, true);
                 continue;
             };
-            let feet = [leader.x, leader.z];
-            // The trail: where the player walked, so the NPC goes where a body could.
+            // The trail: where the one ahead walked, so the NPC goes where a body could.
             let last = escort.trail.last().copied().unwrap_or(escort.position);
             if distance(last, feet) >= ESCORT_TRAIL_SPACING_UNITS {
                 escort.trail.push(feet);
@@ -558,21 +652,53 @@ impl ZoneSimulation {
                 escort.behind = 0;
             }
             if escort.behind > ESCORT_LEASH_TICKS {
-                self.end_escort(npc, true);
+                self.end_escort(lead, true);
                 continue;
             }
-            let arrived = self
-                .content
-                .areas()
-                .area_at(position[0], position[1])
-                .is_some_and(|candidate| candidate.id() == area);
-            if arrived {
+            // A companion only follows; its lead decides the arrival.
+            if npc != lead {
+                self.escorts.insert(npc, escort);
+                continue;
+            }
+            let reached = match destination {
+                Destination::Area(area) => self
+                    .content
+                    .areas()
+                    .area_at(position[0], position[1])
+                    .is_some_and(|candidate| candidate.id() == area),
+                Destination::Npc(to) => self.npc_placement(to).is_some_and(|place| {
+                    distance(place.position, position) <= i64::from(crate::quest::QUEST_REACH_UNITS)
+                }),
+            };
+            let line = self.content.escort_line(npc);
+            let gathered = line.iter().all(|companion| {
+                self.escorts.get(companion).is_some_and(|companion| {
+                    distance(companion.position, position) <= ESCORT_GATHER_UNITS
+                })
+            });
+            if reached && gathered {
+                let until = now.saturating_add(u64::from(ESCORT_REST_TICKS));
                 escort.velocity = [0, 0];
                 escort.trail.clear();
-                escort.rests_until = now.saturating_add(u64::from(ESCORT_REST_TICKS));
+                escort.rests_until = until;
                 let player = escort.player;
                 self.escorts.insert(npc, escort);
+                for companion in &line {
+                    if let Some(companion) = self.escorts.get_mut(companion) {
+                        companion.velocity = [0, 0];
+                        companion.trail.clear();
+                        companion.rests_until = until;
+                    }
+                }
                 self.complete_objective(player, quest, index);
+                let Some(objective) = self
+                    .content
+                    .quest(quest)
+                    .and_then(|definition| definition.objectives.get(index))
+                    .copied()
+                else {
+                    continue;
+                };
                 // Party mates walking beside it share the rescue (Atlas 5.4.17).
                 for mate in self.party_mates(player) {
                     if mate != player
@@ -582,9 +708,7 @@ impl ZoneSimulation {
                             .is_some_and(|state| state.is_alive())
                         && self.within_quest_reach(mate, npc)?
                     {
-                        self.complete_objectives(mate, |objective| {
-                            objective == QuestObjective::Escort { npc, area }
-                        });
+                        self.complete_objectives(mate, |candidate| candidate == objective);
                     }
                 }
                 continue;
@@ -617,13 +741,16 @@ impl ZoneSimulation {
         escorts: &[EscortState],
         tick: u64,
     ) -> Result<(), ZoneError> {
+        // An escorted NPC or a companion in an escorted NPC's line (#1019).
         let escorted = |npc: NpcId| {
-            self.content.quests().iter().any(|quest| {
-                quest
-                    .objectives
-                    .iter()
-                    .any(|objective| matches!(objective, QuestObjective::Escort { npc: wanted, .. } if *wanted == npc))
-            })
+            self.content.companion_of(npc).is_some()
+                || self.content.quests().iter().any(|quest| {
+                    quest.objectives.iter().any(|objective| match *objective {
+                        QuestObjective::Escort { npc: wanted, .. }
+                        | QuestObjective::EscortTo { npc: wanted, .. } => wanted == npc,
+                        _ => false,
+                    })
+                })
         };
         if escorts.windows(2).any(|pair| pair[0].npc >= pair[1].npc)
             || escorts.iter().any(|escort| {

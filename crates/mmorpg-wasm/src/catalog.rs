@@ -78,7 +78,9 @@ pub struct QuestExport {
 /// (#1019) `transcribe` (`target` is an evidence spot yielding item `source`), `unseal` (`target`
 /// is a seal's structure piece) or `decide` (`target` is the NPC hearing the decision), or for
 /// the flock (#1019) `herd` (`target` is a stray NPC), `watch` (`target` is the NPC who starts
-/// the watch) or `lay` (`target` is an evidence spot taking item `source`).
+/// the watch) or `lay` (`target` is an evidence spot taking item `source`), or for the missing
+/// family and the muster (#1019) `escort_to` (`target` is an NPC led home to NPC `source`) or
+/// `recruit` (`target` is an NPC won to the muster).
 /// `questActionAt` picks the action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -125,6 +127,9 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Herd { npc } => ("herd", npc.get(), None),
         QuestObjective::Watch { npc } => ("watch", npc.get(), None),
         QuestObjective::Lay { spot, item } => ("lay", spot.get(), Some(item.get())),
+        // The missing family and the muster (#1019).
+        QuestObjective::EscortTo { npc, to } => ("escort_to", npc.get(), Some(to.get())),
+        QuestObjective::Recruit { npc } => ("recruit", npc.get(), None),
     };
     ObjectiveExport {
         kind,

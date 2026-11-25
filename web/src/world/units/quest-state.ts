@@ -134,8 +134,10 @@ export function trackerRows(sheet: QuestSheet): TrackerRow[] {
  * The HUD line of a running defence near the viewer (#1019), from its raid signal: "Millbrook Farm under attack:
  * wave 2 of 3, 3 of 3 of its people standing (2 must stand)"; null outside a defence (the shared client model's text).
  */
-export function defenceStatus(raid: RaidSignal | null): string | null {
-  return raid?.standing == null ? null : (wasm.defenceStatus(raid.phase, raid.standing) ?? null);
+export function defenceStatus(raid: RaidSignal | null, at?: readonly number[] | null): string | null {
+  // The site the viewer's feet `at` stand at (#1019); without them, the night raid target.
+  const [x, z] = at ? [Math.round(at[0]!), Math.round(at[2]!)] : [undefined, undefined];
+  return raid?.standing == null ? null : (wasm.defenceStatus(raid.phase, raid.standing, x, z) ?? null);
 }
 
 /** Ticks (3 s) a confirmed objective change stays highlighted in the tracker. */

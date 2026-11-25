@@ -159,8 +159,9 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .filter(|name| !name.is_empty())
                 .unwrap_or("the structure")
         ),
-        QuestObjective::Defend { .. } => {
-            let site = content.raid();
+        QuestObjective::Defend { npc } => {
+            // The site its NPC keeps (#1019).
+            let site = content.raid_of_steward(npc).map(|(_, site)| site);
             format!(
                 "Hold {} with {} of its people standing",
                 site.map_or("the farm", |site| site.name.as_str()),
@@ -219,6 +220,23 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .evidence_spot(spot)
                 .map_or("its place", |spot| spot.name.as_str())
         ),
+        // The missing family and the muster (#1019): "Lead Hal Tolly and his family home to
+        // Goodwife Ena", "Win Ploughman Garr to the muster".
+        QuestObjective::EscortTo { npc, to } => {
+            let family = if content.escort_line(npc).is_empty() {
+                ""
+            } else {
+                " and his family"
+            };
+            format!(
+                "Lead {}{family} home to {}",
+                objective_npc(content, npc),
+                objective_npc(content, to)
+            )
+        }
+        QuestObjective::Recruit { npc } => {
+            format!("Win {} to the muster", objective_npc(content, npc))
+        }
     }
 }
 
@@ -283,6 +301,8 @@ pub fn objective_view(
         | QuestObjective::Herd { .. }
         | QuestObjective::Watch { .. }
         | QuestObjective::Lay { .. }
+        | QuestObjective::EscortTo { .. }
+        | QuestObjective::Recruit { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -302,7 +322,9 @@ pub fn objective_view(
         | QuestObjective::Decide { .. }
         | QuestObjective::Herd { .. }
         | QuestObjective::Watch { .. }
-        | QuestObjective::Lay { .. } => label.clone(),
+        | QuestObjective::Lay { .. }
+        | QuestObjective::EscortTo { .. }
+        | QuestObjective::Recruit { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -369,11 +391,20 @@ pub struct TrackerRow {
 
 /// The HUD line of a running defence (#1019) at assault `phase` with `standing` of the raid
 /// site's civilians on their feet, as the raid signal carries them: "Millbrook Farm under
-/// attack: wave 2 of 3, 3 of 3 of its people standing (2 must stand)". `None` without a raid
-/// site.
+/// attack: wave 2 of 3, 3 of 3 of its people standing (2 must stand)". The site is the one whose
+/// signal reaches the viewer's feet `at` (#1019), otherwise the night raid target. `None` without
+/// a raid site.
 #[must_use]
-pub fn defence_status(phase: u8, standing: u8, content: &ZoneContent) -> Option<String> {
-    let site = content.raid()?;
+pub fn defence_status(
+    phase: u8,
+    standing: u8,
+    content: &ZoneContent,
+    at: Option<[i32; 2]>,
+) -> Option<String> {
+    let site = at
+        .and_then(|at| content.raid_near(at))
+        .map(|(_, site)| site)
+        .or_else(|| content.raid())?;
     Some(format!(
         "{} under attack: wave {phase} of {}, {standing} of {} of its people standing ({} must stand)",
         site.name,
@@ -698,10 +729,14 @@ pub fn quest_action_at(
                 !matches!(objective, QuestObjective::Decide { .. })
                     && objective.action_npc() == Some(npc)
                     && entry.progress[*index] < objective.required()
-                    && quest.objectives[..*index]
-                        .iter()
-                        .zip(entry.progress)
-                        .all(|(earlier, count)| count >= earlier.required())
+                    && quest.objectives[..*index].iter().zip(entry.progress).all(
+                        |(earlier, count)| {
+                            // A muster's recruits (#1019) come in any order, as the zone rules.
+                            count >= earlier.required()
+                                || (matches!(objective, QuestObjective::Recruit { .. })
+                                    && matches!(earlier, QuestObjective::Recruit { .. }))
+                        },
+                    )
             })
             .map(|(_, objective)| *objective)
     })
@@ -843,7 +878,9 @@ mod tests {
                     | QuestObjective::Decide { .. }
                     | QuestObjective::Herd { .. }
                     | QuestObjective::Watch { .. }
-                    | QuestObjective::Lay { .. } => {
+                    | QuestObjective::Lay { .. }
+                    | QuestObjective::EscortTo { .. }
+                    | QuestObjective::Recruit { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

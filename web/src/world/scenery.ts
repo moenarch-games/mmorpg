@@ -5,6 +5,7 @@ import type { DrawnKits, StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
 import type { WaystoneSite } from "./units/waystone-panel";
 import { prepSpots, type RaidPrepSpots } from "./raid-prep";
+import { raidSites, type RaidSiteSpots } from "./raid-aid";
 /**
  * Presentation scenery from the WASM `scenery()` export (format
  * `mmorpg.scenery`), which maps the Rust `mmorpg-scenery` value the native
@@ -128,9 +129,9 @@ export type SceneryContent = StaticSceneContent & {
   areaAt(x: number, z: number): number | undefined;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): Uint32Array;
-  /** The night raid target's disturbance circle (#530): `[x, z, radius]` units, or empty. */
+  /** Each raid site's disturbance circle (#530, #1019): `[x, z, radius]` units per site, the night raid target first. */
   raidArea(): Int32Array;
-  /** The night raid target's aftermath aid tasks (#531): `[x, z, npc]` units per task, npc 0 for a breach. */
+  /** Each raid site's aftermath aid tasks (#531, #1019): `[site, x, z, npc]` units per task, npc 0 for a breach. */
   raidAid(): Int32Array;
   /** The ore veins (#917) as `[x, z]` units each, in wire order. */
   gatherNodes(): Int32Array;
@@ -218,10 +219,12 @@ export type SceneryProvider = {
   areaAt(x: number, z: number): Area | null;
   /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
   reachablePieces(x: number, z: number): readonly number[];
-  /** The night raid target's approximate disturbance circle in units (#530), if the zone has one. */
-  readonly raidArea: { x: number; z: number; radius: number } | null;
-  /** The night raid target's aftermath aid task spots in units (#531), in task order; `npc` is the injured guard to tend, 0 for a breach to mend. */
-  readonly raidAid: readonly { x: number; z: number; npc: number }[];
+  /**
+   * The raid sites (#530, #1019), the night raid target first: each one's approximate disturbance circle and its aftermath
+   * aid task spots in units (#531), in task order; `npc` is the injured guard or wounded civilian to tend, 0 for a breach
+   * to mend. A player sees the signal of the site nearest it.
+   */
+  readonly raidSites: readonly RaidSiteSpots[];
   /** The night raid target's forewarning spots in units (#532): the tracks, the lookout guard and the brace spots. */
   readonly raidPrep: RaidPrepSpots | null;
   /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
@@ -567,14 +570,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     reachablePieces(x, z) {
       return [...content.reachablePieces(Math.round(x), Math.round(z))];
     },
-    raidArea: (() => {
-      const area = content.raidArea();
-      return area.length === 3 ? { x: area[0]!, z: area[1]!, radius: area[2]! } : null;
-    })(),
-    raidAid: (() => {
-      const tasks = content.raidAid();
-      return Array.from({ length: Math.floor(tasks.length / 3) }, (_, index) => ({ x: tasks[index * 3]!, z: tasks[index * 3 + 1]!, npc: tasks[index * 3 + 2]! }));
-    })(),
+    raidSites: raidSites(content.raidArea(), content.raidAid()),
     raidPrep: prepSpots(content.raidPrep()),
     waystoneAt(x, z) {
       return content.waystoneAt(Math.round(x), Math.round(z));

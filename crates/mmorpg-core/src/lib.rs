@@ -249,9 +249,9 @@ pub use minion::{
 };
 pub use nav::NAV_CELL_UNITS;
 pub use npc_quest::{
-    Admission, Confrontation, ESCORT_GAP_UNITS, ESCORT_LEASH_TICKS, ESCORT_LEASH_UNITS,
-    ESCORT_REST_TICKS, ESCORT_TRAIL_SPACING_UNITS, ESCORT_UNITS_PER_TICK, EscortState,
-    MAX_ESCORT_TRAIL, NpcAttitude,
+    Admission, Confrontation, ESCORT_GAP_UNITS, ESCORT_GATHER_UNITS, ESCORT_LEASH_TICKS,
+    ESCORT_LEASH_UNITS, ESCORT_REST_TICKS, ESCORT_TRAIL_SPACING_UNITS, ESCORT_UNITS_PER_TICK,
+    EscortCompanion, EscortState, MAX_ESCORT_COMPANIONS, MAX_ESCORT_TRAIL, NpcAttitude,
 };
 pub use party::{
     MAX_PARTY_MEMBERS, MAX_PARTY_NAME_BYTES, PartyInvite, PartyMember, PartyRefusal, PartyRoster,

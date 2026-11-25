@@ -324,6 +324,8 @@ pub struct ZoneTickWork {
     /// Raiders on the assault the raid step checked against the objective and, in a defence,
     /// its civilians (#1019): each living assault raider once.
     pub raid_raiders_visited: usize,
+    /// Raid sites the raid step visited (#1019): each content site once, every tick.
+    pub raid_sites_visited: usize,
     /// Strays the flock step visited (#1019): each content stray once, every tick.
     pub strays_visited: usize,
     /// Ways a driven stray tested for a blocker (#1019): at most five per stray a player drives.
@@ -396,6 +398,8 @@ pub struct ZoneSimulation {
     pub(crate) parties: crate::party::Parties,
     /// The night raid's incidents, objective integrity and last resolution (#530).
     pub(crate) raid: crate::RaidState,
+    /// Each further raid site's state (#1019), in content order after the night raid target.
+    pub(crate) site_raids: Vec<crate::RaidState>,
     /// Private-home residents a knock woke, by NPC (#158).
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
     /// Running quest escorts (#1019), canonical.
@@ -557,6 +561,8 @@ impl ZoneSimulation {
                 ))
                 .map_err(physics_error)?;
         }
+        // Each further raid site keeps its own state (#1019).
+        let site_raids = vec![crate::RaidState::default(); content.raids().len().saturating_sub(1)];
         let mut interest = InterestIndex::default();
         for npc in content.npcs() {
             let entity = EntityRef::Npc(npc.id);
@@ -611,6 +617,7 @@ impl ZoneSimulation {
             zone_view_cache: crate::zone_views::ZoneViewCache::default(),
             next_minion: 1,
             raid: crate::RaidState::default(),
+            site_raids,
             wakes: BTreeMap::new(),
             escorts: BTreeMap::new(),
             strays: BTreeMap::new(),
