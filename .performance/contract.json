@@ -367,8 +367,8 @@
           "name": "constructions_visited",
           "unit": "sites",
           "signal": "operation-count",
-          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades), every tick.",
-          "budget": { "max": 2 },
+          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades and the two hurdles of Lise's fold), every tick.",
+          "budget": { "max": 4 },
           "growth": [
             { "dimension": "raiders", "bound": "constant" },
             { "dimension": "idle", "bound": "constant" }
@@ -395,8 +395,8 @@
           "name": "mechanisms_visited",
           "unit": "seals and wards",
           "signal": "operation-count",
-          "notes": "ZoneTickWork::mechanisms_visited: the content's seals and wards (Greyhaven's one seal and one ward), every tick.",
-          "budget": { "max": 2 },
+          "notes": "ZoneTickWork::mechanisms_visited: the content's seals and wards (Greyhaven's two seals, the shrine's and the mill sluice, and one ward), every tick.",
+          "budget": { "max": 3 },
           "growth": [
             { "dimension": "occupants", "bound": "constant" },
             { "dimension": "idle", "bound": "constant" }

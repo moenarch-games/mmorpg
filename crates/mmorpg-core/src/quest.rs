@@ -271,7 +271,29 @@ pub struct Quest {
     pub requires: Vec<QuestId>,
     /// The options of its [`QuestObjective::Decide`] (#1019), as clients offer them; empty
     /// without one, else `2..=MAX_DECISION_OPTIONS`.
-    pub decision: Vec<String>,
+    pub decision: Vec<DecisionOption>,
+}
+
+/// One option of a quest's decision (#1019): what clients offer and what choosing it costs.
+/// A paid option settles a matter with the player's own copper: deciding it takes `copper` from
+/// the player at once and is refused ([`ErrorCode::NotEnoughMoney`]) without enough. Both the
+/// payment and the choice stand; abandoning the quest later returns neither.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DecisionOption {
+    pub label: String,
+    /// Copper the option costs, at most [`MAX_DECISION_COPPER`]; zero for most.
+    pub copper: u32,
+}
+
+impl DecisionOption {
+    /// A free option labelled `label`.
+    #[must_use]
+    pub fn free(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            copper: 0,
+        }
+    }
 }
 
 /// A quest gives at most this many kinds of supplies.
@@ -282,6 +304,8 @@ pub const MAX_QUEST_REQUIRES: usize = 3;
 pub const MAX_DECISION_OPTIONS: usize = 3;
 /// An option's label is at most this long.
 pub const MAX_DECISION_BYTES: usize = 48;
+/// A paid decision option costs at most this much copper (#1019).
+pub const MAX_DECISION_COPPER: u32 = 1_000;
 
 /// An NPC that leaves a character's world once the character turned in `quest` with
 /// decision `outcome` (#1019): the character no longer sees or reaches it; everyone else does.
@@ -401,10 +425,9 @@ pub(crate) fn validate_quests(
             .iter()
             .filter(|objective| matches!(objective, QuestObjective::Decide { .. }))
             .count();
-        let options_valid = quest
-            .decision
-            .iter()
-            .all(|option| text(option, MAX_DECISION_BYTES));
+        let options_valid = quest.decision.iter().all(|option| {
+            text(&option.label, MAX_DECISION_BYTES) && option.copper <= MAX_DECISION_COPPER
+        });
         if !options_valid
             || match decides {
                 0 => !quest.decision.is_empty(),

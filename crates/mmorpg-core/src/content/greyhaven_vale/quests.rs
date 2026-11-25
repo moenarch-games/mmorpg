@@ -31,9 +31,9 @@
 use serde::Deserialize;
 
 use crate::{
-    AidChore, AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot,
-    ItemId, LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcDeparture, NpcId, PieceId, PlayerClass,
-    Quest, QuestId, QuestObjective, QuestRewards, QuestSupply,
+    AidChore, AreaId, Confrontation, CreatureId, CreatureTemplateId, DecisionOption, EvidenceId,
+    EvidenceSpot, ItemId, LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcDeparture, NpcId,
+    PieceId, PlayerClass, Quest, QuestId, QuestObjective, QuestRewards, QuestSupply,
 };
 use strum::VariantArray;
 
@@ -140,6 +140,19 @@ pub const OSRIC_MILL: NpcId = NpcId::new(4);
 pub const BARRICADES_AT_MILLBROOK: QuestId = QuestId::new(44);
 pub const HOLD_UNTIL_DAWN: QuestId = QuestId::new(45);
 pub const AFTER_THE_RAID: QuestId = QuestId::new(46);
+
+/// The farmland's delivery, repair and village stories (#1019, slice 4a): Millbrook's choked
+/// sluice, a sack for Miller Hanne, Shepherd Lise's dispute with Old Bertil settled with evidence
+/// or copper, her fold's hurdles, Bertil's hidden locket and bread for the tower's watch
+/// ([`super::hamlet_stories`]). IDs 53 and 55 are the flock's, which needs simulated livestock.
+pub const THE_BROKEN_SLUICE: QuestId = QuestId::new(51);
+pub const A_SACK_FOR_HANNE: QuestId = QuestId::new(52);
+pub const A_SHEPHERDS_BARGAIN: QuestId = QuestId::new(54);
+pub const A_FENCE_IN_NEED: QuestId = QuestId::new(56);
+pub const BERTILS_HEIRLOOM: QuestId = QuestId::new(57);
+pub const BREAD_FOR_THE_WATCH: QuestId = QuestId::new(58);
+/// Old Bertil's locket, hidden under a stone at the old tower (#1019).
+pub const BERTILS_LOCKET: ItemId = ItemId::new(43);
 
 /// Their people: the wounded watchman on the Wolfrun terrace, the courier outside the east gate,
 /// the distrustful resident, the herbalist, the farmhand and the smith.
@@ -292,34 +305,102 @@ struct QuestSource {
     /// Further quests to turn in first (#1019).
     #[serde(default)]
     requires: Vec<u32>,
-    /// A decide objective's options (#1019).
+    /// A decide objective's options (#1019): a label, or a label and the copper it costs.
     #[serde(default)]
-    decision: Vec<String>,
+    decision: Vec<OptionSource>,
+}
+
+/// A decision option (#1019): free as a plain label, or paid.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OptionSource {
+    Free(String),
+    Paid { label: String, copper: u32 },
+}
+
+impl From<OptionSource> for DecisionOption {
+    fn from(source: OptionSource) -> Self {
+        match source {
+            OptionSource::Free(label) => Self::free(label),
+            OptionSource::Paid { label, copper } => Self { label, copper },
+        }
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 enum ObjectiveSource {
-    Kill { template: u32, count: u8 },
-    Collect { item: u32, count: u8, source: u32 },
-    Talk { npc: u32 },
-    Explore { area: u32 },
-    Retrieve { item: u32, area: u32 },
+    Kill {
+        template: u32,
+        count: u8,
+    },
+    Collect {
+        item: u32,
+        count: u8,
+        source: u32,
+    },
+    Talk {
+        npc: u32,
+    },
+    Explore {
+        area: u32,
+    },
+    Retrieve {
+        item: u32,
+        area: u32,
+    },
     DefeatThorn,
-    Inspect { spot: u32 },
-    UseItem { item: u32, npc: u32 },
-    Escort { npc: u32, area: u32 },
-    Interview { npc: u32 },
-    DefeatWithLoan { template: u32, count: u8 },
-    Crush { template: u32, count: u8 },
-    Demolish { piece: u32 },
-    DeliverLoad { source: u32, npc: u32 },
-    Build { piece: u32 },
-    Defend { npc: u32 },
-    Aid { chore: ChoreSource, count: u8 },
-    Transcribe { spot: u32, item: u32 },
-    Unseal { piece: u32 },
-    Decide { npc: u32 },
+    Inspect {
+        spot: u32,
+    },
+    UseItem {
+        item: u32,
+        npc: u32,
+    },
+    Escort {
+        npc: u32,
+        area: u32,
+    },
+    Interview {
+        npc: u32,
+    },
+    DefeatWithLoan {
+        template: u32,
+        count: u8,
+    },
+    Crush {
+        template: u32,
+        count: u8,
+    },
+    Demolish {
+        piece: u32,
+    },
+    DeliverLoad {
+        source: u32,
+        npc: u32,
+    },
+    Build {
+        piece: u32,
+    },
+    Defend {
+        npc: u32,
+    },
+    Aid {
+        chore: ChoreSource,
+        count: u8,
+    },
+    /// A hidden find (#1019) is a transcription of an item from a hidden spot.
+    #[serde(alias = "find")]
+    Transcribe {
+        spot: u32,
+        item: u32,
+    },
+    Unseal {
+        piece: u32,
+    },
+    Decide {
+        npc: u32,
+    },
 }
 
 /// An aid objective's chore (#1019).
@@ -347,6 +428,9 @@ struct EvidenceSource {
     name: String,
     at: [i32; 3],
     reach: i32,
+    /// A hidden spot's landmark directions (#1019).
+    #[serde(default)]
+    directions: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -483,7 +567,7 @@ fn parse(source: &str) -> Result<Parsed, String> {
                     })
                     .collect::<Result<_, String>>()?,
                 requires: quest.requires.into_iter().map(QuestId::new).collect(),
-                decision: quest.decision,
+                decision: quest.decision.into_iter().map(Into::into).collect(),
             })
         })
         .collect::<Result<_, String>>()?;
@@ -516,6 +600,7 @@ fn parse(source: &str) -> Result<Parsed, String> {
             name: spot.name,
             at: spot.at,
             reach: spot.reach,
+            directions: spot.directions,
         })
         .collect();
     let loads = source

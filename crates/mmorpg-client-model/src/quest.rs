@@ -171,14 +171,19 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
             mmorpg_core::AidChore::Mend => "Breaches mended".to_owned(),
             mmorpg_core::AidChore::Tend => "Wounded tended".to_owned(),
         },
-        // The shrine and the ledger (#1019).
-        QuestObjective::Transcribe { spot, item: id } => format!(
-            "{} of {}",
-            item(id),
-            content
-                .evidence_spot(spot)
-                .map_or("the inscription", |spot| spot.name.as_str())
-        ),
+        // The shrine and the ledger (#1019); a hidden find reads its landmark directions, since the
+        // map marks nothing.
+        QuestObjective::Transcribe { spot, item: id } => {
+            let spot = content.evidence_spot(spot);
+            match spot.and_then(|spot| spot.directions.as_deref()) {
+                Some(directions) => format!("Find {} {directions}", item(id)),
+                None => format!(
+                    "{} of {}",
+                    item(id),
+                    spot.map_or("the inscription", |spot| spot.name.as_str())
+                ),
+            }
+        }
         QuestObjective::Unseal { piece } => format!(
             "Open {}",
             content
@@ -492,9 +497,17 @@ pub fn decision_at(
                 .iter()
                 .zip(entry.progress)
                 .all(|(earlier, count)| count >= earlier.required());
+        // A paid option (#1019) names its price.
         ready.then(|| DecisionView {
             quest: quest.id,
-            options: quest.decision.clone(),
+            options: quest
+                .decision
+                .iter()
+                .map(|option| match option.copper {
+                    0 => option.label.clone(),
+                    copper => format!("{} ({copper} copper)", option.label),
+                })
+                .collect(),
         })
     })
 }

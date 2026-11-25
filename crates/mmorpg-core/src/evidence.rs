@@ -46,9 +46,22 @@ pub struct EvidenceSpot {
     pub at: [i32; 3],
     /// How near on XZ a player's feet must come, in units.
     pub reach: i32,
+    /// A hidden spot's landmark directions (#1019), as in "at the old tower's foot, by its
+    /// sunset corner": no client marks it on the map or dresses it, and the quest log reads the
+    /// directions instead. `None` for a spot in plain sight. The zone treats both alike.
+    pub directions: Option<String>,
 }
 
+/// A hidden spot's directions are at most this long.
+pub const MAX_EVIDENCE_DIRECTIONS_BYTES: usize = 96;
+
 impl EvidenceSpot {
+    /// Whether it is hidden (#1019): found by its directions, not by a map hint.
+    #[must_use]
+    pub const fn hidden(&self) -> bool {
+        self.directions.is_some()
+    }
+
     /// Whether feet at `feet` stand within reach of the spot.
     #[must_use]
     pub fn within(&self, feet: [i32; 3]) -> bool {

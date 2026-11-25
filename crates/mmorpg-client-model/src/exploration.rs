@@ -263,12 +263,15 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                     source: template, ..
                 } => creature_area(content, template),
                 // Evidence (#1019) hints at the area around its spot, never the spot itself.
-                QuestObjective::Inspect { spot } => content.evidence_spot(spot).and_then(|spot| {
-                    content
-                        .areas()
-                        .area_at(spot.at[0], spot.at[2])
-                        .map(Area::id)
-                }),
+                QuestObjective::Inspect { spot } => content
+                    .evidence_spot(spot)
+                    .filter(|spot| !spot.hidden())
+                    .and_then(|spot| {
+                        content
+                            .areas()
+                            .area_at(spot.at[0], spot.at[2])
+                            .map(Area::id)
+                    }),
                 // The trial's and the boulder's foes (#1019) like kills; a structure the area it
                 // stands in; an escort the area it leads to. NPC actions have their marker.
                 QuestObjective::DefeatWithLoan { template, .. }
@@ -312,15 +315,17 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                     })
                 }
                 // A rubbing (#1019) hints at the area round its inscription, an unsealing at the area
-                // its seal's first glyph lies in.
-                QuestObjective::Transcribe { spot, .. } => {
-                    content.evidence_spot(spot).and_then(|spot| {
+                // its seal's first glyph lies in. A hidden find hints at nothing: its quest log reads
+                // the landmark directions instead.
+                QuestObjective::Transcribe { spot, .. } => content
+                    .evidence_spot(spot)
+                    .filter(|spot| !spot.hidden())
+                    .and_then(|spot| {
                         content
                             .areas()
                             .area_at(spot.at[0], spot.at[2])
                             .map(Area::id)
-                    })
-                }
+                    }),
                 QuestObjective::Unseal { piece } => content
                     .seal(piece)
                     .and_then(|seal| content.mechanism(*seal.mechanisms.first()?))

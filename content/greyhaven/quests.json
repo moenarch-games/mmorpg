@@ -509,6 +509,67 @@
       "objectives": [{"talk": {"npc": 13}}, {"inspect": {"spot": 10}}, {"decide": {"npc": 34}}],
       "decision": ["Expose Garth to the Marshal", "Keep Garth as an informant"],
       "rewards": {"experience": 600, "copper": 50, "choices": []}
+    },
+    {
+      "id": 51,
+      "name": "The Broken Sluice",
+      "text": "The watermill below the Outpost grinds my grain, and its wheel has stopped. Look over the millrace above it, then work the sluice gate on the east bank and set the brook running to the wheel again.",
+      "giver": 4,
+      "ender": 4,
+      "prerequisite": 4,
+      "objectives": [{"inspect": {"spot": 11}}, {"unseal": {"piece": 7}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 52,
+      "name": "A Sack for Hanne",
+      "text": "With the rats gone the barn's grain is safe, and Miller Hanne's mill stands idle for want of it. Lift a sack from beside my barn and carry it down to her. Set it down if you must fight; another waits by the barn.",
+      "giver": 36,
+      "ender": 40,
+      "prerequisite": 30,
+      "objectives": [{"deliver_load": {"source": 3, "npc": 40}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []}
+    },
+    {
+      "id": 54,
+      "name": "A Shepherd's Bargain",
+      "text": "Something grazed my south pasture bare, and Old Bertil swears his goats never left his side. Hear him out, look at my pasture gate yourself, then settle it with him: with what you find, or with coin to keep the peace.",
+      "giver": 39,
+      "ender": 39,
+      "prerequisite": 32,
+      "objectives": [{"interview": {"npc": 38}}, {"inspect": {"spot": 12}}, {"decide": {"npc": 38}}],
+      "decision": ["Show Bertil the goat tracks at the gate", {"label": "Pay Lise for the grazing yourself", "copper": 20}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 56,
+      "name": "A Fence in Need",
+      "text": "Whatever came of Bertil's goats, my fold lies open. Carry timber from the hamlet barn and set a load down where each hurdle stood, north and east of the fold by my house, so my ewes stay in tonight.",
+      "giver": 39,
+      "ender": 39,
+      "prerequisite": 54,
+      "objectives": [{"build": {"piece": 8}}, {"build": {"piece": 9}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": [6, 9]}
+    },
+    {
+      "id": 57,
+      "name": "Bertil's Heirloom",
+      "text": "When the Redbrands came through in my boyhood, my mother hid her locket under a stone at the foot of the old tower by the road, at its south-west corner. I never found it again. My eyes are poor; yours are not.",
+      "giver": 38,
+      "ender": 38,
+      "prerequisite": 54,
+      "objectives": [{"find": {"spot": 13, "item": 43}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []}
+    },
+    {
+      "id": 58,
+      "name": "Bread for the Watch",
+      "text": "The mill grinds again, so the watch at the old tower gets its bread. Carry the sack of loaves by my door up the farm road to Watchman Dunstan. Set it down if you must fight; if it is lost, I bake more.",
+      "giver": 40,
+      "ender": 49,
+      "prerequisite": 52,
+      "objectives": [{"deliver_load": {"source": 5, "npc": 49}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
     }
   ],
   "departures": [
@@ -530,10 +591,16 @@
     {"id": 7, "name": "Hilda's ledger", "at": [-2650, -10, 3000], "reach": 200},
     {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250},
     {"id": 9, "name": "the drowned inscription", "at": [-7620, 200, -5400], "reach": 250},
-    {"id": 10, "name": "the Greyfang toll book", "at": [13500, 8299, -88200], "reach": 200}
+    {"id": 10, "name": "the Greyfang toll book", "at": [13500, 8299, -88200], "reach": 200},
+    {"id": 11, "name": "the choked millrace", "at": [-560, -20, 6050], "reach": 200},
+    {"id": 12, "name": "the tracks at Lise's gate", "at": [13300, 588, 49900], "reach": 250},
+    {"id": 13, "name": "the loose stone", "at": [700, 907, 44400], "reach": 200, "directions": "under a stone at the old tower's south-west corner"}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},
-    {"id": 2, "name": "timber from Millbrook's pile", "kind": "firewood", "at": [7000, 1100, 4400], "reach": 300}
+    {"id": 2, "name": "timber from Millbrook's pile", "kind": "firewood", "at": [7000, 1100, 4400], "reach": 300},
+    {"id": 3, "name": "a grain sack from Ena's barn", "kind": "sack", "at": [-9900, 601, 35400], "reach": 300},
+    {"id": 4, "name": "timber from the hamlet barn", "kind": "firewood", "at": [14600, 739, 41900], "reach": 300},
+    {"id": 5, "name": "the sack of loaves", "kind": "sack", "at": [-4950, 462, 55700], "reach": 300}
   ]
 }

@@ -40,6 +40,7 @@ pub mod farmland;
 pub mod fen_pack;
 pub mod fort;
 pub mod hamlet_creatures;
+pub mod hamlet_stories;
 pub mod highland_bandits;
 pub mod highlands;
 pub mod hunt;
@@ -219,6 +220,10 @@ pub mod ids {
     pub const MILLBROOK_BARRICADES: RangeInclusive<u32> = 463..=464;
     /// The Sunken Shrine's seal across the passage beyond the altar (#1019), a stone piece.
     pub const SHRINE_SEAL: u32 = 465;
+    /// The watermill's sluice stop on the village brook (#1019), a stone piece, and the hurdles of
+    /// Lise's fold, construction sites.
+    pub const SLUICE_STOP: u32 = 466;
+    pub const FOLD_HURDLES: RangeInclusive<u32> = 467..=468;
     /// The guardian's vault beyond the seal (#1019): its walls, drawn as the shrine kit, and its
     /// rock cover cells.
     pub const SHRINE_VAULT_WALLS: RangeInclusive<u32> = 470..=478;
@@ -2005,6 +2010,9 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
         millbrook_defence::site(),
         shrine::vault::site(),
     ]
+    .into_iter()
+    .chain(hamlet_stories::sites())
+    .collect()
 }
 
 /// Every destructible piece: the watch post's, then Millbrook's barricades (#1019).
@@ -2014,6 +2022,7 @@ pub fn structure_pieces() -> Vec<crate::StructurePiece> {
         .into_iter()
         .chain(millbrook_defence::barricades())
         .chain([shrine::vault::seal_piece()])
+        .chain(hamlet_stories::pieces())
         .collect()
 }
 
@@ -2233,11 +2242,19 @@ fn content_with_spawns(
             .with_evidence(quests::evidence())?
             .with_loads(quests::loads())?
             // Millbrook's barricades (#1019), after the pieces and the timber pile they name.
-            .with_constructions(millbrook_defence::constructions())?
+            .with_constructions(
+                millbrook_defence::constructions()
+                    .into_iter()
+                    .chain(hamlet_stories::constructions())
+                    .collect(),
+            )?
             // The Sunken Shrine's glyphs, seal and ward (#1019), after its seal's piece and warden.
             .with_mechanisms(
-                shrine::vault::mechanisms(),
-                vec![shrine::vault::seal()],
+                shrine::vault::mechanisms()
+                    .into_iter()
+                    .chain(hamlet_stories::mechanisms())
+                    .collect(),
+                vec![shrine::vault::seal(), hamlet_stories::seal()],
                 vec![shrine::vault::ward()],
             )?
             .with_quests(quests::quests())?

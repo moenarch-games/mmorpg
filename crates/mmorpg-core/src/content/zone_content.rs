@@ -1936,6 +1936,10 @@ impl ZoneContent {
         for spot in &spots {
             if spot.name.trim().is_empty()
                 || spot.name.len() > MAX_UNIT_NAME_BYTES
+                || spot.directions.as_ref().is_some_and(|directions| {
+                    directions.trim().is_empty()
+                        || directions.len() > crate::MAX_EVIDENCE_DIRECTIONS_BYTES
+                })
                 || spot.reach <= 0
                 || spot.reach > crate::MAX_EVIDENCE_REACH_UNITS
                 || spot
@@ -2471,6 +2475,11 @@ impl ZoneContent {
             hash.text(&spot.name);
             hash.i32s(&spot.at);
             hash.i32s(&[spot.reach]);
+            // A hidden spot (#1019) also its directions, only where authored.
+            if let Some(directions) = &spot.directions {
+                hash.bytes(b"hidden");
+                hash.text(directions);
+            }
         }
         hash.finish()
     }
@@ -3217,7 +3226,12 @@ impl ZoneContent {
                 hash.bytes(b"decision");
                 hash.len(quest.decision.len());
                 for option in &quest.decision {
-                    hash.text(option);
+                    hash.text(&option.label);
+                    // A paid option (#1019) also its price, only where authored.
+                    if option.copper > 0 {
+                        hash.bytes(b"paid");
+                        hash.u32(option.copper);
+                    }
                 }
             }
         }

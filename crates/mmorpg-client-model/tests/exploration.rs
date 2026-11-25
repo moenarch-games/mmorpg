@@ -107,6 +107,53 @@ fn discoveries_and_quest_hints_follow_the_received_sheets() {
     assert!(hunting.hints.iter().any(|hint| hint.quest == kill.id.get()));
 }
 
+/// A hidden find (#1019, *Bertil's Heirloom*) has no map hint: its quest log reads Bertil's
+/// landmark directions instead. A plain inspection (*A Shepherd's Bargain*'s gate) keeps its
+/// area's hint, and the bargain's paid option names its price.
+#[test]
+fn a_hidden_find_reads_its_directions_and_marks_nothing_on_the_map() {
+    use mmorpg_client_model::quest::{decision_at, objective_label};
+    use mmorpg_core::{NpcId, QuestId};
+
+    let content = greyhaven_vale::content();
+    let sheet = |quest: u32, progress: [u8; 3]| QuestSheet {
+        completed: BTreeSet::new(),
+        entries: vec![QuestEntry {
+            quest: QuestId::new(quest),
+            progress,
+        }],
+        markers: Vec::new(),
+    };
+    let heirloom = content.quest(QuestId::new(57)).unwrap();
+    assert_eq!(
+        objective_label(heirloom.objectives[0], &content),
+        "Find Bertil's Locket under a stone at the old tower's south-west corner"
+    );
+    let map = exploration_map(&content, &BTreeSet::new(), Some(&sheet(57, [0; 3])));
+    assert!(map.hints.is_empty(), "{:?}", map.hints);
+
+    let bargain = exploration_map(&content, &BTreeSet::new(), Some(&sheet(54, [1, 0, 0])));
+    assert_eq!(
+        bargain
+            .hints
+            .iter()
+            .map(|hint| hint.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Inspect the tracks at Lise's gate",
+            "Decide what becomes of Old Bertil"
+        ]
+    );
+    let decision = decision_at(&content, &sheet(54, [1, 1, 0]).entries, NpcId::new(38)).unwrap();
+    assert_eq!(
+        decision.options,
+        [
+            "Show Bertil the goat tracks at the gate",
+            "Pay Lise for the grazing yourself (20 copper)"
+        ]
+    );
+}
+
 /// Points of interest (#1063) show only in discovered areas, each kind with its own marker, and
 /// a quest giver shows only while the received sheet marks them.
 #[test]

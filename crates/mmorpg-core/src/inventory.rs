@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 42] = [
+pub const ITEM_CATALOG: [ItemTemplate; 43] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -448,6 +448,15 @@ pub const ITEM_CATALOG: [ItemTemplate; 42] = [
     ItemTemplate {
         id: ItemId::new(42),
         name: "Inscription Rubbing",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    // Old Bertil's hidden heirloom (#1019), worth nothing to a vendor.
+    ItemTemplate {
+        id: ItemId::new(43),
+        name: "Bertil's Locket",
         max_stack: 1,
         slot: None,
         weapon: None,

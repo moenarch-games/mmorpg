@@ -295,7 +295,11 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .map(|item| item.get())
                     .collect(),
                 requires: quest.requires.iter().map(|quest| quest.get()).collect(),
-                decision: quest.decision.clone(),
+                decision: quest
+                    .decision
+                    .iter()
+                    .map(|option| option.label.clone())
+                    .collect(),
             })
             .collect(),
         classes: mmorpg_core::PlayerClass::VARIANTS
@@ -542,6 +546,7 @@ mod tests {
                 item(40, "Fever Draught", Value::Null, stats(0, 0, 0, 0)),
                 item(41, "Forged Toll Pass", Value::Null, stats(0, 0, 0, 0)),
                 item(42, "Inscription Rubbing", Value::Null, stats(0, 0, 0, 0)),
+                item(43, "Bertil's Locket", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

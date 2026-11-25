@@ -99,7 +99,7 @@ impl fmt::Display for VendorStockError {
 impl Error for VendorStockError {}
 
 /// Copper any vendor pays for one unit of a catalog item; zero for unknown items. Every catalog
-/// item is sellable except the quest supplies, lent trial arms and the rubbing (#1019, items 36 to 42): a
+/// item is sellable except the quest supplies, lent trial arms, the rubbing and the locket (#1019, items 36 to 43): a
 /// vendor refuses those, so accepting, selling and abandoning a quest never mints copper.
 #[must_use]
 pub const fn sell_price(item: ItemId) -> u32 {
@@ -385,9 +385,9 @@ mod tests {
     #[test]
     fn every_catalog_item_but_the_quest_supplies_is_sellable_and_every_offer_costs_more() {
         for item in ITEM_CATALOG {
-            // The quest supplies, lent trial arms and the rubbing (#1019) are worth nothing to a
-            // vendor.
-            let supply = (36..=42).contains(&item.id.get());
+            // The quest supplies, lent trial arms, the rubbing and the locket (#1019) are worth
+            // nothing to a vendor.
+            let supply = (36..=43).contains(&item.id.get());
             assert_eq!(sell_price(item.id) == 0, supply, "{}", item.name);
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);
