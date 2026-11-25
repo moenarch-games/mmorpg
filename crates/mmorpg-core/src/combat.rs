@@ -1764,7 +1764,8 @@ impl ZoneSimulation {
                 || content.is_depths_creature(creature_id)
                 || content.is_hunt_beast(creature_id)
                 || content.is_cart_bandit(creature_id)
-                || content.is_confrontation_foe(creature_id);
+                || content.is_confrontation_foe(creature_id)
+                || content.is_prowler(creature_id);
             if let Life::Despawned { died_at } = creature.life
                 && !waits_for_incident
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))

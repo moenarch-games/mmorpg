@@ -121,6 +121,8 @@ export type SceneryContent = StaticSceneContent & {
   ambientAnimalClips(): string[];
   ambientAnimalAnchors(): Int32Array;
   ambientAnimalFrame(seconds: number, animate: boolean): Float32Array;
+  /** The farm animal entry the zone's livestock (#1019) is drawn with. */
+  livestockSpecies(): string;
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
@@ -173,6 +175,9 @@ export type AmbientAnimalsSource = {
   frame(seconds: number, animate: boolean): Float32Array;
 };
 
+/** The zone's livestock (#1019): the farm animal entry its strays and flocks are drawn with and the clip names their frames index. */
+export type LivestockSource = { species: string; clips: readonly string[] };
+
 export type SceneryProvider = {
   readonly scenery: Scenery;
   /** The shared static world both clients draw (#184), straight from the WASM owner. */
@@ -207,6 +212,7 @@ export type SceneryProvider = {
   readonly kits: readonly PlacedKitSource[];
   /** Greyhaven's cosmetic ambient animals (#419). */
   readonly ambient: AmbientAnimalsSource;
+  readonly livestock: LivestockSource;
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
@@ -550,6 +556,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         frame: (seconds: number, animate: boolean) => content.ambientAnimalFrame(seconds, animate),
       };
     })(),
+    livestock: { species: content.livestockSpecies(), clips: content.ambientAnimalClips() },
     importedRestClip(kind) {
       const clip = content.importedRestClip(kind);
       if (clip === undefined) {

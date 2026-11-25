@@ -197,6 +197,28 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
         QuestObjective::Decide { npc } => {
             format!("Decide what becomes of {}", objective_npc(content, npc))
         }
+        // Lise's flock (#1019): "Drive Lise's Stray Ewe into Lise's fold", "Keep 2 of the 3 ewes
+        // standing through the watch", "Lay Tainted Mutton at the north-east gap in the hedge".
+        QuestObjective::Herd { npc } => {
+            format!("Drive {} home into its pen", objective_npc(content, npc))
+        }
+        QuestObjective::Watch { .. } => content.watch().map_or_else(
+            || "Keep the flock through the watch".to_owned(),
+            |watch| {
+                format!(
+                    "Keep {} of the {} ewes standing through the watch",
+                    watch.hold,
+                    watch.flock.len()
+                )
+            },
+        ),
+        QuestObjective::Lay { spot, item: id } => format!(
+            "Lay {} at {}",
+            item(id),
+            content
+                .evidence_spot(spot)
+                .map_or("its place", |spot| spot.name.as_str())
+        ),
     }
 }
 
@@ -258,6 +280,9 @@ pub fn objective_view(
         | QuestObjective::Defend { .. }
         | QuestObjective::Unseal { .. }
         | QuestObjective::Decide { .. }
+        | QuestObjective::Herd { .. }
+        | QuestObjective::Watch { .. }
+        | QuestObjective::Lay { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -274,7 +299,10 @@ pub fn objective_view(
         | QuestObjective::Build { .. }
         | QuestObjective::Defend { .. }
         | QuestObjective::Unseal { .. }
-        | QuestObjective::Decide { .. } => label.clone(),
+        | QuestObjective::Decide { .. }
+        | QuestObjective::Herd { .. }
+        | QuestObjective::Watch { .. }
+        | QuestObjective::Lay { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -575,6 +603,8 @@ pub fn evidence_in_reach(
                 QuestObjective::Inspect { spot } if progress == 0 => Some(spot),
                 // A rubbing (#1019) is taken by inspecting its spot while the bag holds none.
                 QuestObjective::Transcribe { spot, .. } if progress == 0 => Some(spot),
+                // Bait or a snare (#1019) is laid by inspecting its spot.
+                QuestObjective::Lay { spot, .. } if progress == 0 => Some(spot),
                 _ => None,
             })
     });
@@ -810,7 +840,10 @@ mod tests {
                     | QuestObjective::Build { .. }
                     | QuestObjective::Defend { .. }
                     | QuestObjective::Unseal { .. }
-                    | QuestObjective::Decide { .. } => {
+                    | QuestObjective::Decide { .. }
+                    | QuestObjective::Herd { .. }
+                    | QuestObjective::Watch { .. }
+                    | QuestObjective::Lay { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

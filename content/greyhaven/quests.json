@@ -531,6 +531,16 @@
       "rewards": {"experience": 250, "copper": 20, "choices": []}
     },
     {
+      "id": 53,
+      "name": "The Missing Ewe",
+      "text": "One of my ewes pushed through the fold last night. Her wool is on the hurdle; follow her trail past the barn and find her. She shies from anyone close, so come at her from the far side and drive her into the fold.",
+      "giver": 39,
+      "ender": 39,
+      "prerequisite": 32,
+      "objectives": [{"inspect": {"spot": 14}}, {"inspect": {"spot": 15}}, {"herd": {"npc": 50}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
       "id": 54,
       "name": "A Shepherd's Bargain",
       "text": "Something grazed my south pasture bare, and Old Bertil swears his goats never left his side. Hear him out, look at my pasture gate yourself, then settle it with him: with what you find, or with coin to keep the peace.",
@@ -540,6 +550,17 @@
       "objectives": [{"interview": {"npc": 38}}, {"inspect": {"spot": 12}}, {"decide": {"npc": 38}}],
       "decision": ["Show Bertil the goat tracks at the gate", {"label": "Pay Lise for the grazing yourself", "copper": 20}],
       "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 55,
+      "name": "The Hedges at Dusk",
+      "text": "Wolves come up from the brook at dusk and try my hedges. Lay this mutton in the north-east gap and the snare in the east gap, then tell me you are ready and keep watch with me. Two of my three ewes must stand.",
+      "giver": 39,
+      "ender": 39,
+      "prerequisite": 53,
+      "objectives": [{"lay": {"spot": 16, "item": 44}}, {"lay": {"spot": 17, "item": 45}}, {"watch": {"npc": 39}}],
+      "supplies": [{"item": 44}, {"item": 45}],
+      "rewards": {"experience": 350, "copper": 25, "choices": []}
     },
     {
       "id": 56,
@@ -594,7 +615,11 @@
     {"id": 10, "name": "the Greyfang toll book", "at": [13500, 8299, -88200], "reach": 200},
     {"id": 11, "name": "the choked millrace", "at": [-560, -20, 6050], "reach": 200},
     {"id": 12, "name": "the tracks at Lise's gate", "at": [13300, 588, 49900], "reach": 250},
-    {"id": 13, "name": "the loose stone", "at": [700, 907, 44400], "reach": 200, "directions": "under a stone at the old tower's south-west corner"}
+    {"id": 13, "name": "the loose stone", "at": [700, 907, 44400], "reach": 200, "directions": "under a stone at the old tower's south-west corner"},
+    {"id": 14, "name": "wool on the fold's hurdle", "at": [15500, 739, 45800], "reach": 250},
+    {"id": 15, "name": "hoofprints below the barn", "at": [13300, 587, 39800], "reach": 250},
+    {"id": 16, "name": "the north-east gap in the hedge", "at": [15700, 739, 45500], "reach": 250},
+    {"id": 17, "name": "the east gap in the hedge", "at": [15900, 739, 46700], "reach": 250}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},

@@ -344,6 +344,25 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                     .npc(npc)
                     .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
                     .map(Area::id),
+                // The flock (#1019): a stray hints at where it was found, a watch at its fold, a lay
+                // at the area round its spot.
+                QuestObjective::Herd { npc } => content
+                    .npc(npc)
+                    .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
+                    .map(Area::id),
+                QuestObjective::Watch { .. } => content.watch().and_then(|watch| {
+                    let [x, z] = watch.centre;
+                    content.areas().area_at(x, z).map(Area::id)
+                }),
+                QuestObjective::Lay { spot, .. } => content
+                    .evidence_spot(spot)
+                    .filter(|spot| !spot.hidden())
+                    .and_then(|spot| {
+                        content
+                            .areas()
+                            .area_at(spot.at[0], spot.at[2])
+                            .map(Area::id)
+                    }),
             };
             let Some(area) = area.and_then(|id| areas.iter().find(|area| area.id == id)) else {
                 continue;

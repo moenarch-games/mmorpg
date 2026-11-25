@@ -136,6 +136,7 @@ pub fn encode_canonical_snapshot(
     encode_constructions(&mut payload, &snapshot.constructions)?;
     encode_seals(&mut payload, &snapshot.seals)?;
     encode_wards(&mut payload, &snapshot.wards)?;
+    encode_flock(&mut payload, &snapshot.strays, snapshot.watch.as_ref())?;
     Ok(payload)
 }
 
@@ -1428,6 +1429,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let constructions = decode_constructions(payload, &mut offset)?;
     let seals = decode_seals(payload, &mut offset)?;
     let wards = decode_wards(payload, &mut offset)?;
+    let (strays, watch) = decode_flock(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1456,6 +1458,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         parties,
         wakes,
         escorts,
+        strays,
+        watch,
         loads,
         constructions,
         seals,
@@ -1826,6 +1830,133 @@ fn decode_loads(
             })
         })
         .collect()
+}
+
+/// The livestock (#1019): the driven or penned strays, a count (`u8`), then per stray in NPC-ID
+/// order its NPC (`u32`), feet XZ (`i32` each), facing (`u16`), velocity (`i8` each), driver (a
+/// flag `u8`, then the player `u32` when set), ticks still (`u16`) and pen rest end tick (`u64`);
+/// then the watch, a flag (`u8`) and when set its start tick (`u64`), its sheep's health (count
+/// `u8`, each `u32`), its prowlers' gap holds (count `u8`, each `u16`), the prowlers stood (`u8`
+/// bits) and its recovery tick (`u64`).
+fn encode_flock(
+    payload: &mut Vec<u8>,
+    strays: &[mmorpg_core::StrayState],
+    watch: Option<&mmorpg_core::WatchState>,
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(strays.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_STRAYS)
+        .ok_or_else(|| ProtocolError::new("strays exceed their count"))?;
+    payload.push(count);
+    for stray in strays {
+        payload.extend_from_slice(&stray.npc.get().to_be_bytes());
+        for axis in stray.position {
+            payload.extend_from_slice(&axis.to_be_bytes());
+        }
+        payload.extend_from_slice(&stray.facing.to_be_bytes());
+        payload.extend(stray.velocity.map(|axis| axis.to_be_bytes()[0]));
+        match stray.driver {
+            None => payload.push(0),
+            Some(player) => {
+                payload.push(1);
+                payload.extend_from_slice(&player.to_be_bytes());
+            }
+        }
+        payload.extend_from_slice(&stray.still.to_be_bytes());
+        payload.extend_from_slice(&stray.rests_until.to_be_bytes());
+    }
+    let Some(watch) = watch else {
+        payload.push(0);
+        return Ok(());
+    };
+    payload.push(1);
+    payload.extend_from_slice(&watch.started.to_be_bytes());
+    let sheep = u8::try_from(watch.flock.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_FLOCK)
+        .ok_or_else(|| ProtocolError::new("a watch's flock exceeds its count"))?;
+    payload.push(sheep);
+    for health in &watch.flock {
+        payload.extend_from_slice(&health.to_be_bytes());
+    }
+    let prowlers = u8::try_from(watch.held.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_PROWLERS)
+        .ok_or_else(|| ProtocolError::new("a watch's prowlers exceed their count"))?;
+    payload.push(prowlers);
+    for held in &watch.held {
+        payload.extend_from_slice(&held.to_be_bytes());
+    }
+    payload.push(watch.stood);
+    payload.extend_from_slice(&watch.recovers_at.to_be_bytes());
+    Ok(())
+}
+
+type Flock = (
+    Vec<mmorpg_core::StrayState>,
+    Option<mmorpg_core::WatchState>,
+);
+
+fn decode_flock(payload: &[u8], offset: &mut usize) -> Result<Flock, ProtocolError> {
+    let [count] = take(payload, offset)?;
+    if usize::from(count) > mmorpg_core::MAX_STRAYS {
+        return Err(ProtocolError::new("strays exceed their count"));
+    }
+    let strays = (0..count)
+        .map(|_| {
+            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+            let position = [
+                i32::from_be_bytes(take(payload, offset)?),
+                i32::from_be_bytes(take(payload, offset)?),
+            ];
+            let facing = u16::from_be_bytes(take(payload, offset)?);
+            let [x, z] = take(payload, offset)?;
+            let driver = match take(payload, offset)? {
+                [0] => None,
+                [1] => Some(u32::from_be_bytes(take(payload, offset)?)),
+                _ => return Err(ProtocolError::new("unknown stray driver flag")),
+            };
+            Ok(mmorpg_core::StrayState {
+                npc,
+                position,
+                facing,
+                velocity: [i8::from_be_bytes([x]), i8::from_be_bytes([z])],
+                driver,
+                still: u16::from_be_bytes(take(payload, offset)?),
+                rests_until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    let watch = match take(payload, offset)? {
+        [0] => None,
+        [1] => {
+            let started = u64::from_be_bytes(take(payload, offset)?);
+            let [sheep] = take(payload, offset)?;
+            if usize::from(sheep) > mmorpg_core::MAX_FLOCK {
+                return Err(ProtocolError::new("a watch's flock exceeds its count"));
+            }
+            let flock = (0..sheep)
+                .map(|_| Ok(u32::from_be_bytes(take(payload, offset)?)))
+                .collect::<Result<_, ProtocolError>>()?;
+            let [prowlers] = take(payload, offset)?;
+            if usize::from(prowlers) > mmorpg_core::MAX_PROWLERS {
+                return Err(ProtocolError::new("a watch's prowlers exceed their count"));
+            }
+            let held = (0..prowlers)
+                .map(|_| Ok(u16::from_be_bytes(take(payload, offset)?)))
+                .collect::<Result<_, ProtocolError>>()?;
+            let [stood] = take(payload, offset)?;
+            Some(mmorpg_core::WatchState {
+                started,
+                flock,
+                held,
+                stood,
+                recovers_at: u64::from_be_bytes(take(payload, offset)?),
+            })
+        }
+        _ => return Err(ProtocolError::new("unknown watch flag")),
+    };
+    Ok((strays, watch))
 }
 
 fn decode_escorts(
@@ -3233,6 +3364,22 @@ pub(crate) mod tests {
                 behind: 5,
                 rests_until: 0,
             }],
+            strays: vec![mmorpg_core::StrayState {
+                npc: mmorpg_core::NpcId::new(50),
+                position: [14_000, 42_800],
+                facing: 0,
+                velocity: [0, 4],
+                driver: Some(1),
+                still: 3,
+                rests_until: 0,
+            }],
+            watch: Some(mmorpg_core::WatchState {
+                started: 4,
+                flock: vec![40, 12, 0],
+                held: vec![360, 120, 0, 0],
+                stood: 0b0011,
+                recovers_at: 0,
+            }),
             loads: vec![
                 mmorpg_core::LoadState {
                     player: 1,

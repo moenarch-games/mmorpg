@@ -138,6 +138,10 @@ pub struct ZoneContent {
     confrontations: Vec<crate::Confrontation>,
     /// NPCs quests escort or confront (#1019), whose bodies the tick moves, in ID order.
     quest_npcs: Vec<crate::NpcId>,
+    /// Strays to drive into their pens (#1019), in NPC order.
+    strays: Vec<crate::Stray>,
+    /// The night watch over a flock (#1019).
+    watch: Option<crate::HedgeWatch>,
     /// Named places clients mark on their maps (#1063).
     landmarks: Vec<crate::Landmark>,
 }
@@ -300,6 +304,8 @@ impl ZoneContent {
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
+            strays: Vec::new(),
+            watch: None,
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -377,6 +383,8 @@ impl ZoneContent {
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
+            strays: Vec::new(),
+            watch: None,
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -1821,7 +1829,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_mechanism_fingerprint();
+        let fingerprint = self.compute_flock_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -2348,10 +2356,189 @@ impl ZoneContent {
             .any(|confrontation| confrontation.foe == creature)
     }
 
-    /// The NPCs quests escort or confront (#1019), in ID order.
+    /// The NPCs quests escort or confront (#1019), and the strays, in ID order.
     #[must_use]
     pub fn quest_npcs(&self) -> &[crate::NpcId] {
         &self.quest_npcs
+    }
+
+    /// Binds the livestock (#1019), after the NPC quests: each stray a known NPC without a routine,
+    /// once, its pen a rectangle its post lies outside; the watch's shepherd a known NPC, its flock
+    /// known distinct NPCs that are no strays and keep no routine, its hold within the flock, its
+    /// prowlers distinct creature spawns reserved for it (in no raid, depths site, hunt, cart, den
+    /// or confrontation). Every herd objective names a stray and every watch objective the watch's
+    /// shepherd. The strays join the NPCs the tick moves.
+    pub fn with_flock(
+        mut self,
+        mut strays: Vec<crate::Stray>,
+        watch: Option<crate::HedgeWatch>,
+    ) -> Result<Self, ZoneError> {
+        strays.sort_by_key(|stray| stray.npc);
+        let pen_valid = |stray: &crate::Stray| {
+            let (min, max) = stray.pen;
+            min[0] <= max[0]
+                && min[1] <= max[1]
+                && self
+                    .npc(stray.npc)
+                    .is_some_and(|npc| !stray.penned(npc.position))
+        };
+        if strays.len() > crate::MAX_STRAYS
+            || strays.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+            || strays
+                .iter()
+                .any(|stray| self.routine(stray.npc).is_some() || !pen_valid(stray))
+        {
+            return Err(ZoneError::new("strays are invalid"));
+        }
+        if let Some(watch) = &watch {
+            let reserved_elsewhere = |creature: CreatureId| {
+                self.is_raider(creature)
+                    || self.is_depths_creature(creature)
+                    || self.is_hunt_beast(creature)
+                    || self.is_cart_bandit(creature)
+                    || self.is_confrontation_foe(creature)
+                    || self
+                        .dens
+                        .iter()
+                        .any(|den| den.pack.contains(&creature) || den.prey.contains(&creature))
+            };
+            let flock_valid = !watch.flock.is_empty()
+                && watch.flock.len() <= crate::MAX_FLOCK
+                && watch.flock.iter().enumerate().all(|(index, &sheep)| {
+                    self.npc(sheep).is_some()
+                        && self.routine(sheep).is_none()
+                        && sheep != watch.npc
+                        && !watch.flock[..index].contains(&sheep)
+                        && !strays.iter().any(|stray| stray.npc == sheep)
+                });
+            let prowlers_valid = !watch.prowlers.is_empty()
+                && watch.prowlers.len() <= crate::MAX_PROWLERS
+                && watch.prowlers.iter().enumerate().all(|(index, prowler)| {
+                    self.creature_spawns()
+                        .iter()
+                        .any(|spawn| spawn.id == prowler.creature)
+                        && !reserved_elsewhere(prowler.creature)
+                        && !watch.prowlers[..index]
+                            .iter()
+                            .any(|earlier| earlier.creature == prowler.creature)
+                        && prowler.after_ticks < crate::WATCH_TICKS
+                });
+            if self.npc(watch.npc).is_none()
+                || !flock_valid
+                || !prowlers_valid
+                || watch.hold == 0
+                || usize::from(watch.hold) > watch.flock.len()
+                || watch.health == 0
+                || watch.radius <= 0
+            {
+                return Err(ZoneError::new("the watch is invalid"));
+            }
+        }
+        let objectives_valid = self.quests.iter().flat_map(|quest| &quest.objectives).all(
+            |objective| match *objective {
+                crate::QuestObjective::Herd { npc } => strays.iter().any(|stray| stray.npc == npc),
+                crate::QuestObjective::Watch { npc } => {
+                    watch.as_ref().is_some_and(|watch| watch.npc == npc)
+                }
+                _ => true,
+            },
+        );
+        if !objectives_valid {
+            return Err(ZoneError::new(
+                "a herd or watch objective names no livestock",
+            ));
+        }
+        self.quest_npcs.extend(strays.iter().map(|stray| stray.npc));
+        self.quest_npcs.sort_unstable();
+        self.quest_npcs.dedup();
+        self.strays = strays;
+        self.watch = watch;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Every stray (#1019), in NPC order.
+    #[must_use]
+    pub fn strays(&self) -> &[crate::Stray] {
+        &self.strays
+    }
+
+    /// The stray `npc` (#1019), if it is one.
+    #[must_use]
+    pub fn stray(&self, npc: crate::NpcId) -> Option<&crate::Stray> {
+        self.strays
+            .binary_search_by_key(&npc, |stray| stray.npc)
+            .ok()
+            .map(|index| &self.strays[index])
+    }
+
+    /// The night watch over the flock (#1019), if any.
+    #[must_use]
+    pub const fn watch(&self) -> Option<&crate::HedgeWatch> {
+        self.watch.as_ref()
+    }
+
+    /// Whether `npc` is livestock (#1019): a stray or a sheep of the watch, which clients draw
+    /// as a farm animal.
+    #[must_use]
+    pub fn is_livestock(&self, npc: crate::NpcId) -> bool {
+        self.stray(npc).is_some()
+            || self
+                .watch
+                .as_ref()
+                .is_some_and(|watch| watch.sheep(npc).is_some())
+    }
+
+    /// Whether `creature` is a prowler of the watch (#1019): it stands only while a watch runs
+    /// and never respawns on its own.
+    #[must_use]
+    pub fn is_prowler(&self, creature: CreatureId) -> bool {
+        self.watch
+            .as_ref()
+            .is_some_and(|watch| watch.prowler(creature).is_some())
+    }
+
+    /// Livestock (#1019) enters the identity only where authored.
+    fn compute_flock_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_mechanism_fingerprint();
+        if self.strays.is_empty() && self.watch.is_none() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/flock-v1");
+        hash.u64(fingerprint);
+        hash.len(self.strays.len());
+        for stray in &self.strays {
+            hash.u32(stray.npc.get());
+            let (min, max) = stray.pen;
+            for value in [min[0], min[1], max[0], max[1]] {
+                hash.i32(value);
+            }
+        }
+        match &self.watch {
+            None => hash.u8(0),
+            Some(watch) => {
+                hash.u8(1);
+                hash.u32(watch.npc.get());
+                hash.len(watch.flock.len());
+                for sheep in &watch.flock {
+                    hash.u32(sheep.get());
+                }
+                hash.u32(watch.health);
+                hash.u8(watch.hold);
+                hash.len(watch.prowlers.len());
+                for prowler in &watch.prowlers {
+                    hash.u32(prowler.creature.get());
+                    hash.u32(prowler.after_ticks);
+                    hash.i32(prowler.gap[0]);
+                    hash.i32(prowler.gap[1]);
+                }
+                hash.i32(watch.centre[0]);
+                hash.i32(watch.centre[1]);
+                hash.i32(watch.radius);
+            }
+        }
+        hash.finish()
     }
 
     /// Mechanisms, seals, wards and departures (#1019) enter the identity only where authored.
@@ -3194,6 +3381,13 @@ impl ZoneContent {
                     }
                     crate::QuestObjective::Unseal { piece } => hash.u32(piece.get()),
                     crate::QuestObjective::Decide { npc } => hash.u32(npc.get()),
+                    crate::QuestObjective::Herd { npc } | crate::QuestObjective::Watch { npc } => {
+                        hash.u32(npc.get());
+                    }
+                    crate::QuestObjective::Lay { spot, item } => {
+                        hash.u32(spot.get());
+                        hash.u32(item.get());
+                    }
                 }
             }
             hash.u32(quest.rewards.experience);

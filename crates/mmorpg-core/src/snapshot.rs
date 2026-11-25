@@ -429,6 +429,10 @@ pub struct CanonicalZoneSnapshot {
     pub wakes: Vec<crate::NpcWake>,
     /// Running quest escorts (#1019), in NPC order.
     pub escorts: Vec<crate::EscortState>,
+    /// Strays away from their scatter points (#1019), in NPC order.
+    pub strays: Vec<crate::StrayState>,
+    /// The running or settling watch over the flock (#1019).
+    pub watch: Option<crate::WatchState>,
     /// Every player's one load, carried or set down (#1077), in player-ID order.
     pub loads: Vec<crate::LoadState>,
     /// Every construction site's material and raising (#1019), in content order.
@@ -726,6 +730,8 @@ impl ZoneSimulation {
             gathering: (*self.gathering).clone(),
             wakes: self.canonical_wakes(),
             escorts: self.canonical_escorts(),
+            strays: self.canonical_strays(),
+            watch: self.watch.clone(),
             loads: self.canonical_loads(),
             constructions: self.canonical_constructions(),
             seals: self.canonical_seals(),
@@ -837,6 +843,7 @@ impl ZoneSimulation {
         // tick left them.
         zone.restore_wakes(&snapshot.wakes, snapshot.tick)?;
         zone.restore_escorts(&snapshot.escorts, snapshot.tick)?;
+        zone.restore_flock(&snapshot.strays, snapshot.watch.as_ref(), snapshot.tick)?;
         zone.restore_loads(&snapshot.loads)?;
         zone.restore_constructions(&snapshot.constructions, snapshot.tick)?;
         zone.restore_mechanisms(&snapshot.seals, &snapshot.wards, snapshot.tick)?;

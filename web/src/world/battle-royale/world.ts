@@ -71,6 +71,7 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     veins: [],
     kits: [],
     ambient: { entries: [], clips: [], anchors: [], frame: () => emptyMotion },
+    livestock: { species: "", clips: [] },
     importedRestClip: (kind) => local.scenery.importedRestClip(kind),
     areaAt: () => null,
     reachablePieces: () => [],

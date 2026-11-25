@@ -294,6 +294,9 @@ mirror!(
         SiteNotReady,
         SealOpen,
         Warded,
+        FlockUnsettled,
+        FlockFell,
+        StrayBolted,
     }
 );
 mirror!(

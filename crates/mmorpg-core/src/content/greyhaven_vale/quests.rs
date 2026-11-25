@@ -144,7 +144,7 @@ pub const AFTER_THE_RAID: QuestId = QuestId::new(46);
 /// The farmland's delivery, repair and village stories (#1019, slice 4a): Millbrook's choked
 /// sluice, a sack for Miller Hanne, Shepherd Lise's dispute with Old Bertil settled with evidence
 /// or copper, her fold's hurdles, Bertil's hidden locket and bread for the tower's watch
-/// ([`super::hamlet_stories`]). IDs 53 and 55 are the flock's, which needs simulated livestock.
+/// ([`super::hamlet_stories`]). The flock's two, 53 and 55, are [`super::flock`]'s.
 pub const THE_BROKEN_SLUICE: QuestId = QuestId::new(51);
 pub const A_SACK_FOR_HANNE: QuestId = QuestId::new(52);
 pub const A_SHEPHERDS_BARGAIN: QuestId = QuestId::new(54);
@@ -153,6 +153,14 @@ pub const BERTILS_HEIRLOOM: QuestId = QuestId::new(57);
 pub const BREAD_FOR_THE_WATCH: QuestId = QuestId::new(58);
 /// Old Bertil's locket, hidden under a stone at the old tower (#1019).
 pub const BERTILS_LOCKET: ItemId = ItemId::new(43);
+
+/// The flock (#1019, slice 4b): Lise's missing ewe tracked and driven home, and a night watch
+/// over her fold with bait and a snare laid at its hedges ([`super::flock`]).
+pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
+pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
+/// Their supplies: the bait and the snare, worth nothing to a vendor.
+pub const TAINTED_MUTTON: ItemId = ItemId::new(44);
+pub const WOLF_SNARE: ItemId = ItemId::new(45);
 
 /// Their people: the wounded watchman on the Wolfrun terrace, the courier outside the east gate,
 /// the distrustful resident, the herbalist, the farmhand and the smith.
@@ -401,6 +409,16 @@ enum ObjectiveSource {
     Decide {
         npc: u32,
     },
+    Herd {
+        npc: u32,
+    },
+    Watch {
+        npc: u32,
+    },
+    Lay {
+        spot: u32,
+        item: u32,
+    },
 }
 
 /// An aid objective's chore (#1019).
@@ -519,6 +537,17 @@ impl From<ObjectiveSource> for QuestObjective {
             },
             ObjectiveSource::Decide { npc } => Self::Decide {
                 npc: NpcId::new(npc),
+            },
+            // The flock (#1019).
+            ObjectiveSource::Herd { npc } => Self::Herd {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Watch { npc } => Self::Watch {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Lay { spot, item } => Self::Lay {
+                spot: EvidenceId::new(spot),
+                item: ItemId::new(item),
             },
         }
     }

@@ -148,6 +148,22 @@ pub enum QuestObjective {
     /// The log stores the chosen option (1-based) until the turn-in keeps it with the character
     /// ([`QuestLog::outcomes`]).
     Decide { npc: NpcId },
+    /// Drive stray `npc` into its pen (#1019, [`crate::Stray`]): the stray shies from players, and
+    /// the objective is done for the player who drove it in and party mates within quest reach.
+    /// The log stores it.
+    Herd { npc: NpcId },
+    /// Keep the flock through a night watch (#1019, [`crate::HedgeWatch`]):
+    /// [`crate::ZoneCommand::QuestAction`] at its shepherd `npc` starts one, and the objective is
+    /// done for each player on the watch's ground when it ends with enough sheep standing. The
+    /// prowlers slain do not count. The log stores it.
+    Watch { npc: NpcId },
+    /// Lay one `item` from the bag at authored spot `spot` (#1019) with
+    /// [`crate::ZoneCommand::Inspect`]: bait or a snare at a gap in a hedge. The item is consumed;
+    /// the log stores it.
+    Lay {
+        spot: crate::EvidenceId,
+        item: ItemId,
+    },
 }
 
 impl QuestObjective {
@@ -174,14 +190,17 @@ impl QuestObjective {
             | Self::Defend { .. }
             | Self::Transcribe { .. }
             | Self::Unseal { .. }
-            | Self::Decide { .. } => 1,
+            | Self::Decide { .. }
+            | Self::Herd { .. }
+            | Self::Watch { .. }
+            | Self::Lay { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
     /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
-    /// 20 decide.
+    /// 20 decide, 21 herd, 22 watch, 23 lay.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -205,6 +224,9 @@ impl QuestObjective {
             Self::Transcribe { .. } => 18,
             Self::Unseal { .. } => 19,
             Self::Decide { .. } => 20,
+            Self::Herd { .. } => 21,
+            Self::Watch { .. } => 22,
+            Self::Lay { .. } => 23,
         }
     }
 
@@ -218,7 +240,8 @@ impl QuestObjective {
             | Self::Interview { npc }
             | Self::DeliverLoad { npc, .. }
             | Self::Defend { npc }
-            | Self::Decide { npc } => Some(npc),
+            | Self::Decide { npc }
+            | Self::Watch { npc } => Some(npc),
             _ => None,
         }
     }
@@ -561,6 +584,19 @@ pub(crate) fn validate_quests(
                     content.seal(piece).is_some() && !quest.objectives[..index].contains(objective)
                 }
                 QuestObjective::Decide { npc } => content.npc(npc).is_some(),
+                // The flock (#1019): a herd and a watch each once per quest at a known NPC (the
+                // livestock binding checks they are a stray and the shepherd), a lay once per spot
+                // with a plain bag item.
+                QuestObjective::Herd { npc } | QuestObjective::Watch { npc } => {
+                    content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Lay { spot, item } => {
+                    content.evidence_spot(spot).is_some()
+                        && item_template(item).is_some_and(|template| template.slot.is_none())
+                        && !quest.objectives[..index].iter().any(|earlier| {
+                            matches!(*earlier, QuestObjective::Lay { spot: other, .. } if other == spot)
+                        })
+                }
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -1486,7 +1522,10 @@ impl ZoneSimulation {
                         | QuestObjective::Aid { .. }
                         | QuestObjective::Transcribe { .. }
                         | QuestObjective::Unseal { .. }
-                        | QuestObjective::Decide { .. } => false,
+                        | QuestObjective::Decide { .. }
+                        | QuestObjective::Herd { .. }
+                        | QuestObjective::Watch { .. }
+                        | QuestObjective::Lay { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

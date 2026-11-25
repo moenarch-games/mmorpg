@@ -38,6 +38,7 @@ pub mod discoveries;
 pub mod dressing;
 pub mod farmland;
 pub mod fen_pack;
+pub mod flock;
 pub mod fort;
 pub mod hamlet_creatures;
 pub mod hamlet_stories;
@@ -2278,6 +2279,8 @@ fn content_with_spawns(
             .with_cart(cart::journey())?
             // The NPCs quests escort, interview or confront (#1019), after every reserved group.
             .with_npc_quests(quests::attitudes(), quests::confrontations())?
+            // Lise's flock (#1019), after the NPC quests and every reserved group.
+            .with_flock(flock::strays(), Some(flock::watch()))?
             // Who leaves a character's world after its decision (#1019), after the quests.
             .with_departures(quests::departures())?
             .with_caches(discoveries::caches())?

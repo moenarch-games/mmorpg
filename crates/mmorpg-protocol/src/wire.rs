@@ -215,6 +215,9 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::SiteNotReady => 62,
         ErrorCode::SealOpen => 63,
         ErrorCode::Warded => 64,
+        ErrorCode::FlockUnsettled => 65,
+        ErrorCode::FlockFell => 66,
+        ErrorCode::StrayBolted => 67,
     }
 }
 
@@ -284,6 +287,9 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         62 => ErrorCode::SiteNotReady,
         63 => ErrorCode::SealOpen,
         64 => ErrorCode::Warded,
+        65 => ErrorCode::FlockUnsettled,
+        66 => ErrorCode::FlockFell,
+        67 => ErrorCode::StrayBolted,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1789,11 +1795,14 @@ mod tests {
             (62, ErrorCode::SiteNotReady),
             (63, ErrorCode::SealOpen),
             (64, ErrorCode::Warded),
+            (65, ErrorCode::FlockUnsettled),
+            (66, ErrorCode::FlockFell),
+            (67, ErrorCode::StrayBolted),
         ] {
             assert_eq!(error_code(code), wire);
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 65, u16::MAX] {
+        for unknown in [0, 68, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

@@ -17,6 +17,7 @@ mod emote;
 mod ephemeral_builds;
 mod equipment;
 mod escort_step;
+mod flock_step;
 mod handoff;
 mod interest;
 mod inventory;

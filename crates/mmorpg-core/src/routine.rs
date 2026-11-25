@@ -212,6 +212,10 @@ impl ZoneSimulation {
                 velocity: escort.velocity,
             });
         }
+        // A stray (#1019) is where it was driven.
+        if let Some(placement) = self.stray_placement(npc) {
+            return Some(placement);
+        }
         // A guard injured in a lost raid lies at the farm's shelter (#531).
         if let Some(position) = self
             .content

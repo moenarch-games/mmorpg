@@ -409,6 +409,21 @@ impl Units {
         Ok(())
     }
 
+    /// The livestock among the last sampled units (#1019), laid out like the ambient animals' frame:
+    /// per sheep its 16 column-major model floats, the clip index and the clip time.
+    #[must_use]
+    pub fn livestock_frame(&self, seconds: f64, animate: bool) -> Vec<f32> {
+        self.presenter
+            .livestock(&self.sampled, seconds, animate)
+            .iter()
+            .flat_map(|pose| {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+                let tail = [pose.clip as f32, pose.time as f32];
+                pose.model.into_iter().chain(tail)
+            })
+            .collect()
+    }
+
     /// Entity records the interpolation visited so far (`client-interpolate`, #1058).
     #[must_use]
     pub const fn samples_visited(&self) -> usize {

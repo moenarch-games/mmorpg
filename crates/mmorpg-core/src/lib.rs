@@ -46,6 +46,7 @@ mod evidence;
 mod finds;
 mod flank;
 pub mod flight;
+mod flock;
 mod forced;
 mod gathering;
 #[doc(hidden)]
@@ -196,6 +197,11 @@ pub use finds::{
 pub use flank::{
     CREATURE_TURN_PER_TICK, FLANK_DAMAGE_PERCENT, FLANK_FRONT_HALF_ARC, FLANK_WARY_TICKS,
     WARY_TURN_PER_TICK, flanks,
+};
+pub use flock::{
+    BITE_REACH_UNITS, GAP_HOLD_TICKS, GAP_REACH_UNITS, HedgeWatch, MAX_FLOCK, MAX_PROWLERS,
+    MAX_STRAYS, PEN_REST_TICKS, Prowler, RECOVER_TICKS, SHY_RADIUS_UNITS, STRAY_TIMEOUT_TICKS,
+    STRAY_UNITS_PER_TICK, Stray, StrayState, WATCH_TICKS, WatchState,
 };
 pub use forced::{
     CHARGE_MAX_TICKS, CHARGE_SPEED_SUBUNITS_PER_TICK, FORCED_IMMUNITY_TICKS, ForcedMove,

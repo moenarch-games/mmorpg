@@ -528,6 +528,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::shrine::vault::spawns())
         // The Core Vale's confrontation foes (#1019).
         .chain(super::quests::spawns())
+        // The prowlers of the watch over Lise's fold (#1019).
+        .chain(super::flock::spawns())
         .collect()
 }
 
@@ -546,6 +548,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::millbrook_defence::npcs())
         // The farmland tower's watchman (#1019).
         .chain(super::hamlet_stories::npcs())
+        // Lise's stray ewe and her fold's ewes (#1019).
+        .chain(super::flock::npcs())
         .collect()
 }
 

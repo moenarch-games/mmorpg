@@ -84,6 +84,10 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   // The Sunken Shrine (#1019).
   "seal-open": "The seal already stands open; its glyphs rest until it closes again.",
   warded: "The ward turns your blow aside. Work the vault glyph to bare its weak point.",
+  // Lise's flock (#1019).
+  "flock-unsettled": "Not yet: a watch is still on at the fold, or Lise's ewes are still getting back on their feet.",
+  "flock-fell": "Shepherd Lise: \"The wolves got to too many of my ewes. Once they are up again, we watch again.\"",
+  "stray-bolted": "Left alone too long, the ewe bolted back to where you found her.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

@@ -140,7 +140,49 @@ impl ZoneSimulation {
                 );
             }
         }
-        let mut credited = !taken.is_empty();
+        // Bait or a snare laid at the spot (#1019) takes its item from the bag; without one it is
+        // refused before anything else changes.
+        let mut laid = Vec::new();
+        for (slot, entry) in player.quests.entries.iter().enumerate() {
+            let Some(quest) = content.quest(entry.quest) else {
+                continue;
+            };
+            for (index, objective) in quest.objectives.iter().enumerate() {
+                if let QuestObjective::Lay { spot: wanted, item } = *objective
+                    && wanted == spot
+                    && entry.progress[index] == 0
+                {
+                    laid.push((slot, index, item));
+                }
+            }
+        }
+        if !laid.is_empty() {
+            let mut bag = player.inventory.clone();
+            if laid
+                .iter()
+                .any(|&(_, _, item)| bag.remove_item(item, 1).is_err())
+            {
+                return Ok(Some((ErrorCode::MissingMaterials, None)));
+            }
+            let Some(revision) = player.inventory_revision.checked_add(1) else {
+                return Ok(Some((ErrorCode::InvalidInventoryMove, None)));
+            };
+            player.inventory = bag;
+            player.inventory_revision = revision;
+            for &(slot, index, _) in &laid {
+                let entry = &mut player.quests.entries[slot];
+                entry.progress[index] = 1;
+                push_event(
+                    &mut player.events,
+                    ZoneEvent::QuestProgress {
+                        quest: entry.quest,
+                        objective: u8::try_from(index).unwrap_or(u8::MAX),
+                        count: 1,
+                    },
+                );
+            }
+        }
+        let mut credited = !taken.is_empty() || !laid.is_empty();
         for entry in &mut player.quests.entries {
             let Some(quest) = content.quest(entry.quest) else {
                 continue;

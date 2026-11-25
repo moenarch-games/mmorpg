@@ -1323,6 +1323,15 @@ impl UnitPresenter {
             .map_err(|error| JsError::new(&error))
     }
 
+    /// The livestock among the last frame's units (#1019): per sheep 16 column-major model floats,
+    /// the clip index into `ambientAnimalClips` and the clip time, drawn with
+    /// [`livestock_species`]'s art. Without `animate` (reduced motion) each holds still.
+    #[wasm_bindgen(js_name = livestockFrame)]
+    #[must_use]
+    pub fn livestock_frame(&self, seconds: f64, animate: bool) -> Vec<f32> {
+        self.0.livestock_frame(seconds, animate)
+    }
+
     /// Shows or hides the development body overlay (#39): each unit's authoritative collision
     /// body drawn translucent over its model. Presentation only.
     #[wasm_bindgen(js_name = setBodyOverlay)]
@@ -2007,6 +2016,13 @@ pub fn ambient_animal_entries() -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
+}
+
+/// The farm animal entry the zone's livestock (#1019) is drawn with: the farm sheep.
+#[wasm_bindgen(js_name = livestockSpecies)]
+#[must_use]
+pub fn livestock_species() -> String {
+    mmorpg_presentation::livestock::SHEEP.to_owned()
 }
 
 /// The ambient animals' clip names, indexed by each pose's clip float.

@@ -316,6 +316,7 @@ impl ZoneSimulation {
             || template.family.swims()
             || template.family.flies()
             || creature.raid.is_some()
+            || self.prowling(id)
             || !matches!(creature.ai, CreatureAi::Idle { .. })
             || current.velocity().y != 0
         {
@@ -366,9 +367,11 @@ impl ZoneSimulation {
         );
 
         // A withdrawing raider (#530) leaves rather than picks fights; it still defends itself.
+        // A prowler of a watch (#1019) goes for the flock and picks no fight either.
         let withdrawing = creature
             .raid
             .is_some_and(|member| member.leg == crate::RaidLeg::Retreat);
+        let withdrawing = withdrawing || self.prowling(id);
         let home = self.creature_home(id, spawn);
         // A territorial neutral (#997) engages a player who comes within its territory.
         let territorial =
@@ -484,7 +487,10 @@ impl ZoneSimulation {
         // A raider on its march (#530) walks its route instead of wandering; a pack wolf or its
         // prey (#912) roams, hunts or flees.
         let march = match self.march(id, centre, half)? {
-            None => self.den_step(id, here, spawn.wander_radius, elapsed),
+            None => match self.prowl(id, centre, half)? {
+                None => self.den_step(id, here, spawn.wander_radius, elapsed),
+                prowl => prowl,
+            },
             march => march,
         };
         // An engaged creature that keeps fighting may cast its ability.

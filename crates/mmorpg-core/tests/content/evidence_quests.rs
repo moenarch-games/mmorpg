@@ -255,10 +255,11 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     .collect();
     let content = greyhaven_vale::content();
     // The 32 quests before #1019, slice 1's three evidence quests, slice 2's seven (35, 37–42)
-    // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46) and slice
-    // 3b's shrine and ledger (47–50), and slice 4a's farmland stories (51, 52, 54, 56–58).
-    assert_eq!(content.quests().len(), 56);
-    assert_eq!(content.evidence().len(), 13);
+    // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46), slice 3b's
+    // shrine and ledger (47–50), slice 4a's farmland stories (51, 52, 54, 56–58) and slice 4b's
+    // flock (53, 55).
+    assert_eq!(content.quests().len(), 58);
+    assert_eq!(content.evidence().len(), 17);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {
             let (dx, dz) = (
@@ -284,10 +285,15 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
         let named = content.quests().iter().any(|quest| {
             quest.objectives.iter().any(|objective| match *objective {
                 QuestObjective::Inspect { spot: named }
-                | QuestObjective::Transcribe { spot: named, .. } => named == spot.id,
+                | QuestObjective::Transcribe { spot: named, .. }
+                | QuestObjective::Lay { spot: named, .. } => named == spot.id,
                 _ => false,
             })
         });
-        assert!(named, "{}: no quest inspects or transcribes it", spot.name);
+        assert!(
+            named,
+            "{}: no quest inspects, transcribes or lays at it",
+            spot.name
+        );
     }
 }

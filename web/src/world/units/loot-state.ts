@@ -208,4 +208,7 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "site-not-ready": null,
   "seal-open": null,
   warded: null,
+  "flock-unsettled": null,
+  "flock-fell": null,
+  "stray-bolted": null,
 };

@@ -162,6 +162,13 @@ pub enum ErrorCode {
     SealOpen,
     /// A ward turns the blow aside (#1019): work its mechanism to expose the weak point first.
     Warded,
+    /// The flock is not ready for a watch (#1019): a watch is still on, or the sheep are still
+    /// getting back on their feet after the last one.
+    FlockUnsettled,
+    /// Too many of the flock fell in the watch (#1019); once they are up again, try again.
+    FlockFell,
+    /// The stray was left alone or stuck too long and bolted back where it was found (#1019).
+    StrayBolted,
 }
 
 /// One feedback event addressed to a player.

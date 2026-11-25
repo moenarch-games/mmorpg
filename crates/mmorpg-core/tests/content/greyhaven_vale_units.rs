@@ -424,8 +424,10 @@ fn spawns_populate_their_subzones() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
-            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate, and the
+            // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
+            || content.is_prowler(spawn.id)
         {
             continue;
         }
@@ -735,6 +737,27 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::QuestGiver,
                 Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
             ),
+            // Lise's stray ewe and her fold's three ewes (#1019).
+            (
+                "Lise's Stray Ewe",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Black-faced Ewe",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Speckled Ewe",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Old Ewe",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -765,8 +788,10 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
-            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate, and the
+            // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
+            || content.is_prowler(spawn.id)
         {
             assert!(matches!(
                 creature.life,
@@ -880,8 +905,10 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
         if content.is_raider(spawn.id)
             || content.is_hunt_beast(spawn.id)
             || content.is_cart_bandit(spawn.id)
-            // The courier's foe (#1019) stands only once he is unmasked at the east gate.
+            // The courier's foe (#1019) stands only once he is unmasked at the east gate, and the
+            // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
+            || content.is_prowler(spawn.id)
             || content
                 .dens()
                 .iter()
