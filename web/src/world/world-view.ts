@@ -55,6 +55,7 @@ import { Ground } from "./ground";
 import { Grass } from "./grass";
 import { PlacedKit, type PlacedKitSource } from "./placed-kit";
 import { AmbientAnimals } from "./ambient-animals";
+import { Livestock } from "./livestock";
 import { ArtPrefetch } from "./art-prefetch";
 import { isOutpostArea, kitNearArea, kitNearPoint, shelteredOutpost } from "./crater-streaming";
 import { SkyLayer } from "./sky";
@@ -467,6 +468,8 @@ export class WorldView {
   #fortress: CompositionKit | null = null;
   /** Greyhaven's cosmetic cat, dog and rodent (#419), drawn once their bundle loads. */
   #ambient: AmbientAnimals | null = null;
+  /** The zone's simulated livestock (#1019), drawn as farm sheep from the presenter's livestock frame. */
+  #livestock: Livestock | null = null;
   /** Greyhaven's trees, rocks and bushes (#49), drawn from asset-tooling's bundle once loaded; the procedural ones until then. */
   #nature: PlacedKit | null = null;
   #climbing: PlacedKit | null = null;
@@ -769,6 +772,7 @@ export class WorldView {
       rootEntry("world", () => this.#settlement),
       rootEntry("world", () => this.#fortress),
       rootEntry("inhabitant", () => this.#ambient, () => this.#worldDetail !== "low"),
+      rootEntry("inhabitant", () => this.#livestock),
       rootEntry("world", () => this.#nature),
       rootEntry("world", () => this.#climbing),
       rootEntry("world", () => this.#crag),
@@ -928,6 +932,7 @@ export class WorldView {
     // Greyhaven's art streams in region by region (#240): the selection screen fetches the
     // starting area's pieces, and play fetches each area the player approaches.
     this.#ambient = zone.own(new AmbientAnimals(world.scenery.ambient));
+    this.#livestock = zone.own(new Livestock(world.scenery.livestock));
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachableSeat = world.scenery.buildings.reachableSeat;
@@ -2251,6 +2256,8 @@ export class WorldView {
     units.setInteraction(this.#loot.open, this.#quests.dialogNpc ?? this.#vendor.npc);
     const presented = units.frame(shown, projection, { seconds: this.#seconds, dt: deltaSeconds, reducedMotion: !animate, barYaw: this.#barYaw, look });
     frame.presented = presented;
+    // Lise's stray and flock (#1019) are farm sheep, not figures: the presenter poses them from the same sample.
+    this.#livestock?.update(units.livestock(this.#seconds, animate));
     frame.effectNodes = presented.effectNodes;
     this.#fortress?.place(presented.platforms);
     this.#kitEffects.update(presented.effects);

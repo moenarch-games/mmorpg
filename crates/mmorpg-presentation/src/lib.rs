@@ -30,6 +30,7 @@ pub mod ground;
 mod handholds;
 pub mod lighting;
 pub mod lights;
+pub mod livestock;
 pub mod lod;
 pub mod nature;
 pub mod outpost_kit;

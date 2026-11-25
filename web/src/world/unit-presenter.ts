@@ -32,6 +32,8 @@ export type UnitPresenterHandle = {
   abandonPreparation(): void;
   /** Sound cues and fades of the projections pushed since the last call (#447), as JSON. */
   takeAudio(): string;
+  /** The livestock among the last frame's units (#1019): per sheep 16 model floats, the clip index and the clip time. */
+  livestockFrame(seconds: number, animate: boolean): Float32Array;
   /**
    * Lays one frame out in WASM memory (#1057): read through {@link directory} and {@link memory}. The units are
    * sampled from the pushed projections `elapsedTicks` past the newest (#1058), the viewer at `ownBody` if not empty.
@@ -405,6 +407,11 @@ export class SharedUnits {
   /** The shared presenter's sound operations since the last call, for `WorldSound.apply`. */
   takeAudio(): string {
     return this.#handle.takeAudio();
+  }
+
+  /** The livestock among the last frame's units (#1019), for `Livestock.update`: per sheep 16 model floats, clip and time. */
+  livestock(seconds: number, animate: boolean): Float32Array {
+    return this.#handle.livestockFrame(seconds, animate);
   }
 
   /**

@@ -107,6 +107,24 @@ describe("quest state", () => {
     expect(shrineStatus(projection(100, { seals: seals(true), wards: [] }))).toEqual(["The mill sluice stands open"]);
   });
 
+  test("labels the flock's objectives and lays the bait at its gap before the watch (#1019)", () => {
+    expect(objectiveViews(53, [1, 1, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect wool on the fold's hurdle (done)", "Inspect hoofprints below the barn (done)",
+      "Drive Lise's Stray Ewe home into its pen",
+    ]);
+    expect(objectiveViews(55, [1, 0, 0]).map((objective) => objective.text)).toEqual([
+      "Lay Tainted Mutton at the north-east gap in the hedge (done)", "Lay Wolf Snare at the east gap in the hedge",
+      "Keep 2 of the 3 ewes standing through the watch",
+    ]);
+    // Interact at the east gap lays the snare; Lise starts the watch only once both are laid.
+    const snare = sheet({ entries: [{ quest: 55, progress: [1, 0, 0] }] });
+    expect(evidenceInReach(snare, [15900, 739 + 90, 46700])).toBe(17);
+    expect(questActionAt(snare, 39)).toBeNull();
+    expect(questActionAt(sheet({ entries: [{ quest: 55, progress: [1, 1, 0] }] }), 39)).toBe(
+      "Keep 2 of the 3 ewes standing through the watch",
+    );
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

@@ -76,7 +76,9 @@ pub struct QuestExport {
 /// a construction site's structure piece), `defend` (`target` is the NPC who starts the
 /// defence) or `aid` (`target` is the chore: 1 mend, 2 tend), or for the shrine and the ledger
 /// (#1019) `transcribe` (`target` is an evidence spot yielding item `source`), `unseal` (`target`
-/// is a seal's structure piece) or `decide` (`target` is the NPC hearing the decision).
+/// is a seal's structure piece) or `decide` (`target` is the NPC hearing the decision), or for
+/// the flock (#1019) `herd` (`target` is a stray NPC), `watch` (`target` is the NPC who starts
+/// the watch) or `lay` (`target` is an evidence spot taking item `source`).
 /// `questActionAt` picks the action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -119,6 +121,10 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         QuestObjective::Transcribe { spot, item } => ("transcribe", spot.get(), Some(item.get())),
         QuestObjective::Unseal { piece } => ("unseal", piece.get(), None),
         QuestObjective::Decide { npc } => ("decide", npc.get(), None),
+        // The flock (#1019).
+        QuestObjective::Herd { npc } => ("herd", npc.get(), None),
+        QuestObjective::Watch { npc } => ("watch", npc.get(), None),
+        QuestObjective::Lay { spot, item } => ("lay", spot.get(), Some(item.get())),
     };
     ObjectiveExport {
         kind,
@@ -547,6 +553,8 @@ mod tests {
                 item(41, "Forged Toll Pass", Value::Null, stats(0, 0, 0, 0)),
                 item(42, "Inscription Rubbing", Value::Null, stats(0, 0, 0, 0)),
                 item(43, "Bertil's Locket", Value::Null, stats(0, 0, 0, 0)),
+                item(44, "Tainted Mutton", Value::Null, stats(0, 0, 0, 0)),
+                item(45, "Wolf Snare", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

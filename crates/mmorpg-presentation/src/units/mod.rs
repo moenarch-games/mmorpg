@@ -1823,6 +1823,18 @@ impl UnitPresenter {
         (None, face, None)
     }
 
+    /// The livestock among `units` (#1019), posed as farm animals ([`crate::livestock`]): both clients
+    /// draw these with their ambient animals' art, since [`Self::frame`] draws no figure for them.
+    #[must_use]
+    pub fn livestock(
+        &self,
+        units: &[SampledUnit],
+        seconds: f64,
+        animate: bool,
+    ) -> Vec<crate::ambient::Pose> {
+        crate::livestock::poses(&self.content, &self.scenery, units, seconds, animate)
+    }
+
     /// Every unit draw for one frame, except the imported models' skinned bodies.
     pub fn frame(&mut self, input: &FrameInput<'_>) -> UnitFrame {
         let snapshot = input.snapshot;
@@ -1863,6 +1875,10 @@ impl UnitPresenter {
         let mut anchors = BTreeMap::new();
         for unit in input.units {
             let entity = unit.record.entity();
+            // Livestock (#1019) is drawn as a farm animal ([`crate::livestock`]), not a figure.
+            if crate::livestock::is_livestock(&self.content, entity) {
+                continue;
+            }
             let half = self.half(entity, &unit.record);
             let feet = [
                 f64::from(unit.centre[0]),

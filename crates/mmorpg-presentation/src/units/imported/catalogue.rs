@@ -969,6 +969,8 @@ mod tests {
         let presets: Vec<_> = content
             .npcs()
             .iter()
+            // Livestock (#1019) is drawn as farm sheep, not a resident.
+            .filter(|npc| !content.is_livestock(npc.id))
             .map(|npc| Resident::of_name(&npc.name).map(Resident::preset))
             .collect();
         assert_eq!(

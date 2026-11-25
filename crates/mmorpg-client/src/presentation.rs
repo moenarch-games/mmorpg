@@ -738,6 +738,15 @@ impl Presentation {
         }
         self.units_presenter.set_channel_origins(channel_origins);
         self.lowering.retain_used(&draws);
+        // Lise's strays and flock (#1019) are farm sheep, not figures.
+        let livestock = mmorpg_presentation::livestock::poses(
+            &self.content,
+            &self.scenery,
+            &units,
+            seconds,
+            !self.reduced_motion,
+        );
+        self.append_animals(&mut draws, livestock);
         for unit in &frame.units {
             if !self.labels.iter().any(|label| label.entity == unit.entity) {
                 self.labels.push(crate::ui::world_labels::UnitLabel {
@@ -833,9 +842,19 @@ impl Presentation {
     /// Greyhaven's cosmetic cat, dog and rodent (#419), skinned on their authored loops.
     fn append_ambient(&self, draws: &mut Vec<crate::world::SceneDraw>, now: Instant) {
         let seconds = now.saturating_duration_since(self.origin).as_secs_f64();
-        for pose in
-            mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion)
-        {
+        self.append_animals(
+            draws,
+            mmorpg_presentation::ambient::poses(&self.scenery, seconds, !self.reduced_motion),
+        );
+    }
+
+    /// Skinned animals at `poses`: the ambient ones and the zone's livestock (#1019).
+    fn append_animals(
+        &self,
+        draws: &mut Vec<crate::world::SceneDraw>,
+        poses: Vec<mmorpg_presentation::ambient::Pose>,
+    ) {
+        for pose in poses {
             let animal = if pose.key == mmorpg_game_server::shared_assets::CAT {
                 self.shared_cat.as_ref()
             } else {

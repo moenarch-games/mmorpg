@@ -98,6 +98,7 @@ describe("scenery provider and local world", () => {
     ambientAnimalClips: () => ["Idle", "Walk"],
     ambientAnimalAnchors: () => Int32Array.from([1_800, 600]),
     ambientAnimalFrame: () => new Float32Array(18),
+    livestockSpecies: () => "greyhaven.farm.sheep",
     raidArea: () => new Int32Array(),
     raidAid: () => new Int32Array(),
     gatherNodes: () => new Int32Array(),
