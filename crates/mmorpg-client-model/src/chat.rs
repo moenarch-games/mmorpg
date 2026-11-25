@@ -176,6 +176,10 @@ pub fn refusal_text(code: ErrorCode) -> String {
         // The Sunken Shrine (#1019).
         ErrorCode::SealOpen => "The seal already stands open; its glyphs rest until it closes again.".into(),
         ErrorCode::Warded => "The ward turns your blow aside. Work the vault glyph to bare its weak point.".into(),
+        // Lise's flock (#1019).
+        ErrorCode::FlockUnsettled => "Not yet: a watch is still on at the fold, or Lise's ewes are still getting back on their feet.".into(),
+        ErrorCode::FlockFell => "Shepherd Lise: \"The wolves got to too many of my ewes. Once they are up again, we watch again.\"".into(),
+        ErrorCode::StrayBolted => "Left alone too long, the ewe bolted back to where you found her.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
