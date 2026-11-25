@@ -579,7 +579,7 @@ describe("WASM local zone combat intents", () => {
       "Fine Militia Shortsword", "Balanced Militia Shortsword", "Long-hafted Militia Spear", "Garrick's Cleaver", "Iron Ore", "Boar Hide", "Hollowpine Boar-Spear", "Supply Sack",
       "Ironbound Maul", "Smith's Great Hammer", "Woodsman's Great Axe", "Outpost Greatsword",
       "Wulfric's Trial Blade", "Wulfric's Trial Staff", "Wulfric's Trial Mace", "Clean Bandage", "Fever Draught", "Forged Toll Pass",
-      "Inscription Rubbing",
+      "Inscription Rubbing", "Bertil's Locket",
     ]);
     expect([...catalog.creatureTemplates.values()].map((template) => template.name)).toEqual([
       "Timber Wolf", "Young Boar", "Grain Rat", "Field Marauder", "Mirefin Lurker", "Redbrand Bandit", "Garrick Redbrand",

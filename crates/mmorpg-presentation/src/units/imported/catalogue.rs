@@ -699,9 +699,11 @@ impl Resident {
     pub fn of_name(name: &str) -> Option<Self> {
         match name {
             "Marshal Elden Greywatch" => Some(Self::Marshal),
-            "Greyhaven Guard" | "Watchman Garth" | "Watchman Pell" | "Guardsman Tam Hollis" => {
-                Some(Self::Guard)
-            }
+            "Greyhaven Guard"
+            | "Watchman Garth"
+            | "Watchman Pell"
+            | "Guardsman Tam Hollis"
+            | "Watchman Dunstan" => Some(Self::Guard),
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
@@ -1028,6 +1030,8 @@ mod tests {
                 Some("resident.tanner"),
                 Some("resident.farmer"),
                 Some("resident.tanner"),
+                // The farmland tower's Watchman Dunstan (#1019).
+                Some("resident.guard"),
             ])
             .collect::<Vec<_>>()
         );

@@ -78,6 +78,35 @@ describe("quest state", () => {
     ]);
   });
 
+  test("labels the farmland stories, reads a hidden find's directions and finds the sluice gate (#1019)", () => {
+    expect(objectiveViews(51, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the choked millrace (done)", "Open the mill sluice",
+    ]);
+    expect(objectiveViews(52, [0]).map((objective) => objective.text)).toEqual([
+      "Carry a grain sack from Ena's barn to Miller Hanne",
+    ]);
+    expect(objectiveViews(54, [1, 0, 0]).map((objective) => objective.text)).toEqual([
+      "Be heard by Old Bertil (done)", "Inspect the tracks at Lise's gate", "Decide what becomes of Old Bertil",
+    ]);
+    expect(objectiveViews(56, [0, 1]).map((objective) => objective.text)).toEqual([
+      "Raise the fold's north hurdle", "Raise the fold's east hurdle (done)",
+    ]);
+    expect(objectiveViews(57, [0]).map((objective) => objective.text)).toEqual([
+      "Find Bertil's Locket under a stone at the old tower's south-west corner: 0/1",
+    ]);
+    expect(objectiveViews(58, [0]).map((objective) => objective.text)).toEqual([
+      "Carry the sack of loaves to Watchman Dunstan",
+    ]);
+    // The hidden stone is found only standing at it; the sluice gate is worked by anyone.
+    const stone = [700, 907 + 90, 44400];
+    expect(evidenceInReach(sheet({ entries: [{ quest: 57, progress: [0, 0, 0] }] }), stone)).toBe(13);
+    expect(evidenceInReach(sheet({ entries: [{ quest: 57, progress: [0, 0, 0] }] }), [1700, 990, 44000])).toBeNull();
+    expect(mechanismInReach([-535, -19 + 90, 6200])).toEqual({ id: 4, name: "the sluice gate" });
+    const seals = (sluice: boolean) => [{ piece: 6, set: 0, open: false }, { piece: 7, set: 0, open: sluice }];
+    expect(shrineStatus(projection(100, { seals: seals(false), wards: [] }))).toEqual([]);
+    expect(shrineStatus(projection(100, { seals: seals(true), wards: [] }))).toEqual(["The mill sluice stands open"]);
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([
