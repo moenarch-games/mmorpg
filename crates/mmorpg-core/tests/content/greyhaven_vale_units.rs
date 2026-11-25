@@ -830,6 +830,17 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::wilds::KINGS_ROAD_DOWNS)
             ),
+            // Fenford's watchman at the ford and the boatman above it (#1019).
+            (
+                "Watchman Corwin",
+                NpcRole::Guard,
+                Some(greyhaven_vale::wilds::FENWATER_CROSSING)
+            ),
+            (
+                "Boatman Teague",
+                NpcRole::Resident,
+                Some(greyhaven_vale::wilds::FENWATER_CROSSING)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -1021,8 +1032,9 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
         resident("Farmer Tobin Hale", settlements::BARROWDOWN),
         resident("Pip", settlements::BARROWDOWN),
         giver("Innkeeper Hob Ferris", settlements::FENFORD),
-        resident("Miller Wynne", settlements::FENFORD),
-        resident("Ferryman Osk", wilds::FENWATER_CROSSING),
+        // Miller Wynne and Ferryman Osk give Fenford's stories (#1019).
+        giver("Miller Wynne", settlements::FENFORD),
+        giver("Ferryman Osk", wilds::FENWATER_CROSSING),
         resident("Netter Ilsa", settlements::FENFORD),
         giver("Fisher Brann", settlements::WESTMERE_LODGE),
         giver("Huntsman Edric Vale", settlements::HUNTERS_CAMP),

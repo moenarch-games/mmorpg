@@ -715,10 +715,62 @@
       "requires": [65],
       "objectives": [{"talk": {"npc": 23}}, {"talk": {"npc": 25}}],
       "rewards": {"experience": 400, "copper": 30, "choices": []}
+    },
+    {
+      "id": 71,
+      "name": "The Ferryman's Rope",
+      "text": "The spate parted my ford rope, and its iron block went into the river. Look at the frayed end on my post above the ford, then wade in and find the block. It lies on the ford's bed, a few paces downstream of the middle stake.",
+      "giver": 29,
+      "ender": 29,
+      "prerequisite": 17,
+      "objectives": [{"inspect": {"spot": 26}}, {"find": {"spot": 27, "item": 49}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []}
+    },
+    {
+      "id": 72,
+      "name": "The Ford's Reckoning",
+      "text": "Before the carters trust my rope again, the crossing must be marked true. Walk the ford and check each of its three stakes, on the north bank, midstream and on the south bank, then come back and tell me the line holds.",
+      "giver": 29,
+      "ender": 29,
+      "prerequisite": 71,
+      "objectives": [{"inspect": {"spot": 28}}, {"inspect": {"spot": 29}}, {"inspect": {"spot": 30}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 74,
+      "name": "The Missing Mill Wheel",
+      "text": "My mill's brake wheel cracked in the gale, and I have had the sails chocked since. The new wheel came crated on the cart by the inn. Carry it over and set it down against the mill's north wall, and we will fit it.",
+      "giver": 28,
+      "ender": 28,
+      "prerequisite": 17,
+      "objectives": [{"build": {"piece": 10}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 75,
+      "name": "Water for the Rest",
+      "text": "The spate fouled our well, and my guests will not drink river water. There is a spring in the alders up the north bank, west of the village. Fill a jug there and carry it back to me. Set it down if you must fight.",
+      "giver": 27,
+      "ender": 27,
+      "prerequisite": 17,
+      "objectives": [{"deliver_load": {"source": 7, "npc": 27}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []}
+    },
+    {
+      "id": 77,
+      "name": "The Smuggler's Token",
+      "text": "Goods come over my ford by night and pay me nothing. Find where they are hidden upstream, ask their owner about them, then tell the Watch's man at the ford whether he gets the token, or whether I settle it myself.",
+      "giver": 29,
+      "ender": 29,
+      "prerequisite": 71,
+      "objectives": [{"find": {"spot": 31, "item": 50}}, {"interview": {"npc": 63}}, {"decide": {"npc": 62}}],
+      "decision": [{"label": "Hand the token to the Watch", "reward": 20}, {"label": "Say nothing; Osk settles it", "reward": 10}],
+      "rewards": {"experience": 350, "copper": 15, "choices": []}
     }
   ],
   "departures": [
-    {"npc": 34, "quest": 50, "outcome": 1}
+    {"npc": 34, "quest": 50, "outcome": 1},
+    {"npc": 63, "quest": 77, "outcome": 1}
   ],
   "attitudes": [
     {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36},
@@ -754,13 +806,21 @@
     {"id": 22, "name": "an offering scattered at the south-west stone", "at": [46380, 653, 60620], "reach": 250},
     {"id": 23, "name": "the lintel's inscription", "at": [47000, 653, 60000], "reach": 250},
     {"id": 24, "name": "turned earth west of the ring", "at": [45300, 653, 59400], "reach": 250},
-    {"id": 25, "name": "the cold signal beacon", "at": [65200, 615, 57300], "reach": 250}
+    {"id": 25, "name": "the cold signal beacon", "at": [65200, 615, 57300], "reach": 250},
+    {"id": 26, "name": "the frayed rope at Osk's post", "at": [108700, 203, 28000], "reach": 200},
+    {"id": 27, "name": "the ford's bed", "at": [109000, 9, 28800], "reach": 200, "directions": "on the ford's bed, a few paces downstream of its middle stake"},
+    {"id": 28, "name": "the ford's north stake", "at": [108200, 150, 28150], "reach": 200},
+    {"id": 29, "name": "the ford's middle stake", "at": [108200, 9, 28750], "reach": 200},
+    {"id": 30, "name": "the ford's south stake", "at": [108200, 165, 29350], "reach": 200},
+    {"id": 31, "name": "the alder roots", "at": [103200, 518, 26500], "reach": 200, "directions": "in sailcloth among the alder roots, upstream of the boatman's mooring"}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},
     {"id": 2, "name": "timber from Millbrook's pile", "kind": "firewood", "at": [7000, 1100, 4400], "reach": 300},
     {"id": 3, "name": "a grain sack from Ena's barn", "kind": "sack", "at": [-9900, 601, 35400], "reach": 300},
     {"id": 4, "name": "timber from the hamlet barn", "kind": "firewood", "at": [14600, 739, 41900], "reach": 300},
-    {"id": 5, "name": "the sack of loaves", "kind": "sack", "at": [-4950, 462, 55700], "reach": 300}
+    {"id": 5, "name": "the sack of loaves", "kind": "sack", "at": [-4950, 462, 55700], "reach": 300},
+    {"id": 6, "name": "the crated brake wheel", "kind": "crate", "at": [104200, 977, 19700], "reach": 300},
+    {"id": 7, "name": "a jug from the alder spring", "kind": "water_jug", "at": [96000, 815, 22000], "reach": 300}
   ]
 }

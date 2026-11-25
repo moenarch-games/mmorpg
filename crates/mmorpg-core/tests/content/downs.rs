@@ -278,13 +278,13 @@ fn the_beacon_and_the_lookout_stand_above_the_road_the_patrol_walks() {
     }
     assert_eq!(sell_price(quests::SIGNAL_TINDER), 0);
     assert_eq!(sell_price(quests::ORDER_POUCH), 0);
-    // The catalogue holds 70 quests, IDs 1-70.
+    // The catalogue holds IDs 1-70 first; later slices add theirs after them.
     let ids: Vec<u32> = content
         .quests()
         .iter()
         .map(|quest| quest.id.get())
         .collect();
-    assert_eq!(ids, (1..=70).collect::<Vec<_>>());
+    assert_eq!(ids[..70], (1..=70).collect::<Vec<_>>());
 }
 
 #[test]

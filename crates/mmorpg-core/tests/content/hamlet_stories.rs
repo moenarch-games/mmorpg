@@ -262,14 +262,15 @@ fn the_new_spots_stand_on_their_ground_and_the_watchman_keeps_the_tower() {
     }
     let gate = content.mechanism(hamlet::SLUICE_GATE).unwrap();
     assert_eq!(gate.at[1], ground(gate.at));
-    // Only the locket's stone is hidden, and it carries its directions.
+    // Of the farmland's spots only the locket's stone is hidden, and it carries its directions;
+    // Fenford's ford bed and alder roots (27, 31) are the only others (#1019).
     let hidden: Vec<_> = content
         .evidence()
         .iter()
         .filter(|spot| spot.hidden())
         .map(|spot| spot.id.get())
         .collect();
-    assert_eq!(hidden, [LOOSE_STONE]);
+    assert_eq!(hidden, [LOOSE_STONE, 27, 31]);
     let dunstan = content.npc(hamlet::WATCHMAN_DUNSTAN).unwrap();
     assert_eq!(
         content
