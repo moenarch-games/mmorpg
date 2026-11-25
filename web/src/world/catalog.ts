@@ -83,15 +83,31 @@ export type AbilityRecord = {
  * `source` (escort), an NPC heard (interview), a creature template slain with the quest's loan
  * (defeat_with_loan) or hit by a boulder (crush), and a structure piece (demolish). A delivery (#1077) names the NPC
  * taking a load from load source `source` (deliver). Farm defence (#1019): a construction site's structure piece (build),
- * the NPC who starts a defence (defend) and an aid chore, 1 mend or 2 tend (aid).
+ * the NPC who starts a defence (defend) and an aid chore, 1 mend or 2 tend (aid). The shrine and the ledger (#1019): an
+ * evidence spot yielding item `source` (transcribe), a seal's structure piece (unseal) and the NPC hearing a decision
+ * (decide).
  */
 export type QuestObjectiveRecord =
   | {
-      kind: "kill" | "talk" | "explore" | "victory" | "inspect" | "interview" | "defeat_with_loan" | "crush" | "demolish" | "build" | "defend" | "aid";
+      kind:
+        | "kill"
+        | "talk"
+        | "explore"
+        | "victory"
+        | "inspect"
+        | "interview"
+        | "defeat_with_loan"
+        | "crush"
+        | "demolish"
+        | "build"
+        | "defend"
+        | "aid"
+        | "unseal"
+        | "decide";
       target: number;
       count: number;
     }
-  | { kind: "collect" | "retrieve" | "use_item" | "escort" | "deliver"; target: number; source: number; count: number };
+  | { kind: "collect" | "retrieve" | "use_item" | "escort" | "deliver" | "transcribe"; target: number; source: number; count: number };
 
 export type QuestRecord = {
   id: number;
@@ -107,6 +123,10 @@ export type QuestRecord = {
   copper: number;
   /** Item IDs; the reward choice is the index into this list. */
   choices: readonly number[];
+  /** Quests to turn in beside the prerequisite before it is offered (#1019). */
+  requires: readonly number[];
+  /** A decide objective's options (#1019); option `index + 1` is sent. */
+  decision: readonly string[];
 };
 
 export type ContentCatalog = {
@@ -143,6 +163,9 @@ const OBJECTIVE_KINDS = [
   "build",
   "defend",
   "aid",
+  "transcribe",
+  "unseal",
+  "decide",
 ] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
@@ -361,7 +384,8 @@ export function decodeCatalog(json: string): ContentCatalog {
   const quests = list(root.quests, "quests").map((value, index): QuestRecord => {
     const name = `quest ${index}`;
     const record = object(value, [
-      "id", "name", "text", "giver", "ender", "prerequisite", "objectives", "experience", "copper", "choices",
+      "id", "name", "text", "giver", "ender", "prerequisite", "objectives", "experience", "copper", "choices", "requires",
+      "decision",
     ], name);
     const npc = (field: unknown, label: string) => {
       const id = int(field, `${name} ${label}`, 0, 0xffff);
@@ -407,6 +431,14 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { kind, target, source: area, count };
       }
+      // A rubbing (#1019): an evidence spot and the item it yields.
+      if (kind === "transcribe") {
+        const item = int(objective.source, `${label} item`, 1, 0xffff_ffff);
+        if (!itemsById.has(item)) {
+          fail(`${label} names an unknown item`);
+        }
+        return { kind, target, source: item, count };
+      }
       // A delivery (#1077): the NPC taking a load from a load source.
       if (kind === "deliver") {
         const source = int(objective.source, `${label} load source`, 1, 0xffff_ffff);
@@ -416,10 +448,10 @@ export function decodeCatalog(json: string): ContentCatalog {
         return { kind, target, source, count };
       }
       if (objective.source !== null) {
-        fail(`${label} has a source only when it collects, retrieves, gives an item, escorts or delivers`);
+        fail(`${label} has a source only when it collects, retrieves, gives an item, escorts, delivers or transcribes`);
       }
       // Farm defence (#1019): a defence starts at a known NPC; an aid chore is 1 mend or 2 tend.
-      if (kind === "defend" && !npcsById.has(target)) {
+      if ((kind === "defend" || kind === "decide") && !npcsById.has(target)) {
         fail(`${label} names an unknown NPC`);
       }
       if (kind === "aid" && target !== 1 && target !== 2) {
@@ -437,6 +469,16 @@ export function decodeCatalog(json: string): ContentCatalog {
       }
       return id;
     });
+    // Further required quests and a decision's options (#1019).
+    const requires = list(record.requires, `${name} requires`, 3).map((quest, slot) =>
+      int(quest, `${name} required quest ${slot}`, 1, 0xffff_ffff),
+    );
+    const decision = list(record.decision, `${name} decision`, 3).map((option, slot) =>
+      text(option, `${name} decision option ${slot}`),
+    );
+    if ((decision.length > 0) !== objectives.some((objective) => objective.kind === "decide")) {
+      fail(`${name} has a decision exactly when it has a decide objective`);
+    }
     return {
       id: int(record.id, `${name} id`, 1, 0xffff_ffff),
       name: text(record.name, `${name} name`),
@@ -448,6 +490,8 @@ export function decodeCatalog(json: string): ContentCatalog {
       experience: int(record.experience, `${name} experience`, 0, 0xffff_ffff),
       copper: int(record.copper, `${name} copper`, 0, 0xffff_ffff),
       choices,
+      requires,
+      decision,
     };
   });
   return {

@@ -56,6 +56,10 @@ pub struct QuestExport {
     pub copper: u32,
     /// Item IDs; the reward choice is the index into this list.
     pub choices: Vec<u32>,
+    /// Quests to turn in beside the prerequisite before it is offered (#1019).
+    pub requires: Vec<u32>,
+    /// A `decide` objective's options, in order (#1019); option `index + 1` is sent.
+    pub decision: Vec<String>,
 }
 
 /// `kind` is `kill` (`target` is a creature template), `collect` (`target`
@@ -70,8 +74,10 @@ pub struct QuestExport {
 /// or hit by a boulder) or `demolish` (`target` is a structure piece), or `deliver` (#1077,
 /// `target` is the NPC taking a load from load source `source`), or `build` (#1019, `target` is
 /// a construction site's structure piece), `defend` (`target` is the NPC who starts the
-/// defence) or `aid` (`target` is the chore: 1 mend, 2 tend). `questActionAt` picks the
-/// action Interact performs at an NPC.
+/// defence) or `aid` (`target` is the chore: 1 mend, 2 tend), or for the shrine and the ledger
+/// (#1019) `transcribe` (`target` is an evidence spot yielding item `source`), `unseal` (`target`
+/// is a seal's structure piece) or `decide` (`target` is the NPC hearing the decision).
+/// `questActionAt` picks the action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
     pub kind: &'static str,
@@ -110,6 +116,9 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
             },
             None,
         ),
+        QuestObjective::Transcribe { spot, item } => ("transcribe", spot.get(), Some(item.get())),
+        QuestObjective::Unseal { piece } => ("unseal", piece.get(), None),
+        QuestObjective::Decide { npc } => ("decide", npc.get(), None),
     };
     ObjectiveExport {
         kind,
@@ -285,6 +294,8 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                     .iter()
                     .map(|item| item.get())
                     .collect(),
+                requires: quest.requires.iter().map(|quest| quest.get()).collect(),
+                decision: quest.decision.clone(),
             })
             .collect(),
         classes: mmorpg_core::PlayerClass::VARIANTS
@@ -530,6 +541,7 @@ mod tests {
                 item(39, "Clean Bandage", Value::Null, stats(0, 0, 0, 0)),
                 item(40, "Fever Draught", Value::Null, stats(0, 0, 0, 0)),
                 item(41, "Forged Toll Pass", Value::Null, stats(0, 0, 0, 0)),
+                item(42, "Inscription Rubbing", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -544,8 +556,19 @@ mod tests {
                 "text": "The Marshal's wolves left good fur behind. Bring me five wolf pelts from the Wolfrun Woods.",
                 "giver": 2, "ender": 2, "prerequisite": 1,
                 "objectives": [{"kind": "collect", "target": 10, "source": 1, "count": 5}],
-                "experience": 200, "copper": 15, "choices": [9, 6],
+                "experience": 200, "copper": 15, "choices": [9, 6], "requires": [], "decision": [],
             })
+        );
+        // The ledger's decision (#1019): Watchman Garth hears it, and quest 50 waits on 28 and 36 too.
+        assert_eq!(
+            quests[49]["objectives"][2],
+            json!({"kind": "decide", "target": 34, "source": null, "count": 1})
+        );
+        assert_eq!(quests[49]["requires"], json!([28, 36]));
+        assert_eq!(quests[49]["decision"].as_array().map(Vec::len), Some(2));
+        assert_eq!(
+            quests[46]["objectives"],
+            json!([{"kind": "transcribe", "target": 9, "source": 42, "count": 1}])
         );
         assert_eq!(
             quests[6]["objectives"],

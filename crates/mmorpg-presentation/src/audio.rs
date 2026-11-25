@@ -297,6 +297,8 @@ mod tests {
             loads: Vec::new(),
             pieces: Vec::new(),
             depleted_veins: Vec::new(),
+            seals: Vec::new(),
+            wards: Vec::new(),
             summoned: Vec::new(),
             traps: Vec::new(),
             raid: None,

@@ -596,7 +596,10 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
         // shrine kit modules, placed as world dressing; the roof slabs over the cave stay the
         // rock that caps its trench in the lake bed and the shore, cut away from inside.
         _ if ids::SHRINE_CAVE_ROOF.contains(&id) => PropKind::CaveRoof,
-        _ if ids::SHRINE_RUINS.contains(&id) || ids::SHRINE_CAVE_WALLS.contains(&id) => {
+        _ if ids::SHRINE_RUINS.contains(&id)
+            || ids::SHRINE_CAVE_WALLS.contains(&id)
+            || ids::SHRINE_VAULT_WALLS.contains(&id) =>
+        {
             PropKind::ShrineKit
         }
         _ if ids::TENTS.contains(&id) => PropKind::Tent,

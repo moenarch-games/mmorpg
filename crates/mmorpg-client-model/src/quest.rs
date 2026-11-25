@@ -20,14 +20,16 @@ fn active(sheet: &QuestSheet, quest: QuestId) -> bool {
 }
 
 /// Whether the viewer may accept `quest`: not active, not turned in, and its
-/// prerequisite turned in.
+/// prerequisite and required quests (#1019) turned in.
 #[must_use]
 pub fn available(sheet: &QuestSheet, quest: &Quest) -> bool {
     !active(sheet, quest.id)
         && !turned_in(sheet, quest.id)
         && quest
             .prerequisite
-            .is_none_or(|prerequisite| turned_in(sheet, prerequisite))
+            .iter()
+            .chain(&quest.requires)
+            .all(|before| turned_in(sheet, *before))
 }
 
 /// Where the viewer stands with `quest` at `npc`.
@@ -169,6 +171,27 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
             mmorpg_core::AidChore::Mend => "Breaches mended".to_owned(),
             mmorpg_core::AidChore::Tend => "Wounded tended".to_owned(),
         },
+        // The shrine and the ledger (#1019).
+        QuestObjective::Transcribe { spot, item: id } => format!(
+            "{} of {}",
+            item(id),
+            content
+                .evidence_spot(spot)
+                .map_or("the inscription", |spot| spot.name.as_str())
+        ),
+        QuestObjective::Unseal { piece } => format!(
+            "Open {}",
+            content
+                .pieces()
+                .iter()
+                .find(|candidate| candidate.id == piece)
+                .map(|piece| piece.name.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or("the seal")
+        ),
+        QuestObjective::Decide { npc } => {
+            format!("Decide what becomes of {}", objective_npc(content, npc))
+        }
     }
 }
 
@@ -213,7 +236,8 @@ pub fn objective_view(
         | QuestObjective::Retrieve { .. }
         | QuestObjective::DefeatWithLoan { .. }
         | QuestObjective::Crush { .. }
-        | QuestObjective::Aid { .. } => {
+        | QuestObjective::Aid { .. }
+        | QuestObjective::Transcribe { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
         QuestObjective::Talk { .. }
@@ -227,6 +251,8 @@ pub fn objective_view(
         | QuestObjective::DeliverLoad { .. }
         | QuestObjective::Build { .. }
         | QuestObjective::Defend { .. }
+        | QuestObjective::Unseal { .. }
+        | QuestObjective::Decide { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -241,7 +267,9 @@ pub fn objective_view(
         | QuestObjective::Demolish { .. }
         | QuestObjective::DeliverLoad { .. }
         | QuestObjective::Build { .. }
-        | QuestObjective::Defend { .. } => label.clone(),
+        | QuestObjective::Defend { .. }
+        | QuestObjective::Unseal { .. }
+        | QuestObjective::Decide { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -384,10 +412,14 @@ pub struct QuestNpc {
 }
 
 fn quest_npc(content: &ZoneContent, npc: NpcId) -> bool {
-    content
-        .quests()
-        .iter()
-        .any(|quest| quest.giver == npc || quest.ender == npc)
+    content.quests().iter().any(|quest| {
+        quest.giver == npc
+            || quest.ender == npc
+            // An NPC who hears a decision (#1019).
+            || quest
+                .objectives
+                .contains(&QuestObjective::Decide { npc })
+    })
 }
 
 /// The quest NPC that Talk addresses. An explicitly selected NPC is the only
@@ -429,6 +461,42 @@ pub struct DialogView {
     pub ready: Vec<QuestView>,
     /// Active quests ending here, still in progress.
     pub in_progress: Vec<QuestView>,
+    /// The decision (#1019) this NPC awaits from the viewer, if one is open.
+    pub decision: Option<DecisionView>,
+}
+
+/// A quest decision the viewer can make at an NPC (#1019): the quest and its options, offered
+/// as [`mmorpg_core::ZoneCommand::Decide`] with option `index + 1`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DecisionView {
+    pub quest: QuestId,
+    pub options: Vec<String>,
+}
+
+/// The decision (#1019) open at `npc` for a player with the active quests `entries`: the first
+/// undecided decide objective at that NPC whose quest's earlier objectives are all done, as the
+/// zone picks it. The zone checks reach and the option again.
+#[must_use]
+pub fn decision_at(
+    content: &ZoneContent,
+    entries: &[QuestEntry],
+    npc: NpcId,
+) -> Option<DecisionView> {
+    entries.iter().find_map(|entry| {
+        let quest = content.quest(entry.quest)?;
+        let index = quest.objectives.iter().position(
+            |objective| matches!(*objective, QuestObjective::Decide { npc: at } if at == npc),
+        )?;
+        let ready = entry.progress[index] == 0
+            && quest.objectives[..index]
+                .iter()
+                .zip(entry.progress)
+                .all(|(earlier, count)| count >= earlier.required());
+        ready.then(|| DecisionView {
+            quest: quest.id,
+            options: quest.decision.clone(),
+        })
+    })
 }
 
 /// At `night` a private-home resident greets with its woken line and offers
@@ -467,6 +535,7 @@ pub fn dialog_view(
         offered,
         ready,
         in_progress,
+        decision: decision_at(content, &sheet.entries, npc),
     }
 }
 
@@ -491,6 +560,8 @@ pub fn evidence_in_reach(
             .flat_map(|quest| quest.objectives.iter().zip(entry.progress))
             .filter_map(|(objective, progress)| match *objective {
                 QuestObjective::Inspect { spot } if progress == 0 => Some(spot),
+                // A rubbing (#1019) is taken by inspecting its spot while the bag holds none.
+                QuestObjective::Transcribe { spot, .. } if progress == 0 => Some(spot),
                 _ => None,
             })
     });
@@ -580,7 +651,9 @@ pub fn quest_action_at(
             .iter()
             .enumerate()
             .find(|(index, objective)| {
-                objective.action_npc() == Some(npc)
+                // A decision (#1019) is made in the dialog, never by Interact.
+                !matches!(objective, QuestObjective::Decide { .. })
+                    && objective.action_npc() == Some(npc)
                     && entry.progress[*index] < objective.required()
                     && quest.objectives[..*index]
                         .iter()
@@ -589,6 +662,77 @@ pub fn quest_action_at(
             })
             .map(|(_, objective)| *objective)
     })
+}
+
+/// The mechanism (#1019) Interact works for a player centred at `centre` units: the nearest glyph
+/// within its reach, quest or not, since anyone may work one. The zone checks reach again.
+#[must_use]
+pub fn mechanism_in_reach(
+    content: &ZoneContent,
+    centre: [i32; 3],
+) -> Option<&mmorpg_core::Mechanism> {
+    let feet = [
+        centre[0],
+        centre[1] - mmorpg_core::PLAYER_HALF_EXTENTS_UNITS[1],
+        centre[2],
+    ];
+    content
+        .mechanisms()
+        .iter()
+        .filter(|mechanism| mechanism.within(feet))
+        .min_by_key(|mechanism| {
+            let (dx, dz) = (
+                i64::from(mechanism.at[0] - feet[0]),
+                i64::from(mechanism.at[2] - feet[2]),
+            );
+            (dx * dx + dz * dz, mechanism.id)
+        })
+}
+
+/// The HUD lines of the shrine's seals and wards (#1019) at `tick`, as the world sheet carries
+/// them: "The shrine's seal: 1 of 2 glyphs set", "The shrine's seal stands open" and "Shrine
+/// Warden's weak point bared: 12 s". A closed seal with no glyph set and a warded guardian show
+/// nothing.
+#[must_use]
+pub fn shrine_status(
+    seals: &[mmorpg_core::SealView],
+    wards: &[mmorpg_core::WardView],
+    tick: u64,
+    content: &ZoneContent,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (view, seal) in seals.iter().zip(content.seals()) {
+        let name = content
+            .pieces()
+            .iter()
+            .find(|piece| piece.id == seal.piece)
+            .map_or("the seal", |piece| piece.name.as_str());
+        let mut name = name.to_owned();
+        if let Some(first) = name.get_mut(..1) {
+            first.make_ascii_uppercase();
+        }
+        if view.open {
+            lines.push(format!("{name} stands open"));
+        } else if view.set != 0 {
+            lines.push(format!(
+                "{name}: {} of {} glyphs set",
+                view.set.count_ones(),
+                seal.mechanisms.len()
+            ));
+        }
+    }
+    for (view, ward) in wards.iter().zip(content.wards()) {
+        if view.exposed_at(tick) {
+            let seconds = (view.exposed_until - tick).div_ceil(u64::from(mmorpg_core::TICK_HZ));
+            lines.push(format!(
+                "{}'s weak point bared: {seconds} s",
+                content
+                    .creature_template(ward.template)
+                    .map_or("The guardian", |template| template.name.as_str())
+            ));
+        }
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -637,7 +781,8 @@ mod tests {
                     | QuestObjective::Retrieve { .. }
                     | QuestObjective::DefeatWithLoan { .. }
                     | QuestObjective::Crush { .. }
-                    | QuestObjective::Aid { .. } => {
+                    | QuestObjective::Aid { .. }
+                    | QuestObjective::Transcribe { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
                     QuestObjective::Talk { .. }
@@ -650,7 +795,9 @@ mod tests {
                     | QuestObjective::Demolish { .. }
                     | QuestObjective::DeliverLoad { .. }
                     | QuestObjective::Build { .. }
-                    | QuestObjective::Defend { .. } => {
+                    | QuestObjective::Defend { .. }
+                    | QuestObjective::Unseal { .. }
+                    | QuestObjective::Decide { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

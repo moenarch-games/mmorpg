@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type QuestSheet, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
-import { defenceStatus, evidenceInReach, liftInReach, objectiveViews, questActionAt, QuestState } from "../src/world/units/quest-state";
+import {
+  defenceStatus,
+  evidenceInReach,
+  liftInReach,
+  mechanismInReach,
+  objectiveViews,
+  questActionAt,
+  QuestState,
+  shrineStatus,
+} from "../src/world/units/quest-state";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -35,6 +44,38 @@ describe("quest state", () => {
     expect(evidenceInReach(sheet({ entries: [{ quest: 33, progress: [1, 1, 1] }] }), sacks)).toBeNull();
     expect(evidenceInReach(open, [0, 90, 0])).toBeNull();
     expect(evidenceInReach(null, sacks)).toBeNull();
+  });
+
+  test("labels the shrine and ledger quests, finds the rubbing and the glyphs, and heads the tracker with the seal (#1019)", () => {
+    expect(objectiveViews(47, [0]).map((objective) => objective.text)).toEqual([
+      "Inscription Rubbing of the drowned inscription: 0/1",
+    ]);
+    expect(objectiveViews(48, [1]).map((objective) => objective.text)).toEqual(["Open the shrine's seal (done)"]);
+    expect(objectiveViews(49, [0]).map((objective) => objective.text)).toEqual(["Shrine Warden slain: 0/1"]);
+    expect(objectiveViews(50, [1, 1, 0]).map((objective) => objective.text)).toEqual([
+      "Speak with Davin Moss (done)",
+      "Inspect the Greyfang toll book (done)",
+      "Decide what becomes of Watchman Garth",
+    ]);
+    // The rubbing is taken at the drowned inscription while the bag holds none.
+    const inscription = [-7620, 200 + 90, -5400];
+    expect(evidenceInReach(sheet({ entries: [{ quest: 47, progress: [0, 0, 0] }] }), inscription)).toBe(9);
+    expect(evidenceInReach(sheet({ entries: [{ quest: 47, progress: [1, 0, 0] }] }), inscription)).toBeNull();
+    // Garth hears the decision in the dialog, never through Interact's quest action.
+    expect(questActionAt(sheet({ entries: [{ quest: 50, progress: [1, 1, 0] }] }), 34)).toBeNull();
+    // Any glyph in reach is worked, quest or not.
+    expect(mechanismInReach([-8500, 200 + 90, -4960])).toEqual({ id: 1, name: "the lakeward glyph" });
+    expect(mechanismInReach([0, 90, 0])).toBeNull();
+    const seal = (set: number, open: boolean) => [{ piece: 6, set, open }];
+    const ward = (exposedUntil: bigint) => [{ mechanism: 3, exposedUntil }];
+    expect(shrineStatus(projection(100, { seals: seal(0, false), wards: ward(0n) }))).toEqual([]);
+    expect(shrineStatus(projection(100, { seals: seal(0b01, false), wards: ward(0n) }))).toEqual([
+      "The shrine's seal: 1 of 2 glyphs set",
+    ]);
+    expect(shrineStatus(projection(100, { seals: seal(0, true), wards: ward(100n + BigInt(TICK_HZ) * 12n) }))).toEqual([
+      "The shrine's seal stands open",
+      "Shrine Warden's weak point bared: 12 s",
+    ]);
   });
 
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {

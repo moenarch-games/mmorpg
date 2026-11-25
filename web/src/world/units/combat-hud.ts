@@ -81,6 +81,9 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "load-lost": "The water took your load. Fetch another where you found it.",
   // Millbrook's defence (#1019).
   "site-not-ready": "Not yet: a fight is still on at the farm, or its barn and people are still being seen to.",
+  // The Sunken Shrine (#1019).
+  "seal-open": "The seal already stands open; its glyphs rest until it closes again.",
+  warded: "The ward turns your blow aside. Work the vault glyph to bare its weak point.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

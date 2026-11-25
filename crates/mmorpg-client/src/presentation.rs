@@ -997,6 +997,22 @@ impl Presentation {
         Some(mmorpg_core::ZoneCommand::Inspect { spot: spot.get() })
     }
 
+    /// The `Operate` of the glyph (#1019) the viewer stands at, quest or not (`mmorpg-client-model`'s
+    /// rule, shared with the browser); the zone checks reach again.
+    #[must_use]
+    pub fn reachable_mechanism(&self) -> Option<mmorpg_core::ZoneCommand> {
+        let centre = self
+            .latest()?
+            .entities
+            .iter()
+            .find(|e| e.entity() == EntityRef::Player(self.player_id))?
+            .position;
+        let mechanism = mmorpg_client_model::quest::mechanism_in_reach(&self.content, centre)?;
+        Some(mmorpg_core::ZoneCommand::Operate {
+            mechanism: mechanism.id.get(),
+        })
+    }
+
     /// Whether the viewer carries a load in both arms (#1077), as the latest projection says.
     #[must_use]
     pub fn carrying(&self) -> bool {

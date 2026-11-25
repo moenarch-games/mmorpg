@@ -988,6 +988,16 @@ pub struct DialogView {
     pub offered: Vec<u32>,
     pub ready: Vec<QuestView>,
     pub in_progress: Vec<QuestView>,
+    /// The decision (#1019) this NPC awaits: its quest and options; send `Decide` with option
+    /// `index + 1`.
+    pub decision: Option<DecisionView>,
+}
+
+/// A quest decision at an NPC (#1019).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct DecisionView {
+    pub quest: u32,
+    pub options: Vec<String>,
 }
 
 /// At `night` a private-home resident greets with its woken line and offers only turn-ins.
@@ -1004,8 +1014,45 @@ pub fn dialog_view(
         offered: view.offered.iter().map(|quest| quest.get()).collect(),
         ready: quest_views_of(view.ready),
         in_progress: quest_views_of(view.in_progress),
+        decision: view.decision.map(|decision| DecisionView {
+            quest: decision.quest.get(),
+            options: decision.options,
+        }),
     }
     .into_ts()?)
+}
+
+/// A mechanism (#1019) Interact works: its ID and name.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct MechanismInReach {
+    pub id: u32,
+    pub name: String,
+}
+
+/// The glyph (#1019) a player centred at `[x, y, z]` units would work now, or null: the nearest
+/// mechanism within its reach (`mmorpg-client-model`; the zone checks reach again).
+#[wasm_bindgen(js_name = mechanismInReach, unchecked_return_type = "MechanismInReach | null")]
+pub fn mechanism_in_reach(x: i32, y: i32, z: i32) -> Result<JsValue, JsError> {
+    let content = hosted_content();
+    let mechanism =
+        quest::mechanism_in_reach(&content, [x, y, z]).map(|mechanism| MechanismInReach {
+            id: mechanism.id.get(),
+            name: mechanism.name.clone(),
+        });
+    to_js(&mechanism)
+}
+
+/// The HUD lines of the shrine's seals and wards (#1019) in `snapshot`, at its tick: the shared
+/// client model's text.
+#[wasm_bindgen(js_name = shrineStatus)]
+pub fn shrine_status(snapshot: Ts<ZoneSnapshot>) -> Result<Vec<String>, JsError> {
+    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    Ok(quest::shrine_status(
+        &snapshot.seals,
+        &snapshot.wards,
+        snapshot.tick,
+        &hosted_content(),
+    ))
 }
 
 #[cfg(test)]

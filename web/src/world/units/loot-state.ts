@@ -206,4 +206,6 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "no-footing": null,
   "load-lost": null,
   "site-not-ready": null,
+  "seal-open": null,
+  warded: null,
 };

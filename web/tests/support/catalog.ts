@@ -30,16 +30,16 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
     quests: [
       {
         id: 1, name: "Trouble in the Woods", text: "Slay six wolves.", giver: 1, ender: 1, prerequisite: null,
-        objectives: [{ kind: "kill", target: 1, source: null, count: 6 }], experience: 150, copper: 10, choices: [],
+        objectives: [{ kind: "kill", target: 1, source: null, count: 6 }], experience: 150, copper: 10, choices: [], requires: [], decision: [],
       },
       {
         id: 2, name: "Pelts for the Tanner", text: "Bring me five wolf pelts.", giver: 2, ender: 2, prerequisite: 1,
-        objectives: [{ kind: "collect", target: 10, source: 1, count: 5 }], experience: 200, copper: 15, choices: [9, 2],
+        objectives: [{ kind: "collect", target: 10, source: 1, count: 5 }], experience: 200, copper: 15, choices: [9, 2], requires: [], decision: [],
       },
       {
         id: 3, name: "The Missing Farmhand", text: "Ask at the outpost.", giver: 2, ender: 1, prerequisite: 2,
         objectives: [{ kind: "talk", target: 1, source: null, count: 1 }, { kind: "explore", target: 1, source: null, count: 1 }],
-        experience: 100, copper: 5, choices: [],
+        experience: 100, copper: 5, choices: [], requires: [], decision: [],
       },
     ],
     abilities: [

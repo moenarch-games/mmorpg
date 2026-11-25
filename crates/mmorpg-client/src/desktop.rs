@@ -644,6 +644,12 @@ impl App {
                 return true;
             }
             WorldAction::Interact if self.connected() => {
+                // A glyph in reach (#1019) is worked even mid-fight, blade in hand: a ward's weak
+                // point is bared between blows.
+                if let Some(command) = self.presentation.reachable_mechanism() {
+                    self.send_interaction(command);
+                    return true;
+                }
                 if self
                     .presentation
                     .latest()

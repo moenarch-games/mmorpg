@@ -327,6 +327,24 @@ impl GameUi {
             ui.separator();
             ui.label(RichText::new(line).color(Color32::from_rgb(255, 130, 80)));
         }
+        // The shrine's seal and the warden's ward (#1019), and the glyph Interact works here.
+        if let Some(snapshot) = frame.snapshot {
+            for line in quest::shrine_status(
+                &snapshot.seals,
+                &snapshot.wards,
+                snapshot.tick,
+                frame.content,
+            ) {
+                ui.label(RichText::new(line).color(Color32::from_rgb(140, 200, 255)));
+            }
+            if let Some(glyph) = snapshot
+                .entities
+                .first()
+                .and_then(|viewer| quest::mechanism_in_reach(frame.content, viewer.position))
+            {
+                ui.small(format!("E: work {}", glyph.name));
+            }
+        }
         let Some(sheet) = &self.sheets.quests else {
             return;
         };

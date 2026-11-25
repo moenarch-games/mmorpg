@@ -292,6 +292,8 @@ mirror!(
         NoFooting,
         LoadLost,
         SiteNotReady,
+        SealOpen,
+        Warded,
     }
 );
 mirror!(
@@ -893,6 +895,23 @@ pub struct DoorState {
 pub struct PieceState {
     pub piece: u32,
     pub stage: PieceStage,
+}
+
+/// A shrine seal (#1019): its stone piece, which of its glyphs are set (bit `i` for its `i`th)
+/// and whether it stands open.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct SealState {
+    pub piece: u32,
+    pub set: u8,
+    pub open: bool,
+}
+
+/// A shrine ward (#1019): its glyph and the tick its weak point closes again (0: never bared).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub struct WardState {
+    pub mechanism: u32,
+    pub exposed_until: u64,
 }
 
 mirror!(
@@ -1760,6 +1779,9 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<PieceState>,
     /// The ore veins spent at this tick, by their index in `veinSlots()` order (#917).
     pub depleted_veins: Vec<u32>,
+    /// The shrine's seals and wards, in content order, the same for every viewer (#1019).
+    pub seals: Vec<SealState>,
+    pub wards: Vec<WardState>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<SummonedState>,
     /// Fired pressure traps near the viewer, nearest first (#300).
@@ -1939,6 +1961,23 @@ impl ZoneSnapshot {
                 })
                 .collect(),
             depleted_veins: snapshot.depleted_veins.clone(),
+            seals: snapshot
+                .seals
+                .iter()
+                .map(|seal| SealState {
+                    piece: seal.piece.get(),
+                    set: seal.set,
+                    open: seal.open,
+                })
+                .collect(),
+            wards: snapshot
+                .wards
+                .iter()
+                .map(|ward| WardState {
+                    mechanism: ward.mechanism.get(),
+                    exposed_until: ward.exposed_until,
+                })
+                .collect(),
             summoned: snapshot
                 .summoned
                 .iter()
@@ -2222,6 +2261,23 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
                 })
                 .collect(),
             depleted_veins: snapshot.depleted_veins.clone(),
+            seals: snapshot
+                .seals
+                .iter()
+                .map(|seal| core::SealView {
+                    piece: core::PieceId::new(seal.piece),
+                    set: seal.set,
+                    open: seal.open,
+                })
+                .collect(),
+            wards: snapshot
+                .wards
+                .iter()
+                .map(|ward| core::WardView {
+                    mechanism: core::MechanismId::new(ward.mechanism),
+                    exposed_until: ward.exposed_until,
+                })
+                .collect(),
             summoned: snapshot
                 .summoned
                 .iter()
@@ -2415,6 +2471,16 @@ pub enum WorldCommand {
     QuestAction {
         npc_id: u32,
     },
+    /// Decides the open decision at NPC `npc_id` (#1019, see `dialogView().decision`): option is
+    /// 1-based into its options.
+    Decide {
+        npc_id: u32,
+        option: u8,
+    },
+    /// Works mechanism `mechanism` (#1019, see `mechanismInReach()`): a seal's or a ward's glyph.
+    Operate {
+        mechanism: u32,
+    },
     /// Lifts a load (#1077, see `liftInReach()`): from load source `source`, or with 0 the
     /// player's own set-down load.
     Lift {
@@ -2579,6 +2645,11 @@ impl TryFrom<&WorldCommand> for core::ZoneCommand {
             C::QuestAction { npc_id } => Self::QuestAction {
                 npc: core::NpcId::new(npc_id),
             },
+            C::Decide { npc_id, option } => Self::Decide {
+                npc: core::NpcId::new(npc_id),
+                option,
+            },
+            C::Operate { mechanism } => Self::Operate { mechanism },
             C::Lift { source } => Self::Lift {
                 source: (source != 0).then(|| core::LoadSpotId::new(source)),
             },
