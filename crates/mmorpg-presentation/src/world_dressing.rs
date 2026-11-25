@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// Greyhaven Vale's dressing files.
-const GREYHAVEN: [&str; 18] = [
+const GREYHAVEN: [&str; 19] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/vale.json"
@@ -123,6 +123,12 @@ const GREYHAVEN: [&str; 18] = [
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/greyhaven/dressing/hollow-cliffs.json"
+    )),
+    // Occasional climbing ivy down the village basin rim's climbable rock band (#1195), placed
+    // on its rock by `content/greyhaven/authoring/basin_rim.py`.
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../content/greyhaven/dressing/basin-rim.json"
     )),
 ];
 

@@ -24,6 +24,7 @@ use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod adder;
 pub mod basin;
+pub mod basin_rim;
 pub mod bat;
 pub mod brook;
 pub mod cart;
@@ -306,6 +307,9 @@ pub mod ids {
     /// The settlements' second props batch (#891), 4 IDs each, in
     /// [`super::village_props::SETTLEMENT_PROPS`] order.
     pub const SETTLEMENT_PROPS: RangeInclusive<u32> = 44_400..=44_799;
+    /// The village basin's rim rock band (#1195): its segments round the basin, in
+    /// [`super::basin_rim`] order.
+    pub const BASIN_RIM: RangeInclusive<u32> = 45_000..=45_099;
 }
 
 /// One region's tables (#542): its named areas' footprints, its roads and its own colliders.
@@ -1106,6 +1110,13 @@ const fn splitmix64(value: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// Whether a trunk `half` wide at `(x, z)`, with a little room round it, would stand in the
+/// basin rim's rock band (#1195): trees keep off its rock.
+fn on_rim_rock(x: i32, z: i32, half: i32) -> bool {
+    let reach = half + 60;
+    basin_rim::covers([x - reach, z - reach], [x + reach, z + reach])
+}
+
 fn trees() -> Vec<StaticCollider> {
     let mut trees = Vec::new();
     let mut next_id = *ids::TREES.start();
@@ -1149,7 +1160,7 @@ fn trees() -> Vec<StaticCollider> {
             if !clear_of_roads(&collider) {
                 continue;
             }
-            if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+            if !brook::wet_ground(x, z) && !shrine::flattens(x, z) && !on_rim_rock(x, z, half) {
                 trees.push(collider);
             }
             next_id += 1;
@@ -1186,7 +1197,7 @@ fn trees() -> Vec<StaticCollider> {
                 if !clear_of_roads(&collider) || near_structure(&collider) {
                     continue;
                 }
-                if !brook::wet_ground(x, z) && !shrine::flattens(x, z) {
+                if !brook::wet_ground(x, z) && !shrine::flattens(x, z) && !on_rim_rock(x, z, half) {
                     trees.push(collider);
                 }
                 next_id += 1;
@@ -1221,6 +1232,7 @@ fn trees() -> Vec<StaticCollider> {
                         .contains(&TERRAIN.height_at(x, z))
                     || !in_grove(x, z, forest.origin, forest.cells, forest.seed)
                     || brook::wet_ground(x, z)
+                    || on_rim_rock(x, z, 45)
                     || shrine::flattens(x, z)
                     || posts
                         .iter()
@@ -1782,6 +1794,14 @@ pub const ROPES: [Rope; 3] = [
     },
 ];
 
+/// Whether static mesh `id` is authored landscape rock (#1195): a segment of the Redbrand
+/// quarry's wall or of the village basin's rim rock band. Clients skin it as weathered rock and
+/// scenery treats it as a cliff.
+#[must_use]
+pub fn landscape_rock(id: u32) -> bool {
+    ids::CLIFFS.contains(&id) || ids::BASIN_RIM.contains(&id)
+}
+
 /// The top of the Redbrand quarry's rock over `(x, z)` (units), if its wall stands there
 /// (#1195): the highest upward face of its segments.
 #[must_use]
@@ -1791,6 +1811,17 @@ pub fn quarry_rock_top([x, z]: [i32; 2]) -> Option<i32> {
         .filter(|mesh| ids::CLIFFS.contains(&mesh.id))
         .filter_map(|mesh| surface_at(mesh, [x, z]))
         .max()
+}
+
+/// Where Greyhaven's creatures and NPCs stand at their spawns (units), for authoring tools: the
+/// basin rim's rock band keeps clear of them (#1195, `content/greyhaven/authoring/basin_rim.py`).
+#[must_use]
+pub fn standing_points() -> Vec<[i32; 2]> {
+    units::creature_spawns()
+        .into_iter()
+        .map(|spawn| spawn.position)
+        .chain(units::npcs().into_iter().map(|npc| npc.position))
+        .collect()
 }
 
 /// The spawns resting on the Redbrand quarry's rock rather than the terrain (#1195): the
@@ -1839,9 +1870,10 @@ fn ladder((id, (min, max, height)): (u32, ([i32; 2], [i32; 2], i32))) -> StaticC
 /// Hollow's sheer back wall, the highland crags' spires and their two sheer crags, and the
 /// stronghold's smooth-planked northern palisade. The world dressing's rocks and the Hollow's
 /// cliffs climb by their authored grip (#1195, [`fort::dressing_grips`] and
-/// [`cave::climbable_rock`]), not by collider ID. On the terrain, the Vale basin's cliffs are rough rock except the sheer
-/// cliff under Stillwater Lake, and each boundary ridge or escarpment has one hard climbable
-/// route beside its pass while the rest of it is sheer.
+/// [`cave::climbable_rock`]), not by collider ID. The village basin's cliffs are its rim rock
+/// band (#1195, [`basin_rim`]): each segment climbs by its authored grip, rough rock except
+/// the sheer cliff under Stillwater's terrace. No terrain climbs: the steep ridges round the
+/// region are walked or not at all (#816, owner Q4).
 #[must_use]
 pub fn climbing() -> crate::ClimbSurfaces {
     use crate::Grip::{Ladder, Rock, Rope, Timber};
@@ -1868,17 +1900,14 @@ pub fn climbing() -> crate::ClimbSurfaces {
         // The Redbrand Hollow's cliffs whose authored rock climbs (#1195): all but its sheer
         // back wall.
         .chain(cave::climbable_rock())
+        // The basin rim's rock band, segment by segment (#1195).
+        .chain(basin_rim::climbable_rock())
         .chain(range(ids::LADDERS, Ladder))
         // The Greyfang lookout's ladder (#913).
         .chain([(discoveries::LOOKOUT_LADDER, Ladder)])
         .chain(range(ids::ROPES, Rope))
         .collect();
-    let terrain = vec![
-        // The sheer cliff under Stillwater Lake, then the rest of the Vale basin's cliffs.
-        (SHEER_LAKE_CLIFF, None),
-        (VALE_BASIN, Some(Rock)),
-    ];
-    crate::ClimbSurfaces::new(colliders, terrain).expect("Greyhaven climbing is valid")
+    crate::ClimbSurfaces::new(colliders, Vec::new()).expect("Greyhaven climbing is valid")
 }
 
 /// The Redbrand quarry's 15 m east wall over the old mine's adit: one smooth cut face, sheer
@@ -1888,12 +1917,9 @@ pub const SHEER_HOLLOW_WALL: u32 = 404;
 /// The sheer highland crags, by index in [`highlands::CRAGS`] (#490): every outcrop of their
 /// groups is placed `"grip": "sheer"` (#1195), so none of their rock climbs.
 pub const SHEER_CRAGS: [usize; 2] = [4, 12];
-/// The Vale basin (#423) and its cliffs, rough rock (#490).
-pub const VALE_BASIN: XzBounds = XzBounds {
-    min: [-12_800, -12_800],
-    max: [12_800, 12_800],
-};
-/// The basin's northern cliff under Stillwater Lake: sheer (#490).
+/// The basin's north-eastern cliff under Stillwater's terrace: sheer (#490). The rim rock
+/// band's segments standing here are authored `"grip": "sheer"` (#1195,
+/// `content/greyhaven/authoring/basin_rim.py` mirrors these bounds).
 pub const SHEER_LAKE_CLIFF: XzBounds = XzBounds {
     min: [2_000, -3_200],
     max: [12_800, -2_000],
@@ -2120,6 +2146,7 @@ fn build_base_definition() -> ZoneDefinition {
             definition.with_static_meshes(
                 cave::collision_meshes()
                     .into_iter()
+                    .chain(basin_rim::collision_meshes())
                     .chain(fort::meshes())
                     .chain(shrine::collision_meshes())
                     .chain(roofs::meshes())

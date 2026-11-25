@@ -255,8 +255,46 @@ fn ellipse_floor(x: i32, z: i32, radius_x: i64, radius_z: i64, shoulder: i64) ->
     1_024 - rock
 }
 
-/// Broken ridge crests and gullies instead of one uniformly level cliff lip. Existing
-/// authored routes, lake/shrine terrain and the farm apron keep their established levels.
+/// How far across the basin's old rock face `(x, z)` lies (Q10): 0 on the valley floor, 1 024
+/// on the rim beyond the face's shoulder, smooth and weathered in between. Where it passes 512,
+/// the old face's middle, the terrain steps up from the level floor onto the face's upper half,
+/// and the authored rock band (#1195, [`super::basin_rim`]) stands over that step and slope: its
+/// face is the cliff the player sees and collides with, so the terrain no longer draws a
+/// lattice-sampled face of its own.
+#[must_use]
+pub fn rock_q10(x: i32, z: i32) -> i64 {
+    1_024 - floor_q10(x, z)
+}
+
+/// Where the terrain steps from the floor to the rim (Q10 of [`rock_q10`]).
+pub const STEP_Q10: i64 = 512;
+
+/// The basin's soft southern shoulder (#644): east of the South Climb the floor rises gently
+/// toward the outer valley instead of meeting a cliff, so the rock band leaves it out and the
+/// terrain keeps its old slope there, …
+pub const SOFT_SHOULDER: [([i32; 2], [i32; 2]); 2] = [
+    ([0, 8_600], [1_300, 12_000]),
+    // The valley behind the South Climb's cutting, which falls toward the outer valley.
+    ([-1_400, 10_500], [1_300, 12_000]),
+];
+/// … fading to the step over this far round it (units).
+const SOFT_FADE: i64 = 400;
+
+/// How much of the soft shoulder's slope the terrain keeps at `(x, z)` (Q10).
+fn soft_shoulder_q10(x: i32, z: i32) -> i64 {
+    let outside = |v: i32, low: i32, high: i32| i64::from((low - v).max(v - high).max(0));
+    let distance = SOFT_SHOULDER
+        .iter()
+        .map(|&([x0, z0], [x1, z1])| outside(x, x0, x1).max(outside(z, z0, z1)))
+        .min()
+        .unwrap_or(i64::MAX);
+    1_024 - super::smooth_q10(distance, 0, SOFT_FADE)
+}
+
+/// Rock spurs on the rim instead of one uniformly level skyline. Existing authored routes,
+/// lake/shrine terrain and the farm apron keep their established levels. The rim's broken
+/// crest along the cliff's lip is the rock band's now (#1195): the spurs fade out toward the
+/// step, so no terrain rises steeply behind the band's crest.
 fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
     if terrace == 0
         || x.abs() > 11000
@@ -280,8 +318,6 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
         let b = i64::from(dz) * 1024 / rz;
         (a * a + b * b).isqrt()
     };
-    let r = radius(x, z - 2800, 4530, 6800).min(radius(x + 1400, z + 4000, 3100, 2700));
-    let belt = (310 - (r - 1200).abs()).max(0);
     // Composed rock spurs give the basin an uneven skyline at the scale of the village.
     // Each tuple is a summit, its elliptical footprint and height above the old rim, in cm.
     // Max (rather than addition) keeps adjoining shoulders from forming artificial spikes.
@@ -301,8 +337,10 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
             (1024 - distance).max(0) * high / 1024
         })
         .max()
-        .unwrap_or(0);
-    if belt == 0 && summit == 0 {
+        .unwrap_or(0)
+        * super::smooth_q10(rock_q10(x, z), 640, 1_024)
+        / 1_024;
+    if summit == 0 {
         return 0;
     }
     let probe = super::StaticCollider {
@@ -314,10 +352,8 @@ fn ridge(x: i32, z: i32, terrace: i32) -> i32 {
         return 0;
     }
     let ribs = super::value_noise_q10(i64::from(x), i64::from(z), 900, 0x513c1);
-    let strata = super::value_noise_q10(i64::from(x), i64::from(z), 2100, 0x513c2);
-    let shoulder = (100 + ribs * 520 / 1024 + strata * 240 / 1024) * belt / 310;
-    ((shoulder.max(summit) + summit * ribs / 8192) * i64::from(terrace.min(TERRACE_Y))
-        / i64::from(TERRACE_Y)) as i32
+    ((summit + summit * ribs / 8192) * i64::from(terrace.min(TERRACE_Y)) / i64::from(TERRACE_Y))
+        as i32
 }
 
 pub(super) fn lane_height(x: i32, z: i32) -> Option<i32> {
@@ -334,7 +370,13 @@ pub fn height_at(x: i32, z: i32) -> Option<i32> {
         return Some(height);
     }
     // The rim runs on to the heart's edge, where the region's designed land takes over (#816).
-    let weight = 1_024 - floor_q10(x, z);
+    // The rock band's mesh is the cliff (#1195): the terrain under it only steps.
+    // Behind the step the rim keeps its old weathered slope and shoulder, so everything
+    // standing on it stays put; in front of it the floor runs level to the band's foot. Only
+    // the soft southern shoulder keeps its gentle slope all the way down (#644).
+    let rock = rock_q10(x, z);
+    let step = if rock >= STEP_Q10 { rock } else { 0 };
+    let weight = step + (rock - step) * soft_shoulder_q10(x, z) / 1_024;
     let terrace = i32::try_from(i64::from(TERRACE_Y) * weight / 1_024).unwrap_or(0);
     // Rounded grassy banks and broken rim crests, outside foundations and route lanes.
     let mound = |cx: i32, cz: i32, radius: i32, high: i32| {

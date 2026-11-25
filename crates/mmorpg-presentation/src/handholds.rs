@@ -10,9 +10,10 @@ use mmorpg_scenery::TerrainGrid;
 use std::f64::consts::TAU;
 use std::sync::LazyLock;
 
-/// The worn streak, in two tones so it reads scuffed rather than painted.
-pub const STREAK: u32 = 0xc2baa8;
-pub const SCUFF: u32 = 0xd3ccba;
+/// The worn streak, in two tones so it reads scuffed rather than painted, close to the rock's
+/// own grey (#1195): on long faces a pale stripe read as paint, so the wear stays subtle.
+pub const STREAK: u32 = 0xa39d8f;
+pub const SCUFF: u32 = 0xafa898;
 /// A notch's pale, worn lip and the dark hollow under it.
 pub const NOTCH: u32 = 0xdcd5c4;
 pub const NOTCH_SHADOW: u32 = 0x4f4b44;
@@ -102,16 +103,17 @@ pub fn route(
         }),
         t: centre,
     };
-    // The streak wanders a little side to side and leaves bare gaps where the rock shows.
+    // The streak wanders a little side to side and leaves bare gaps where the rock shows:
+    // about a third of it, so it reads as wear rather than a painted line.
     let pieces = (length / PIECE).round().max(1.);
     let piece = length / pieces;
     for k in 0..pieces as usize {
         let h = |n: f64| hash(&[seed, k as f64, n]);
-        if h(1.) < 0.12 {
+        if h(1.) < 0.3 {
             continue;
         }
         let s = (k as f64 + 0.5) * piece;
-        let width = 0.09 + h(2.) * 0.08;
+        let width = 0.06 + h(2.) * 0.06;
         let drift = (h(3.) - 0.5) * 0.08;
         put(
             if h(4.) < 0.5 { STREAK } else { SCUFF },
@@ -192,22 +194,70 @@ pub fn boulder(
     surface_routes(g, a, centre, radii, seed, routes, put);
 }
 
-/// Routes on an authored cliff's actual facets, about one every eight metres round it: on the
-/// Redbrand Hollow's broken rock a few worn lines mark it climbable without striping every face
-/// (#1195, owner Q3: subtle cues). The caller supplies a point low inside the rock so rays
-/// leave the solid even below a saddle.
-pub fn cliff(
-    g: &Geometry,
-    centre: V,
-    radii: V,
-    seed: f64,
-    put: &mut impl FnMut(u32, Shape, Affine),
-) {
-    let routes = ((radii[0] + radii[2]) * 2. / ROUTE_SPACING)
-        .round()
-        .clamp(2., 32.);
-    surface_routes(g, super::geometry::ID, centre, radii, seed, routes, put);
+/// Routes on an authored cliff's steep faces (#1195): the Redbrand quarry's walls and the
+/// village basin's rim rock band, long faces where a route every few metres reads as stripes.
+/// A route starts about every [`CLIFF_ROUTE_SPACING`] along the rock (owner Q3: subtle cues)
+/// and climbs its actual facets: from in front of a steep facet, level rays every half metre
+/// up find the face, and the hits join into the route. The mesh's winding gives each facet's
+/// outward side, so a route always lies on the face it climbs.
+pub fn cliff(g: &Geometry, seed: f64, put: &mut impl FnMut(u32, Shape, Affine)) {
+    let mut sites: Vec<(V, V)> = Vec::new();
+    for tri in g.indices.as_chunks::<3>().0 {
+        let [p0, p1, p2] = tri.map(|i| g.p[i as usize]);
+        let n = norm(cross(
+            std::array::from_fn(|i| p1[i] - p0[i]),
+            std::array::from_fn(|i| p2[i] - p0[i]),
+        ));
+        if n[1].abs() > 0.45 {
+            continue;
+        }
+        let centre: V = std::array::from_fn(|i| (p0[i] + p1[i] + p2[i]) / 3.);
+        let near = |(other, _): &(V, V)| {
+            (other[0] - centre[0]).hypot(other[2] - centre[2]) < CLIFF_ROUTE_SPACING
+        };
+        if sites.iter().any(near) {
+            continue;
+        }
+        let flat = n[0].hypot(n[2]);
+        sites.push((centre, [n[0] / flat, 0., n[2] / flat]));
+    }
+    for (index, (centre, out)) in sites.into_iter().enumerate() {
+        let seed = hash(&[seed, index as f64]);
+        // Skip some sites so the routes do not fall into a rhythm.
+        if seed < 0.25 {
+            continue;
+        }
+        let into = out.map(|v| -v);
+        let hit_at = |y: f64| {
+            let origin = [centre[0] + out[0] * 2., y, centre[2] + out[2] * 2.];
+            hit(g, super::geometry::ID, origin, into)
+                .filter(|(_, n)| n[1].abs() < 0.75 && dot(*n, into) > 0.3)
+        };
+        let hits: Vec<_> = (-24..=30)
+            .map(|k| hit_at(centre[1] + f64::from(k) * 0.5))
+            .collect();
+        for (k, pair) in hits.windows(2).enumerate() {
+            let [Some((p, n)), Some((q, _))] = [pair[0], pair[1]] else {
+                continue;
+            };
+            let d: V = std::array::from_fn(|i| q[i] - p[i]);
+            let length = dot(d, d).sqrt();
+            if length < 1e-6 || length > 1.5 {
+                continue;
+            }
+            let up = d.map(|v| v / length);
+            // `hit` turns the facet's normal along the ray, into the rock.
+            let face = n.map(|v| -v);
+            let along = dot(face, up);
+            let out = norm(std::array::from_fn(|i| face[i] - up[i] * along));
+            let base = std::array::from_fn(|i| p[i] + out[i] * 0.02);
+            route(base, up, out, length, hash(&[seed, k as f64]), put);
+        }
+    }
 }
+
+/// About one route on an authored cliff every this far along its rock (m).
+pub const CLIFF_ROUTE_SPACING: f64 = 9.;
 
 fn surface_routes(
     g: &Geometry,
