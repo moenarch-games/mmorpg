@@ -331,6 +331,61 @@ fn two_glyphs_sink_the_seal_for_their_openers_and_it_rises_again() {
 }
 
 #[test]
+fn late_arrival_can_work_an_open_seals_glyph_for_quest_credit() {
+    let mut world = World::new(&[(1, 5, through(10, &[47])), (2, 5, through(10, &[47]))]);
+    world.accept(1, SEAL);
+    let lakeward = vault::LAKEWARD_GLYPH;
+    let cave = vault::CAVE_GLYPH;
+    for glyph in [lakeward, cave] {
+        world.at_spot(1, world.glyph(glyph));
+        let events = world.send(
+            1,
+            ZoneCommand::Operate {
+                mechanism: glyph.get(),
+            },
+        );
+        assert_eq!(refusal(&events), None, "{events:?}");
+    }
+    assert!(world.zone.seal_views()[0].open);
+    assert_eq!(world.progress(1, SEAL), [1]);
+    let opened = world.zone.snapshot().unwrap().seals;
+    world.beside(1, quests::MARSHAL);
+
+    let operate = || ZoneCommand::Operate {
+        mechanism: lakeward.get(),
+    };
+    world.at_spot(2, world.glyph(lakeward));
+    let events = world.send(2, operate());
+    assert_eq!(refusal(&events), Some(ErrorCode::SealOpen));
+
+    // Taking the quest after the seal opens does not confer remote credit.
+    world.accept(2, SEAL);
+    assert_eq!(world.progress(2, SEAL), [0]);
+    let events = world.send(2, operate());
+    assert_eq!(refusal(&events), Some(ErrorCode::OutOfRange));
+    assert_eq!(world.progress(2, SEAL), [0]);
+
+    // The late player must reach and operate a glyph, not just approach the open seal.
+    world.at_spot(2, world.glyph(lakeward));
+    assert_eq!(world.progress(2, SEAL), [0]);
+    let events = world.send(2, operate());
+    assert_eq!(refusal(&events), None, "{events:?}");
+    assert!(events.contains(&ZoneEvent::QuestProgress {
+        quest: SEAL,
+        objective: 0,
+        count: 1,
+    }));
+    assert_eq!(world.progress(2, SEAL), [1]);
+    let events = world.send(2, operate());
+    assert_eq!(refusal(&events), Some(ErrorCode::SealOpen));
+    assert_eq!(world.progress(2, SEAL), [1]);
+    assert_eq!(world.zone.snapshot().unwrap().seals, opened);
+    let events = world.turn_in(2, SEAL, 0);
+    assert_eq!(refusal(&events), None, "{events:?}");
+    assert!(world.log(2).is_completed(SEAL));
+}
+
+#[test]
 fn the_warden_turns_every_blow_aside_until_the_vault_glyph_bares_it() {
     let mut world = World::new(&[(1, 6, through(10, &[47, 48]))]);
     world.accept(1, GUARDIAN);
