@@ -441,6 +441,7 @@ impl Scenario {
                 completed: (1..=SCOUT_THE_LAKE.get())
                     .map(mmorpg_core::QuestId::new)
                     .collect(),
+                outcomes: Default::default(),
             };
         }
         if matches!(self, Self::RedbrandDepths | Self::RedbrandThorn) {
@@ -450,6 +451,7 @@ impl Scenario {
                 completed: (1..=GARRICK_REDBRAND_QUEST.get())
                     .map(mmorpg_core::QuestId::new)
                     .collect(),
+                outcomes: Default::default(),
             };
         }
         if self == Self::RedbrandCavern {
@@ -465,6 +467,7 @@ impl Scenario {
                 completed: (1..=RETURN_TO_GREYHAVEN.get())
                     .map(mmorpg_core::QuestId::new)
                     .collect(),
+                outcomes: Default::default(),
             };
         }
         if self == Self::GreyhavenDowns {
@@ -476,6 +479,7 @@ impl Scenario {
                     progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
                 }],
                 completed: [THE_WOLFRUN_CART].into(),
+                outcomes: Default::default(),
             };
         }
         if self.class().class == PlayerClass::Warden && self.level() >= 6 {

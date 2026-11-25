@@ -42,6 +42,7 @@ fn cart() -> QuestLog {
             progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
         }],
         completed: Default::default(),
+        outcomes: Default::default(),
     }
 }
 
@@ -55,6 +56,7 @@ fn lake_scouted() -> QuestLog {
             progress,
         }],
         completed: [1, 3, 4].into_iter().map(QuestId::new).collect(),
+        outcomes: Default::default(),
     }
 }
 

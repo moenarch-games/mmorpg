@@ -4,7 +4,19 @@ import type { ContentCatalog, QuestRecord } from "../catalog";
 import { wasm } from "../../wasm";
 import { aftermathOpen } from "../raid-aid";
 import { forewarningLine } from "../raid-prep";
-import { defenceStatus, dialogNpc, dialogView, objectiveViews, questViews, QuestState, trackerRows, type QuestNpc, type QuestView } from "./quest-state";
+import {
+  defenceStatus,
+  dialogNpc,
+  dialogView,
+  mechanismInReach,
+  objectiveViews,
+  questViews,
+  QuestState,
+  shrineStatus,
+  trackerRows,
+  type QuestNpc,
+  type QuestView,
+} from "./quest-state";
 
 export type QuestElements = {
   /** The NPC dialog: quests offered, ready to turn in and in progress at one quest NPC. */
@@ -223,6 +235,9 @@ export class QuestPanel {
   #raidLookout: number | null = null;
   /** A running defence's status line nearby (#1019), or null. */
   #defence: string | null = null;
+  /** The shrine's seal and ward lines (#1019), and the glyph Interact works here, if any. */
+  #shrine: string[] = [];
+  #glyph: string | null = null;
   /** Whether the zone clock reads night, when private-home residents only take turn-ins (#158). */
   #night = false;
 
@@ -234,6 +249,10 @@ export class QuestPanel {
     this.#state.update(snapshot, catalog);
     this.#npc = dialogNpc(snapshot, catalog);
     this.#defence = defenceStatus(snapshot.raid ?? null);
+    this.#shrine = shrineStatus(snapshot);
+    const at = snapshot.entities[0]?.position;
+    const glyph = at ? mechanismInReach(at) : null;
+    this.#glyph = glyph ? `E: work ${glyph.name}` : null;
     this.#raidUnderway = (snapshot.raid?.phase ?? 0) > 0;
     this.#raidReady = snapshot.raid?.warned === true || (snapshot.raid?.braced.length ?? 0) > 0;
     this.#aftermath = aftermathOpen(snapshot.raid);
@@ -301,13 +320,18 @@ export class QuestPanel {
     const rows = catalog && sheet ? trackerRows(sheet) : [];
     const changed = rows.map((row) => row.objective !== null && this.#state.highlighted(row.quest, row.objective));
     const defence = this.#defence;
-    const key = JSON.stringify([rows, changed, defence]);
+    const shrine = this.#glyph === null ? this.#shrine : [...this.#shrine, this.#glyph];
+    const key = JSON.stringify([rows, changed, defence, shrine]);
     if (key === this.#trackerKey) {
       return;
     }
     this.#trackerKey = key;
     // A running defence nearby (#1019), whoever started it, heads the tracker.
-    const status = defence === null ? [] : [element("span", defence, "quest-line defence-status")];
+    const status = [
+      ...(defence === null ? [] : [element("span", defence, "quest-line defence-status")]),
+      // The shrine's seal and the warden's ward (#1019), and the glyph in reach.
+      ...shrine.map((line) => element("span", line, "quest-line shrine-status")),
+    ];
     if (rows.length === 0) {
       this.#elements.tracker.replaceChildren(...status, "No active quests. Look for ! over quest givers and press E to talk.");
       return;
@@ -335,7 +359,7 @@ export class QuestPanel {
       return;
     }
     const view = dialogView(sheet, catalog, npc, this.#night);
-    const empty = view.offered.length + view.ready.length + view.inProgress.length === 0;
+    const empty = view.offered.length + view.ready.length + view.inProgress.length === 0 && view.decision === null;
     // During a night raid's assault nearby, whoever you talk to warns you of it first (#530).
     setText(this.#elements.dialogStatus, !npc.inReach
       ? `Move within 5 m of ${npc.name} to talk.`
@@ -344,7 +368,8 @@ export class QuestPanel {
         : this.#forewarning ? forewarningLine(npc.name, this.#forewarning, npc.npc === this.#raidLookout)
         : view.greeting ?? (empty ? `${npc.name} has nothing for you right now.` : ""));
     const key = JSON.stringify([npc, this.#state.busy, view.offered.map((quest) => quest.id),
-      view.ready.map((entry) => entry.quest.id), view.inProgress.map((entry) => [entry.quest.id, entry.objectives.map((o) => o.current)])]);
+      view.ready.map((entry) => entry.quest.id), view.inProgress.map((entry) => [entry.quest.id, entry.objectives.map((o) => o.current)]),
+      view.decision?.quest.id ?? null]);
     if (key === this.#dialogKey) {
       return;
     }
@@ -364,6 +389,22 @@ export class QuestPanel {
     for (const entry of view.inProgress) {
       const card = this.#card(entry.quest, entry, catalog, null, null, false);
       card.dataset.state = "in-progress";
+      cards.push(card);
+    }
+    // The decision this NPC awaits (#1019): one button per option; the zone keeps the choice.
+    if (view.decision) {
+      const { quest, options } = view.decision;
+      const card = element("li", undefined, "quest-card");
+      card.dataset.quest = String(quest.id);
+      card.dataset.state = "decision";
+      card.append(element("h3", `${quest.name}: decide`));
+      options.forEach((option, index) => {
+        const button = element("button", option);
+        button.type = "button";
+        button.disabled = !npc.inReach;
+        button.addEventListener("click", () => this.#send({ kind: "decide", npcId: npc.npc, option: index + 1 }));
+        card.append(button);
+      });
       cards.push(card);
     }
     this.#elements.dialogQuests.replaceChildren(...cards);

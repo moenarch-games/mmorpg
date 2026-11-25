@@ -20,6 +20,8 @@ export type DialogView = {
   offered: readonly QuestRecord[];
   ready: readonly QuestView[];
   inProgress: readonly QuestView[];
+  /** The decision (#1019) this NPC awaits from the viewer: its quest and options (send option `index + 1`), else null. */
+  decision: { quest: QuestRecord; options: readonly string[] } | null;
 };
 
 /** The catalog record of a projected quest; a quest the catalog does not know fails closed. */
@@ -73,6 +75,7 @@ export function dialogView(sheet: QuestSheet, catalog: ContentCatalog, npc: Ques
     offered: view.offered.map((quest) => record(catalog, quest)),
     ready: view.ready.map((quest) => named(quest, catalog)),
     inProgress: view.inProgress.map((quest) => named(quest, catalog)),
+    decision: view.decision ? { quest: record(catalog, view.decision.quest), options: view.decision.options } : null,
   };
 }
 
@@ -104,6 +107,22 @@ export function liftInReach(
  */
 export function questActionAt(sheet: QuestSheet | null, npc: number): string | null {
   return sheet ? (wasm.questActionAt(sheet, npc) ?? null) : null;
+}
+
+/**
+ * The glyph (#1019) a viewer centred at `at` units would work with Interact, or null: the nearest mechanism in
+ * reach, quest or not (the shared client model's rule; the zone checks reach again).
+ */
+export function mechanismInReach(at: readonly number[]): { id: number; name: string } | null {
+  return wasm.mechanismInReach(at[0]!, at[1]!, at[2]!) ?? null;
+}
+
+/**
+ * The HUD lines of the shrine's seals and wards (#1019): "The shrine's seal: 1 of 2 glyphs set", "The shrine's
+ * seal stands open", "Shrine Warden's weak point bared: 12 s" (the shared client model's text).
+ */
+export function shrineStatus(snapshot: ZoneSnapshot): string[] {
+  return wasm.shrineStatus(snapshot);
 }
 
 /** The HUD tracker's rows: each active quest followed by its objectives. */

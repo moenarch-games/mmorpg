@@ -252,6 +252,10 @@ pub struct ZoneSnapshot {
     pub pieces: Vec<crate::PieceView>,
     /// The content ore veins spent at this tick, in content order (#917).
     pub depleted_veins: Vec<u32>,
+    /// Every content seal's glyphs and opening, in content order (#1019).
+    pub seals: Vec<crate::SealView>,
+    /// Every content ward's exposure, in content order (#1019).
+    pub wards: Vec<crate::WardView>,
     /// Summoned terrain near the viewer, nearest first (#293).
     pub summoned: Vec<crate::SummonedView>,
     /// Fired pressure traps near the viewer, nearest first (#300); blades and spikes come from
@@ -491,6 +495,16 @@ impl ZoneSimulation {
                 } else {
                     Vec::new()
                 },
+                seals: if build_world {
+                    views.seals.clone()
+                } else {
+                    Vec::new()
+                },
+                wards: if build_world {
+                    views.wards.clone()
+                } else {
+                    Vec::new()
+                },
                 summoned: self.summoned_views([center.x, center.y, center.z]),
                 traps: self.trap_views([center.x, center.y, center.z]),
                 raid,
@@ -698,8 +712,13 @@ impl ZoneSimulation {
                     },
                 }
             }
-            // A confronted NPC (#1019) is out of the world while its foe stands.
-            EntityRef::Npc(npc_id) if self.npc_hidden(npc_id) => return Ok(None),
+            // A confronted NPC (#1019) is out of the world while its foe stands, and a departed one
+            // out of its viewer's.
+            EntityRef::Npc(npc_id)
+                if self.npc_hidden(npc_id) || self.npc_departed(viewer, npc_id) =>
+            {
+                return Ok(None);
+            }
             EntityRef::Npc(npc_id) => {
                 let npc = self
                     .content

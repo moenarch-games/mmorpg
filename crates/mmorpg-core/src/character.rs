@@ -30,7 +30,7 @@ use crate::{
 /// (`mmorpg_protocol::decode_character_record`) also reads each earlier schema it lists,
 /// filling the fields that schema lacked with their starting values; a record of any other
 /// schema is rejected rather than reinterpreted.
-pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0x47e2;
+pub const CHARACTER_RECORD_SCHEMA_VERSION: u16 = 0xe26d;
 
 /// Longest [`CharacterId`] in bytes.
 pub const MAX_CHARACTER_ID_BYTES: usize = 64;

@@ -32,6 +32,7 @@ fn zone_with_player_at(centre: [i32; 3], with_quest: bool) -> ZoneSimulation {
                 progress: [0; 3],
             }],
             completed: (1..=5).map(mmorpg_core::QuestId::new).collect(),
+            outcomes: Default::default(),
         };
     }
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()

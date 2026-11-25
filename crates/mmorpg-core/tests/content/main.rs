@@ -40,6 +40,7 @@ mod redbrand_story;
 mod region_quests;
 mod reward_capacity;
 mod river_crayfish;
+mod shrine_ledger;
 mod southwood_stag;
 mod starter_acceptance;
 mod sunken_shrine;

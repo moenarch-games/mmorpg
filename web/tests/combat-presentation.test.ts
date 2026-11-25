@@ -38,6 +38,7 @@ describe("content catalog", () => {
     expect(catalog.quests.get(2)).toEqual({
       id: 2, name: "Pelts for the Tanner", text: "Bring me five wolf pelts.", giver: 2, ender: 2, prerequisite: 1,
       objectives: [{ kind: "collect", target: 10, source: 1, count: 5 }], experience: 200, copper: 15, choices: [9, 2],
+      requires: [], decision: [],
     });
     expect(catalog.quests.get(1)?.objectives).toEqual([{ kind: "kill", target: 1, count: 6 }]);
     expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9, materials: [] }] }]);

@@ -392,6 +392,19 @@ fn templates_follow_the_design_contract() {
                 2200,
                 60000
             ),
+            // The Sunken Shrine's warden (#1019): an elite ogre's frame behind its ward.
+            (
+                "Shrine Warden",
+                Ogre,
+                Aggressive,
+                [6, 6],
+                true,
+                420,
+                0,
+                [9, 15],
+                2800,
+                120000
+            ),
         ]
     );
     let wolf = content
@@ -470,6 +483,8 @@ fn spawns_populate_their_subzones() {
         ((greyhaven_vale::vale::SOUTHMEADOW_DOWNS, "Grain Rat"), 1),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Timber Wolf"), 4),
         ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Young Boar"), 2),
+        // The Sunken Shrine's warden in its vault beyond the lake's west shore (#1019).
+        ((greyhaven_vale::vale::HOLLOWPINE_REACH, "Shrine Warden"), 1),
         ((greyhaven_vale::vale::EASTWATER_FEN, "Mirefin Lurker"), 3),
         // The Eastwater Fen wolf pack, a Ranger firing-line fight (#932).
         ((greyhaven_vale::vale::EASTWATER_FEN, "Timber Wolf"), 3),

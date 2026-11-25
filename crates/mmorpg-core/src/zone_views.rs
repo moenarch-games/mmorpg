@@ -1,6 +1,6 @@
 //! The zone-wide parts of every player projection, built once per tick (#1056).
 //!
-//! Every viewer sees the same doors, damaged pieces and spent ore veins. Projecting for P
+//! Every viewer sees the same doors, damaged pieces, spent ore veins, seals and wards. Projecting for P
 //! recipients used to rebuild them P times for one unchanged state; they are now derived once
 //! per tick and shared, like the threatened-player set (#1006).
 //!
@@ -22,6 +22,9 @@ pub(crate) struct ZoneViews {
     pub(crate) doors: Vec<DoorView>,
     pub(crate) pieces: Vec<PieceView>,
     pub(crate) depleted_veins: Vec<u32>,
+    /// The shrine's seals and wards (#1019).
+    pub(crate) seals: Vec<crate::SealView>,
+    pub(crate) wards: Vec<crate::WardView>,
 }
 
 #[derive(Debug, Default)]
@@ -63,6 +66,8 @@ impl ZoneSimulation {
             doors: self.door_views(),
             pieces: self.piece_views(),
             depleted_veins: self.depleted_veins(),
+            seals: self.seal_views(),
+            wards: self.ward_views(),
         };
         self.zone_view_cache.builds.fetch_add(1, Ordering::Relaxed);
         let cached = match entry.take() {

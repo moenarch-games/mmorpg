@@ -184,6 +184,8 @@ export function canSendCharacterCommand(command: WorldCommand, phase: MatchPhase
     case "gather":
     case "inspect":
     case "quest-action":
+    case "decide":
+    case "operate":
     case "lift":
     case "set-down":
     case "skin":

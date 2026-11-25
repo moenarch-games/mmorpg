@@ -216,6 +216,12 @@ pub mod ids {
     pub const WATCH_POST: RangeInclusive<u32> = 460..=462;
     /// Millbrook's barricades, construction sites (#1019).
     pub const MILLBROOK_BARRICADES: RangeInclusive<u32> = 463..=464;
+    /// The Sunken Shrine's seal across the passage beyond the altar (#1019), a stone piece.
+    pub const SHRINE_SEAL: u32 = 465;
+    /// The guardian's vault beyond the seal (#1019): its walls, drawn as the shrine kit, and its
+    /// rock cover cells.
+    pub const SHRINE_VAULT_WALLS: RangeInclusive<u32> = 470..=478;
+    pub const SHRINE_VAULT_COVER: RangeInclusive<u32> = 479..=482;
 
     /// The Greyfang standing stones (#159).
     pub const STANDING_STONES: RangeInclusive<u32> = 500..=506;
@@ -246,7 +252,7 @@ pub mod ids {
     /// drawn as asset-tooling's shrine kit (#431).
     pub const SHRINE_RUINS: RangeInclusive<u32> = 550..=564;
     pub const SHRINE_ALTAR: u32 = 564;
-    pub const SHRINE_CAVE_WALLS: RangeInclusive<u32> = 565..=575;
+    pub const SHRINE_CAVE_WALLS: RangeInclusive<u32> = 565..=574;
     pub const SHRINE_CAVE_ROOF: RangeInclusive<u32> = 580..=596;
 
     /// Trunks, numbered in generation order from the start: Wolfrun Woods
@@ -1254,6 +1260,13 @@ fn trees() -> Vec<StaticCollider> {
         .filter(|body| ids::SHORE_ROCKS.contains(&body.id))
         .chain(shrine::ruins(*ids::SHRINE_RUINS.start()))
         .chain(shrine::walls(*ids::SHRINE_CAVE_WALLS.start()))
+        // Nothing grows out of the sealed vault's rock cover (#1019).
+        .chain(
+            shrine::collision_meshes()
+                .into_iter()
+                .filter(|mesh| ids::SHRINE_VAULT_COVER.contains(&mesh.id))
+                .map(|mesh| mesh.bounds().expect("valid shrine vault cover bounds")),
+        )
         .chain(
             fort::meshes()
                 .into_iter()
@@ -1964,6 +1977,7 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
             regrowth_ticks: crate::long_ticks_from_ms(300_000),
         },
         millbrook_defence::site(),
+        shrine::vault::site(),
     ]
 }
 
@@ -1973,6 +1987,7 @@ pub fn structure_pieces() -> Vec<crate::StructurePiece> {
     watch_post()
         .into_iter()
         .chain(millbrook_defence::barricades())
+        .chain([shrine::vault::seal_piece()])
         .collect()
 }
 
@@ -1995,6 +2010,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             // *Breaking the Watch Post* names the walls (#1019).
             name: name.to_owned(),
             rubble,
+            material: crate::PieceMaterial::Timber,
         }
     };
     vec![
@@ -2016,6 +2032,7 @@ pub fn watch_post() -> Vec<crate::StructurePiece> {
             supports: vec![crate::PieceId::new(1), crate::PieceId::new(2)],
             name: "the watch post's lookout deck".to_owned(),
             rubble: None,
+            material: crate::PieceMaterial::Timber,
         },
     ]
 }
@@ -2190,6 +2207,12 @@ fn content_with_spawns(
             .with_loads(quests::loads())?
             // Millbrook's barricades (#1019), after the pieces and the timber pile they name.
             .with_constructions(millbrook_defence::constructions())?
+            // The Sunken Shrine's glyphs, seal and ward (#1019), after its seal's piece and warden.
+            .with_mechanisms(
+                shrine::vault::mechanisms(),
+                vec![shrine::vault::seal()],
+                vec![shrine::vault::ward()],
+            )?
             .with_quests(quests::quests())?
             .with_seats(units::seats())?
             .with_routines(units::routines(), units::closed_at_night())?
@@ -2211,6 +2234,8 @@ fn content_with_spawns(
             .with_cart(cart::journey())?
             // The NPCs quests escort, interview or confront (#1019), after every reserved group.
             .with_npc_quests(quests::attitudes(), quests::confrontations())?
+            // Who leaves a character's world after its decision (#1019), after the quests.
+            .with_departures(quests::departures())?
             .with_caches(discoveries::caches())?
             .with_landmarks(landmarks::landmarks())?
             .with_waystones(vec![

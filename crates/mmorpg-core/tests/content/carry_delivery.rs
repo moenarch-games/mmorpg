@@ -106,6 +106,7 @@ fn porter() -> Player {
     record.quests = QuestLog {
         entries: Vec::new(),
         completed,
+        outcomes: Default::default(),
     };
     let [x, z] = content.npc(quests::TANNER).unwrap().position;
     record.location = CharacterLocation {

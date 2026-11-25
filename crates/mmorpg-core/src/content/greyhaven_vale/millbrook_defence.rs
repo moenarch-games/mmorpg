@@ -64,6 +64,7 @@ pub fn barricades() -> Vec<StructurePiece> {
             supports: Vec::new(),
             name: name.to_owned(),
             rubble: None,
+            material: crate::PieceMaterial::Timber,
         };
     let [north, east] = [
         *super::ids::MILLBROOK_BARRICADES.start(),

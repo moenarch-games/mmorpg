@@ -55,8 +55,9 @@ mod tests {
         // its walk-in farmhouses (#886), its second settlement props batch (#891), the beasts
         // of #889, the Eastdown meadow (#872), Trapper Sela's hunting bear (#991), the forest lynxes (#989), the
         // river crayfish (#996), the Southwood stags (#997), the highland crags' outcrop
-        // groups (#1195), the Redbrand Hollow's re-modelled cliffs (#1195) and its quarry (#1195).
-        assert_eq!(before.stable_hash(), 0xb477_fa6e_977f_826a);
+        // groups (#1195), the Redbrand Hollow's re-modelled cliffs (#1195) and its quarry (#1195), and the
+        // Sunken Shrine's sealed vault (#1019).
+        assert_eq!(before.stable_hash(), 0x855c_2573_f2ed_0ea5);
         let original: Vec<_> = before
             .props
             .iter()

@@ -311,10 +311,34 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                         content.areas().area_at(x, z).map(Area::id)
                     })
                 }
+                // A rubbing (#1019) hints at the area round its inscription, an unsealing at the area
+                // its seal's first glyph lies in.
+                QuestObjective::Transcribe { spot, .. } => {
+                    content.evidence_spot(spot).and_then(|spot| {
+                        content
+                            .areas()
+                            .area_at(spot.at[0], spot.at[2])
+                            .map(Area::id)
+                    })
+                }
+                QuestObjective::Unseal { piece } => content
+                    .seal(piece)
+                    .and_then(|seal| content.mechanism(*seal.mechanisms.first()?))
+                    .and_then(|glyph| {
+                        content
+                            .areas()
+                            .area_at(glyph.at[0], glyph.at[2])
+                            .map(Area::id)
+                    }),
                 QuestObjective::Talk { .. }
                 | QuestObjective::DefeatThorn
                 | QuestObjective::UseItem { .. }
                 | QuestObjective::Interview { .. } => None,
+                // A decision (#1019) hints at where its NPC stands: it carries no quest marker.
+                QuestObjective::Decide { npc } => content
+                    .npc(npc)
+                    .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
+                    .map(Area::id),
             };
             let Some(area) = area.and_then(|id| areas.iter().find(|area| area.id == id)) else {
                 continue;

@@ -688,6 +688,10 @@ impl ZoneSimulation {
                 self.apply_environmental_damage(id, amount)?;
             }
             EntityRef::Creature(id) => {
+                // A ward (#1019) turns a trap aside as it does a blade.
+                if self.warded(id) {
+                    return Ok(());
+                }
                 let Some(creature) = self.creatures.get_mut(&id) else {
                     return Ok(());
                 };

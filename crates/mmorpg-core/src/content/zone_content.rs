@@ -126,6 +126,12 @@ pub struct ZoneContent {
     loads: Vec<crate::LoadSpot>,
     /// Construction sites (#1019), in piece order.
     constructions: Vec<crate::ConstructionSite>,
+    /// Mechanisms (#1019), in ID order, and the seals and wards they work, in content order.
+    mechanisms: Vec<crate::Mechanism>,
+    seals: Vec<crate::Seal>,
+    wards: Vec<crate::Ward>,
+    /// NPCs who leave a character's world after its quest decision (#1019), in NPC order.
+    departures: Vec<crate::NpcDeparture>,
     /// NPC attitudes toward interviewers (#1019), in NPC order.
     attitudes: Vec<crate::NpcAttitude>,
     /// NPCs who turn hostile when shown evidence (#1019), in NPC order.
@@ -287,6 +293,10 @@ impl ZoneContent {
             evidence: Vec::new(),
             loads: Vec::new(),
             constructions: Vec::new(),
+            mechanisms: Vec::new(),
+            seals: Vec::new(),
+            wards: Vec::new(),
+            departures: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -360,6 +370,10 @@ impl ZoneContent {
             evidence: Vec::new(),
             loads: Vec::new(),
             constructions: Vec::new(),
+            mechanisms: Vec::new(),
+            seals: Vec::new(),
+            wards: Vec::new(),
+            departures: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
@@ -1807,7 +1821,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_npc_quest_fingerprint();
+        let fingerprint = self.compute_mechanism_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -2023,6 +2037,189 @@ impl ZoneContent {
             .map(|index| &self.constructions[index])
     }
 
+    /// Adds mechanisms and the seals and wards they work (#1019), after the structures and
+    /// creature templates they name and before the quests that unseal them: each mechanism has a
+    /// unique nonzero ID, a short name, a reach of at most [`crate::MAX_MECHANISM_REACH_UNITS`]
+    /// and a spot in bounds, and serves exactly one seal or ward; each seal closes a distinct
+    /// stone piece that is no construction site with `1..=MAX_SEAL_MECHANISMS` mechanisms; each
+    /// ward names a known template once.
+    pub fn with_mechanisms(
+        mut self,
+        mut mechanisms: Vec<crate::Mechanism>,
+        seals: Vec<crate::Seal>,
+        wards: Vec<crate::Ward>,
+    ) -> Result<Self, ZoneError> {
+        mechanisms.sort_by_key(|mechanism| mechanism.id);
+        let invalid = || ZoneError::new("shrine mechanisms, seals or wards are invalid");
+        if mechanisms.first().is_some_and(|m| m.id.get() == 0)
+            || mechanisms.windows(2).any(|pair| pair[0].id == pair[1].id)
+            || seals.len() > crate::MAX_SEALS
+            || wards.len() > crate::MAX_SEALS
+        {
+            return Err(invalid());
+        }
+        for mechanism in &mechanisms {
+            if mechanism.name.trim().is_empty()
+                || mechanism.name.len() > MAX_UNIT_NAME_BYTES
+                || mechanism.reach <= 0
+                || mechanism.reach > crate::MAX_MECHANISM_REACH_UNITS
+                || mechanism
+                    .at
+                    .iter()
+                    .any(|value| value.abs() > MAX_CONTENT_COORDINATE_UNITS)
+            {
+                return Err(invalid());
+            }
+        }
+        let known = |id: crate::MechanismId| {
+            mechanisms
+                .binary_search_by_key(&id, |mechanism| mechanism.id)
+                .is_ok()
+        };
+        let mut served: Vec<crate::MechanismId> = seals
+            .iter()
+            .flat_map(|seal| seal.mechanisms.iter().copied())
+            .chain(wards.iter().map(|ward| ward.mechanism))
+            .collect();
+        served.sort_unstable();
+        let pieces: Vec<crate::PieceId> = seals.iter().map(|seal| seal.piece).collect();
+        let templates: Vec<crate::CreatureTemplateId> =
+            wards.iter().map(|ward| ward.template).collect();
+        if served.len() != mechanisms.len()
+            || served.windows(2).any(|pair| pair[0] == pair[1])
+            || !served.iter().all(|id| known(*id))
+            || pieces
+                .iter()
+                .enumerate()
+                .any(|(index, piece)| pieces[..index].contains(piece))
+            || templates
+                .iter()
+                .enumerate()
+                .any(|(index, template)| templates[..index].contains(template))
+            || seals.iter().any(|seal| {
+                let (min, max) = seal.chamber;
+                seal.mechanisms.is_empty()
+                    || seal.mechanisms.len() > crate::MAX_SEAL_MECHANISMS
+                    || seal.mechanisms.windows(2).any(|pair| pair[0] >= pair[1])
+                    || !self
+                        .pieces
+                        .iter()
+                        .any(|piece| piece.id == seal.piece && piece.material.is_stone())
+                    || self.construction(seal.piece).is_some()
+                    || (0..3).any(|axis| {
+                        min[axis] >= max[axis]
+                            || min[axis].abs() > MAX_CONTENT_COORDINATE_UNITS
+                            || max[axis].abs() > MAX_CONTENT_COORDINATE_UNITS
+                    })
+            })
+            || wards
+                .iter()
+                .any(|ward| self.creature_template(ward.template).is_none())
+        {
+            return Err(invalid());
+        }
+        self.mechanisms = mechanisms;
+        self.seals = seals;
+        self.wards = wards;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Mechanisms (#1019), in ID order.
+    #[must_use]
+    pub fn mechanisms(&self) -> &[crate::Mechanism] {
+        &self.mechanisms
+    }
+
+    #[must_use]
+    pub fn mechanism(&self, id: crate::MechanismId) -> Option<&crate::Mechanism> {
+        self.mechanisms
+            .binary_search_by_key(&id, |mechanism| mechanism.id)
+            .ok()
+            .map(|index| &self.mechanisms[index])
+    }
+
+    /// Seals (#1019), in content order.
+    #[must_use]
+    pub fn seals(&self) -> &[crate::Seal] {
+        &self.seals
+    }
+
+    /// The seal closing `piece` (#1019), if any.
+    #[must_use]
+    pub fn seal(&self, piece: crate::PieceId) -> Option<&crate::Seal> {
+        self.seals.iter().find(|seal| seal.piece == piece)
+    }
+
+    /// Wards (#1019), in content order.
+    #[must_use]
+    pub fn wards(&self) -> &[crate::Ward] {
+        &self.wards
+    }
+
+    /// Adds the NPCs who leave a character's world after its quest decision (#1019), after the
+    /// quests: each NPC known and no quest giver or ender of a quest that is not the decision's
+    /// own or one it requires, the quest known with a decision, the outcome one of its options.
+    pub fn with_departures(
+        mut self,
+        mut departures: Vec<crate::NpcDeparture>,
+    ) -> Result<Self, ZoneError> {
+        departures.sort_by_key(|departure| (departure.npc, departure.quest, departure.outcome));
+        let valid = departures.iter().all(|departure| {
+            let Some(quest) = self.quest(departure.quest) else {
+                return false;
+            };
+            // Every quest the NPC gives or ends comes before the decision, so leaving strands
+            // none of them.
+            let before = |id: crate::QuestId| id == quest.id || self.quest_precedes(id, quest.id);
+            self.npc(departure.npc).is_some()
+                && (1..=quest.decision.len()).contains(&usize::from(departure.outcome))
+                && self
+                    .quests
+                    .iter()
+                    .filter(|other| other.giver == departure.npc || other.ender == departure.npc)
+                    .all(|other| before(other.id))
+        });
+        if !valid
+            || departures
+                .windows(2)
+                .any(|pair| (pair[0].npc, pair[0].quest) == (pair[1].npc, pair[1].quest))
+        {
+            return Err(ZoneError::new("npc departures are invalid"));
+        }
+        self.departures = departures;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Whether turning in `later` needs `earlier` turned in first: through prerequisites and
+    /// required quests (#1019).
+    fn quest_precedes(&self, earlier: crate::QuestId, later: crate::QuestId) -> bool {
+        let mut pending = vec![later];
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(quest) = self.quest(id) else {
+                continue;
+            };
+            for before in quest.prerequisite.iter().chain(&quest.requires) {
+                if *before == earlier {
+                    return true;
+                }
+                pending.push(*before);
+            }
+        }
+        false
+    }
+
+    /// NPCs who leave a character's world after its quest decision (#1019), in NPC order.
+    #[must_use]
+    pub fn departures(&self) -> &[crate::NpcDeparture] {
+        &self.departures
+    }
+
     /// Load sources (#1077), in ID order.
     #[must_use]
     pub fn load_spots(&self) -> &[crate::LoadSpot] {
@@ -2151,6 +2348,46 @@ impl ZoneContent {
     #[must_use]
     pub fn quest_npcs(&self) -> &[crate::NpcId] {
         &self.quest_npcs
+    }
+
+    /// Mechanisms, seals, wards and departures (#1019) enter the identity only where authored.
+    fn compute_mechanism_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_npc_quest_fingerprint();
+        if self.mechanisms.is_empty() && self.departures.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/mechanisms-v1");
+        hash.u64(fingerprint);
+        hash.len(self.mechanisms.len());
+        for mechanism in &self.mechanisms {
+            hash.u32(mechanism.id.get());
+            hash.text(&mechanism.name);
+            hash.i32s(&mechanism.at);
+            hash.i32s(&[mechanism.reach]);
+        }
+        hash.len(self.seals.len());
+        for seal in &self.seals {
+            hash.u32(seal.piece.get());
+            hash.len(seal.mechanisms.len());
+            for mechanism in &seal.mechanisms {
+                hash.u32(mechanism.get());
+            }
+            hash.i32s(&seal.chamber.0);
+            hash.i32s(&seal.chamber.1);
+        }
+        hash.len(self.wards.len());
+        for ward in &self.wards {
+            hash.u32(ward.template.get());
+            hash.u32(ward.mechanism.get());
+        }
+        hash.len(self.departures.len());
+        for departure in &self.departures {
+            hash.u32(departure.npc.get());
+            hash.u32(departure.quest.get());
+            hash.u8(departure.outcome);
+        }
+        hash.finish()
     }
 
     /// NPC attitudes and confrontations (#1019) enter the identity only where authored.
@@ -2942,6 +3179,12 @@ impl ZoneContent {
                         });
                         hash.u8(count);
                     }
+                    crate::QuestObjective::Transcribe { spot, item } => {
+                        hash.u32(spot.get());
+                        hash.u32(item.get());
+                    }
+                    crate::QuestObjective::Unseal { piece } => hash.u32(piece.get()),
+                    crate::QuestObjective::Decide { npc } => hash.u32(npc.get()),
                 }
             }
             hash.u32(quest.rewards.experience);
@@ -2960,6 +3203,21 @@ impl ZoneContent {
                     for class in &supply.classes {
                         hash.u8(class.code());
                     }
+                }
+            }
+            // Further required quests and a decision's options (#1019), only where authored.
+            if !quest.requires.is_empty() {
+                hash.bytes(b"requires");
+                hash.len(quest.requires.len());
+                for required in &quest.requires {
+                    hash.u32(required.get());
+                }
+            }
+            if !quest.decision.is_empty() {
+                hash.bytes(b"decision");
+                hash.len(quest.decision.len());
+                for option in &quest.decision {
+                    hash.text(option);
                 }
             }
         }

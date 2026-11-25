@@ -57,6 +57,8 @@ PP2000000004 raid_aid 4
 PP2600000002 gather 2
 PP2800000007 inspect 7
 PP290000002c quest_action 44
+PP2c0000002202 decide 34 2
+PP2d00000003 operate 3
 PP2a00000001 lift 1
 PP2a00000000 lift 0
 PP2b set_down

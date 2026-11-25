@@ -97,6 +97,8 @@ fn content(whirl: bool) -> Arc<ZoneContent> {
                 }],
                 rewards: QuestRewards::default(),
                 supplies: Vec::new(),
+                requires: Vec::new(),
+                decision: Vec::new(),
             }])
             .unwrap(),
     )

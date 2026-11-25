@@ -173,6 +173,9 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::LoadLost => "The water took your load. Fetch another where you found it.".into(),
         // Millbrook's defence (#1019).
         ErrorCode::SiteNotReady => "Not yet: a fight is still on at the farm, or its barn and people are still being seen to.".into(),
+        // The Sunken Shrine (#1019).
+        ErrorCode::SealOpen => "The seal already stands open; its glyphs rest until it closes again.".into(),
+        ErrorCode::Warded => "The ward turns your blow aside. Work the vault glyph to bare its weak point.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }

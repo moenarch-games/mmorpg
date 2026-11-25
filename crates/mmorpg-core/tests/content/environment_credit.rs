@@ -32,6 +32,8 @@ fn quest(objectives: Vec<QuestObjective>) -> Quest {
         objectives,
         rewards: QuestRewards::default(),
         supplies: Vec::new(),
+        requires: Vec::new(),
+        decision: Vec::new(),
     }
 }
 
@@ -52,6 +54,7 @@ fn with_quest(zone: ZoneSimulation) -> ZoneSimulation {
                 progress: [0; mmorpg_core::MAX_QUEST_OBJECTIVES],
             }],
             completed: Default::default(),
+            outcomes: Default::default(),
         };
     }
     ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap()
@@ -257,6 +260,7 @@ fn post_arena() -> Arc<ZoneContent> {
         supports: Vec::new(),
         name: format!("wall {id}"),
         rubble: None,
+        material: mmorpg_core::PieceMaterial::Timber,
     };
     let pieces = vec![
         wall(1, -300),
@@ -271,6 +275,7 @@ fn post_arena() -> Arc<ZoneContent> {
             supports: vec![PieceId::new(1), PieceId::new(2)],
             name: "deck".into(),
             rubble: None,
+            material: mmorpg_core::PieceMaterial::Timber,
         },
     ];
     let content = arena::arena(

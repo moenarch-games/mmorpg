@@ -126,6 +126,8 @@ fn content(escorts: usize, idle: usize) -> Result<Arc<ZoneContent>, Box<dyn Erro
             }],
             rewards: QuestRewards::default(),
             supplies: Vec::new(),
+            requires: Vec::new(),
+            decision: Vec::new(),
         });
     }
     // Bystanders in rows of 64, north of the spawn slots.

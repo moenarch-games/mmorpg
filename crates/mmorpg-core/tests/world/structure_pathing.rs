@@ -27,6 +27,7 @@ fn piece(id: u32, x: i32, z: i32, half: [i32; 3]) -> StructurePiece {
         supports: Vec::new(),
         name: String::new(),
         rubble: None,
+        material: mmorpg_core::PieceMaterial::Timber,
     }
 }
 

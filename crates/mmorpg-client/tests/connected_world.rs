@@ -747,7 +747,8 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
             }) + 1
                 + 8;
             // The world sheet carries the content doors, the pieces that are not intact and the
-            // raid signal and the spent veins (#917), and the waystone sheet the unlocked stones (#158, #882).
+            // raid signal, the spent veins (#917) and the seals and wards (#1019), and the waystone sheet the
+            // unlocked stones (#158, #882).
             let raid_bytes = snapshot.raid.as_ref().map_or(1, |raid| {
                 1 + 3 + 2 + 4 * raid.aid.len() + 2 + 4 * raid.braced.len()
             });
@@ -758,6 +759,11 @@ async fn a_budget_packed_crowded_projection_reaches_a_client() {
                 + raid_bytes
                 + 2
                 + 4 * snapshot.depleted_veins.len()
+                // The shrine's seals and wards (#1019).
+                + 1
+                + 6 * snapshot.seals.len()
+                + 1
+                + 12 * snapshot.wards.len()
                 + 2
                 + 4 * snapshot.viewer.waystones.len()
                 + 2
@@ -814,6 +820,8 @@ async fn fragmented_projection_reaches_the_native_client() {
         loads: Vec::new(),
         pieces: Vec::new(),
         depleted_veins: Vec::new(),
+        seals: Vec::new(),
+        wards: Vec::new(),
         summoned: Vec::new(),
         traps: Vec::new(),
         raid: None,

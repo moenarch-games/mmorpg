@@ -95,6 +95,25 @@ impl Structures {
             let age = (seconds - entry.changed).max(0.0);
             let p = piece.position.map(|v| f64::from(v) / 100.0);
             let h = piece.half_extents.map(|v| f64::from(v) / 100.0);
+            // A seal's stone (#1019) sinks whole into the floor as it opens and rises as it
+            // closes, over a second; it never breaks into planks or debris.
+            if piece.material.is_stone() {
+                let motion = if reduced_motion {
+                    1.0
+                } else {
+                    (age / 1.0).min(1.0)
+                };
+                let sunk = if stage == PieceStage::Destroyed {
+                    motion
+                } else {
+                    1.0 - motion
+                };
+                if sunk < 1.0 {
+                    let at = [p[0], p[1] - sunk * 2.0 * h[1], p[2]];
+                    draws.push(self.draw(piece.id, 0, at, h, 0.0, [0.42, 0.44, 0.43], 1.0));
+                }
+                continue;
+            }
             let roof = h[1] < h[0].min(h[2]);
             let inside = roof
                 && viewer.is_some_and(|v| {

@@ -74,6 +74,24 @@ pub struct StructurePiece {
     pub name: String,
     /// The server-side rubble blocker it leaves when destroyed, if gameplay needs one.
     pub rubble: Option<PieceBox>,
+    /// What it is built of (#1019).
+    pub material: PieceMaterial,
+}
+
+/// What a piece is built of (#1019): clients draw timber as planks and stone as one block.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum PieceMaterial {
+    #[default]
+    Timber,
+    /// A seal's stone ([`crate::Seal`]): it sinks and rises whole instead of breaking.
+    Stone,
+}
+
+impl PieceMaterial {
+    #[must_use]
+    pub const fn is_stone(self) -> bool {
+        matches!(self, Self::Stone)
+    }
 }
 
 impl StructurePiece {
@@ -285,6 +303,20 @@ impl ZoneSimulation {
         now: u64,
         by: Option<crate::PlayerId>,
     ) -> Result<(), ZoneError> {
+        // A seal (#1019) only sinks and rises by its mechanisms.
+        if self.content.seal(id).is_some() {
+            return Ok(());
+        }
+        self.wear_piece(id, amount, now, by)
+    }
+
+    fn wear_piece(
+        &mut self,
+        id: PieceId,
+        amount: u32,
+        now: u64,
+        by: Option<crate::PlayerId>,
+    ) -> Result<(), ZoneError> {
         let Some(state) = self.pieces.get_mut(&id).filter(|state| state.health > 0) else {
             return Ok(());
         };
@@ -459,7 +491,9 @@ impl ZoneSimulation {
             // A construction site's piece (#1019) never rises from nothing by itself.
             if state.health >= piece.health
                 || elapsed < u64::from(regrowth)
-                || (state.health == 0 && content.construction(piece.id).is_some())
+                || (state.health == 0
+                    && (content.construction(piece.id).is_some()
+                        || content.seal(piece.id).is_some()))
             {
                 continue;
             }
@@ -532,7 +566,7 @@ impl ZoneSimulation {
         if health == 0 {
             return Ok(());
         }
-        self.damage_piece(id, health, now, None)
+        self.wear_piece(id, health, now, None)
     }
 
     /// Pieces that are not intact, in ID order, for every projection.

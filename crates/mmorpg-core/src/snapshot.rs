@@ -113,6 +113,10 @@ pub enum PlayerIntent {
     Inspect(u32),
     /// A quest action at an NPC (#1019): using an item on it, an interview or an escort.
     QuestAction(crate::NpcId),
+    /// A quest decision at an NPC (#1019): the NPC and the 1-based option.
+    Decide(crate::NpcId, u8),
+    /// Working a mechanism (#1019): its ID.
+    Operate(u32),
     /// Lifting a load (#1077): its source, or `None` for the player's own set-down load.
     Lift(Option<crate::LoadSpotId>),
     /// Setting the carried load down (#1077).
@@ -429,6 +433,10 @@ pub struct CanonicalZoneSnapshot {
     pub loads: Vec<crate::LoadState>,
     /// Every construction site's material and raising (#1019), in content order.
     pub constructions: Vec<crate::ConstructionState>,
+    /// Every seal's set mechanisms and opening (#1019), in content order.
+    pub seals: Vec<crate::SealState>,
+    /// Every ward's exposure (#1019), in content order.
+    pub wards: Vec<crate::WardState>,
     /// The private run bound to a depths zone (#404).
     pub depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks of a match with hit rewind (#680), oldest
@@ -720,6 +728,8 @@ impl ZoneSimulation {
             escorts: self.canonical_escorts(),
             loads: self.canonical_loads(),
             constructions: self.canonical_constructions(),
+            seals: self.canonical_seals(),
+            wards: self.canonical_wards(),
             depths: self.depths.clone(),
             rewind_history: self.canonical_rewind_history(),
         })
@@ -829,6 +839,7 @@ impl ZoneSimulation {
         zone.restore_escorts(&snapshot.escorts, snapshot.tick)?;
         zone.restore_loads(&snapshot.loads)?;
         zone.restore_constructions(&snapshot.constructions, snapshot.tick)?;
+        zone.restore_mechanisms(&snapshot.seals, &snapshot.wards, snapshot.tick)?;
         // One unit per seat, and nobody on a seat its routine NPC holds at this tick (#619).
         let mut held = BTreeSet::new();
         for (&id, player) in &zone.players {

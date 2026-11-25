@@ -24,6 +24,8 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
         loads: Vec::new(),
         pieces: Vec::new(),
         depleted_veins: Vec::new(),
+        seals: Vec::new(),
+        wards: Vec::new(),
         summoned: Vec::new(),
         traps: Vec::new(),
         raid: None,

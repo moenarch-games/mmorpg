@@ -106,6 +106,7 @@ fn reader() -> Player {
     reader_with(QuestLog {
         entries: Vec::new(),
         completed: [quests::THE_WOLFRUN_CART].into(),
+        outcomes: Default::default(),
     })
 }
 
@@ -214,6 +215,7 @@ fn the_tanners_ledger_is_read_at_both_ends_of_the_millbrook_road() {
             progress: [0, 0, 0],
         }],
         completed: [quests::THE_WOLFRUN_CART, quests::CUT_SACKS_RED_RAGS].into(),
+        outcomes: Default::default(),
     });
     player.beside_evidence(quests::HILDAS_LEDGER);
     assert_eq!(refusal(&player.inspect(quests::HILDAS_LEDGER)), None);
@@ -253,9 +255,10 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     .collect();
     let content = greyhaven_vale::content();
     // The 32 quests before #1019, slice 1's three evidence quests, slice 2's seven (35, 37–42)
-    // the first delivery, *The Last Sack* (43, #1077), and slice 3a's farm defence (44–46).
-    assert_eq!(content.quests().len(), 46);
-    assert_eq!(content.evidence().len(), 8);
+    // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46) and slice
+    // 3b's shrine and ledger (47–50).
+    assert_eq!(content.quests().len(), 50);
+    assert_eq!(content.evidence().len(), 10);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {
             let (dx, dz) = (
@@ -273,10 +276,12 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
             art.unwrap().id
         );
         let named = content.quests().iter().any(|quest| {
-            quest
-                .objectives
-                .contains(&QuestObjective::Inspect { spot: spot.id })
+            quest.objectives.iter().any(|objective| match *objective {
+                QuestObjective::Inspect { spot: named }
+                | QuestObjective::Transcribe { spot: named, .. } => named == spot.id,
+                _ => false,
+            })
         });
-        assert!(named, "{}: no quest inspects it", spot.name);
+        assert!(named, "{}: no quest inspects or transcribes it", spot.name);
     }
 }

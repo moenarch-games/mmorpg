@@ -109,6 +109,13 @@ impl NpcContext {
     }
     pub fn action(&mut self, content: &ZoneContent, sell: bool) -> Option<ZoneCommand> {
         let npc = self.npc?;
+        // An open decision (#1019) takes the dialog's two keys: 1 for its first option, 2 for its
+        // second.
+        if let Some(decision) = self.decision(content) {
+            let option = if sell { 2 } else { 1 };
+            return (usize::from(option) <= decision.options.len())
+                .then_some(ZoneCommand::Decide { npc, option });
+        }
         match content.npc(npc)?.role {
             NpcRole::QuestGiver if !sell => {
                 let q = *self.quest_rows(content, npc).get(self.row)?;
@@ -152,6 +159,14 @@ impl NpcContext {
                 None
             }
         }
+    }
+    /// The decision (#1019) the open NPC awaits from the viewer, if any.
+    #[must_use]
+    pub fn decision(
+        &self,
+        content: &ZoneContent,
+    ) -> Option<mmorpg_client_model::quest::DecisionView> {
+        mmorpg_client_model::quest::decision_at(content, &self.quests.as_ref()?.entries, self.npc?)
     }
     /// Page authored dialogue and objective descriptions without hiding the world.
     pub fn next_detail(&mut self, content: &ZoneContent) {
@@ -224,6 +239,21 @@ impl NpcContext {
             NpcRole::QuestGiver => {
                 if self.quests.is_none() {
                     return format!("{} — waiting for current quest sheet", npc.name);
+                }
+                // An open decision (#1019) comes first: its options on the dialog's two keys.
+                if let Some(decision) = self.decision(content) {
+                    let quest = content
+                        .quest(decision.quest)
+                        .map_or("a quest", |quest| quest.name.as_str());
+                    let options = decision
+                        .options
+                        .iter()
+                        .take(2)
+                        .enumerate()
+                        .map(|(index, option)| format!("{} {option}", index + 1))
+                        .collect::<Vec<_>>()
+                        .join(" · ");
+                    return format!("{} — {quest}: decide · {options} · Esc close", npc.name);
                 }
                 let rows = self.quest_rows(content, npc.id);
                 if self.detail_page > 0

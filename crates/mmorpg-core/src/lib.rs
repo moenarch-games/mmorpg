@@ -58,6 +58,7 @@ mod inventory;
 mod landmark;
 mod loot;
 mod mastery;
+mod mechanism;
 mod melee;
 mod minion;
 mod mobility;
@@ -225,6 +226,11 @@ pub use mastery::{
     Practice, TECHNIQUE_PRACTICE, TRIVIAL_LEVELS_BELOW, WeaponMastery, practice_to_next_level,
     valid_practice,
 };
+pub use mechanism::{
+    MAX_MECHANISM_REACH_UNITS, MAX_SEAL_MECHANISMS, MAX_SEALS, Mechanism, MechanismId,
+    SEAL_OPEN_TICKS, SEAL_WINDOW_TICKS, Seal, SealState, SealView, WARD_EXPOSED_TICKS, Ward,
+    WardState, WardView,
+};
 pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{
     COMPANION_HALF_EXTENTS_UNITS, CanonicalMinion, DEFEND_RADIUS_UNITS, ENGAGE_RADIUS_UNITS,
@@ -266,10 +272,11 @@ pub use projection::{
     SheetStamp, SheetStamps, TargetDetail, ViewerState, ZoneSnapshot,
 };
 pub use quest::{
-    MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG, MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES,
-    MAX_QUEST_SUPPLIES, MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcMarker, QUEST_REACH_UNITS,
-    Quest, QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective,
-    QuestRewards, QuestSheet, QuestSupply,
+    MAX_DECISION_BYTES, MAX_DECISION_OPTIONS, MAX_QUEST_EXPERIENCE, MAX_QUEST_LOG,
+    MAX_QUEST_NAME_BYTES, MAX_QUEST_OBJECTIVES, MAX_QUEST_REQUIRES, MAX_QUEST_SUPPLIES,
+    MAX_QUEST_TEXT_BYTES, MAX_REWARD_CHOICES, NpcDeparture, NpcMarker, QUEST_REACH_UNITS, Quest,
+    QuestContentError, QuestEntry, QuestId, QuestLog, QuestMarker, QuestObjective, QuestRewards,
+    QuestSheet, QuestSupply,
 };
 pub use raid::{
     AidChore, AidKind, AidTask, Civilian, RaidApproach, RaidIncident, RaidLeg, RaidMember,
@@ -320,8 +327,8 @@ pub use strike::{
     has_directed_mode,
 };
 pub use structure::{
-    CanonicalPiece, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceStage, PieceView,
-    REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
+    CanonicalPiece, PROJECTILE_PIECE_DAMAGE, PieceBox, PieceId, PieceMaterial, PieceStage,
+    PieceView, REPAIR_REACH_UNITS, REPAIR_SPEEDUP_TICKS, StructurePiece, StructureSite,
 };
 pub use summoned::{
     MAX_SUMMONED_TERRAIN, MAX_VISIBLE_SUMMONED, PROJECTILE_SUMMONED_DAMAGE, SUMMON_DISTANCE_UNITS,
@@ -515,6 +522,12 @@ pub enum ZoneCommand {
     /// Performs the next open quest action at `npc` (#1019): uses a quest item on it, asks it for
     /// an interview or starts escorting it, checked in the tick.
     QuestAction { npc: NpcId },
+    /// Decides the open decision of an active quest at `npc` (#1019): `option` is 1-based into
+    /// the quest's [`Quest::decision`], checked in the tick and kept with the character.
+    Decide { npc: NpcId, option: u8 },
+    /// Works mechanism `mechanism` (#1019, a [`MechanismId`]): a seal's glyph or a ward's; the
+    /// zone checks reach in the tick.
+    Operate { mechanism: u32 },
     /// Lifts a load in both arms (#1077): from load source `source` (a [`LoadSpotId`]) an active
     /// quest still needs a delivery of, or with `None` the player's own set-down load. The zone
     /// checks empty hands, footing and reach in the tick.

@@ -70,6 +70,10 @@ const QUEST_ACTION_TAG: u8 = 41;
 const LIFT_TAG: u8 = 42;
 /// Set the carried load down (#1077): version and tag.
 const SET_DOWN_TAG: u8 = 43;
+/// Decide a quest at an NPC (#1019): version, tag, NPC (u32), option (u8, 1-based).
+const DECIDE_TAG: u8 = 44;
+/// Work a mechanism (#1019): version, tag, mechanism ID (u32).
+const OPERATE_TAG: u8 = 45;
 /// Version, tag, ability (u32), retired (0 key up, 1 retired).
 const RELEASE_ABILITY_COMMAND_BYTES: usize = 7;
 /// Version, tag, observed tick (u64), before the inner command's tag.
@@ -119,6 +123,12 @@ pub fn encode_command(command: ZoneCommand) -> Vec<u8> {
         ZoneCommand::Gather { node } => word_command(GATHER_TAG, node),
         ZoneCommand::Inspect { spot } => word_command(INSPECT_TAG, spot),
         ZoneCommand::QuestAction { npc } => word_command(QUEST_ACTION_TAG, npc.get()),
+        ZoneCommand::Decide { npc, option } => {
+            let mut payload = word_command(DECIDE_TAG, npc.get());
+            payload.push(option);
+            payload
+        }
+        ZoneCommand::Operate { mechanism } => word_command(OPERATE_TAG, mechanism),
         ZoneCommand::Lift { source } => {
             word_command(LIFT_TAG, source.map_or(0, mmorpg_core::LoadSpotId::get))
         }
@@ -413,6 +423,20 @@ pub fn decode_command(payload: &[u8]) -> Result<ZoneCommand, ProtocolError> {
         }),
         INSPECT_TAG => Ok(ZoneCommand::Inspect {
             spot: decode_word_command(payload, "inspect")?,
+        }),
+        DECIDE_TAG => {
+            let [_, _, a, b, c, d, option] = payload else {
+                return Err(ProtocolError::new(
+                    "decide command payload must be exactly 7 bytes",
+                ));
+            };
+            Ok(ZoneCommand::Decide {
+                npc: NpcId::new(u32::from_be_bytes([*a, *b, *c, *d])),
+                option: *option,
+            })
+        }
+        OPERATE_TAG => Ok(ZoneCommand::Operate {
+            mechanism: decode_word_command(payload, "operate")?,
         }),
         LIFT_TAG => Ok(ZoneCommand::Lift {
             source: match decode_word_command(payload, "lift")? {
@@ -1077,6 +1101,11 @@ pub(crate) mod tests {
             ZoneCommand::QuestAction {
                 npc: NpcId::new(44),
             },
+            ZoneCommand::Decide {
+                npc: NpcId::new(34),
+                option: 2,
+            },
+            ZoneCommand::Operate { mechanism: 3 },
             ZoneCommand::Lift {
                 source: Some(mmorpg_core::LoadSpotId::new(1)),
             },
@@ -1265,6 +1294,10 @@ pub(crate) mod tests {
                 ZoneCommand::Gather { node } => format!("gather {node}"),
                 ZoneCommand::Inspect { spot } => format!("inspect {spot}"),
                 ZoneCommand::QuestAction { npc } => format!("quest_action {}", npc.get()),
+                ZoneCommand::Decide { npc, option } => {
+                    format!("decide {} {option}", npc.get())
+                }
+                ZoneCommand::Operate { mechanism } => format!("operate {mechanism}"),
                 ZoneCommand::Lift { source } => {
                     format!("lift {}", source.map_or(0, mmorpg_core::LoadSpotId::get))
                 }

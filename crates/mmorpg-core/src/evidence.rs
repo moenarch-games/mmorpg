@@ -86,7 +86,48 @@ impl ZoneSimulation {
             .players
             .get_mut(&player_id)
             .ok_or_else(|| ZoneError::new("inspecting player is absent"))?;
-        let mut credited = false;
+        // A transcription (#1019) takes its item while the bag holds none; a full bag refuses
+        // before anything else changes.
+        let mut taken = Vec::new();
+        for entry in &player.quests.entries {
+            let Some(quest) = content.quest(entry.quest) else {
+                continue;
+            };
+            for (index, objective) in quest.objectives.iter().enumerate() {
+                if let QuestObjective::Transcribe { spot: wanted, item } = *objective
+                    && wanted == spot
+                    && player.inventory.count(item) == 0
+                    && !taken.iter().any(|&(_, _, other)| other == item)
+                {
+                    taken.push((quest.id, index, item));
+                }
+            }
+        }
+        if !taken.is_empty() {
+            let mut bag = player.inventory.clone();
+            if taken
+                .iter()
+                .any(|&(_, _, item)| bag.insert(item, 1).is_err())
+            {
+                return Ok(Some((ErrorCode::InventoryFull, None)));
+            }
+            let Some(revision) = player.inventory_revision.checked_add(1) else {
+                return Ok(Some((ErrorCode::InvalidInventoryMove, None)));
+            };
+            player.inventory = bag;
+            player.inventory_revision = revision;
+            for &(quest, index, _) in &taken {
+                push_event(
+                    &mut player.events,
+                    ZoneEvent::QuestProgress {
+                        quest,
+                        objective: u8::try_from(index).unwrap_or(u8::MAX),
+                        count: 1,
+                    },
+                );
+            }
+        }
+        let mut credited = !taken.is_empty();
         for entry in &mut player.quests.entries {
             let Some(quest) = content.quest(entry.quest) else {
                 continue;

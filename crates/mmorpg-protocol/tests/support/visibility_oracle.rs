@@ -156,6 +156,8 @@ pub fn exhaustive_projection(
             .collect(),
         pieces: Vec::new(),
         depleted_veins: Vec::new(),
+        seals: Vec::new(),
+        wards: Vec::new(),
         summoned: Vec::new(),
         traps: Vec::new(),
         raid: None,
