@@ -23,6 +23,7 @@ use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod adder;
+pub mod barrowdown;
 pub mod basin;
 pub mod basin_rim;
 pub mod bat;
@@ -2250,14 +2251,17 @@ fn content_with_spawns(
                     .chain(hamlet_stories::constructions())
                     .collect(),
             )?
-            // The Sunken Shrine's glyphs, seal and ward (#1019), after its seal's piece and warden.
+            // The Sunken Shrine's glyphs, seal and ward (#1019), after its seal's piece and warden,
+            // and the Barrowdown Ring's measure.
             .with_mechanisms(
                 shrine::vault::mechanisms()
                     .into_iter()
                     .chain(hamlet_stories::mechanisms())
+                    .chain(barrowdown::mechanisms())
                     .collect(),
                 vec![shrine::vault::seal(), hamlet_stories::seal()],
                 vec![shrine::vault::ward()],
+                barrowdown::sequences(),
             )?
             .with_quests(quests::quests())?
             .with_seats(units::seats())?

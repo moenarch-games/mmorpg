@@ -146,7 +146,7 @@ fn content(escorts: usize, idle: usize) -> Result<Arc<ZoneContent>, Box<dyn Erro
             Vec::new(),
             vec![Confrontation {
                 npc: COURIER,
-                evidence: ItemId::new(1),
+                evidence: Some(ItemId::new(1)),
                 foe: FOE,
             }],
         )?;

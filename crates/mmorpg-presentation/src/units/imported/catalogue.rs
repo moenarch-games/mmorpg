@@ -741,7 +741,9 @@ impl Resident {
             | "Hal Tolly"
             | "Bram Tolly"
             | "Granary Hand Piet"
-            | "Granary Hand Wilm" => Some(Self::Villager),
+            | "Granary Hand Wilm"
+            // Barrowdown's grave robber (#1019).
+            | "Cobb the Digger" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -750,7 +752,8 @@ impl Resident {
     #[must_use]
     pub fn of_creature(name: &str) -> Option<Self> {
         match name {
-            "Field Marauder" => Some(Self::Marauder),
+            // Barrowdown's grave robber (#1019) wears the marauder's kit.
+            "Field Marauder" | "Grave Robber" => Some(Self::Marauder),
             "Redbrand Bandit" | "Redbrand Courier" => Some(Self::RedbrandBandit),
             "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
             "Redbrand Brute" => Some(Self::RedbrandBrute),
@@ -1047,6 +1050,8 @@ mod tests {
                 Some("resident.tanner"),
                 Some("resident.farmer"),
                 Some("resident.farmer"),
+                // Barrowdown's grave robber, Cobb the Digger (#1019).
+                Some("resident.farmer"),
             ])
             .collect::<Vec<_>>()
         );
@@ -1087,6 +1092,8 @@ mod tests {
                 "enemy.redbrand.brute",
                 // The Redbrand Courier (#1019) wears the bandit's kit.
                 "enemy.redbrand.bandit",
+                // Barrowdown's Grave Robber (#1019) the marauder's.
+                "enemy.marauder",
             ]
         );
         // Each is authored in the shared presets both clients draw.

@@ -153,6 +153,28 @@ describe("quest state", () => {
     );
   });
 
+  test("names the ring's order once its inscription is read and faces the grave robber again (#1019)", () => {
+    // *The Ring's Measure* (quest 64): the order stays hidden until the lintel is read.
+    expect(objectiveViews(64, [0, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the lintel's inscription", "Wake the ring's stones in the inscription's order: 0/4",
+    ]);
+    expect(objectiveViews(64, [1, 2]).map((objective) => objective.text)).toEqual([
+      "Inspect the lintel's inscription (done)",
+      "Wake the ring's stones in the inscription's order: the dawn stone, the noon stone, the dusk stone, then the night stone: 2/4",
+    ]);
+    // Beside the dawn stone, Interact works it.
+    expect(mechanismInReach([47880, 653 + 90, 60000])).toEqual({ id: 6, name: "the dawn stone" });
+    // *The Grave Robber* (quest 65): the choice is made in the dialog; a fight still to win is
+    // faced again with Interact at Cobb (NPC 60), and a torc in hand settles it.
+    expect(questActionAt(sheet({ entries: [{ quest: 65, progress: [1, 0, 0] }] }), 60)).toBeNull();
+    expect(questActionAt(sheet({ entries: [{ quest: 65, progress: [1, 2, 0] }] }), 60)).toBe(
+      "Decide what becomes of Cobb the Digger",
+    );
+    expect(questActionAt(sheet({ entries: [{ quest: 65, progress: [1, 2, 1] }] }), 60)).toBeNull();
+    // *A Matter of Belief* (quest 66): Interact at Old Maud asks to be heard.
+    expect(questActionAt(sheet({ entries: [{ quest: 66, progress: [0, 0, 0] }] }), 24)).toBe("Be heard by Old Maud");
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

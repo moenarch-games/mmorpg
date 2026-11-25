@@ -631,6 +631,47 @@
       "prerequisite": 61,
       "objectives": [{"defend": {"npc": 36}}, {"aid": {"chore": "mend", "count": 1}}],
       "rewards": {"experience": 500, "copper": 40, "choices": [8, 5]}
+    },
+    {
+      "id": 63,
+      "name": "Maud's Warning",
+      "text": "Old Maud swears someone has been at her stones by night. Hear her account, then look at the two she names: spade marks at the north-east stone and an offering scattered at the south-west one.",
+      "giver": 22,
+      "ender": 24,
+      "prerequisite": 16,
+      "objectives": [{"talk": {"npc": 24}}, {"inspect": {"spot": 21}}, {"inspect": {"spot": 22}}],
+      "rewards": {"experience": 250, "copper": 15, "choices": []}
+    },
+    {
+      "id": 64,
+      "name": "The Ring's Measure",
+      "text": "The digger broke the ring's measure. The lintel at its heart says in what order the four marked stones wake. Read it, then lay your hand on each in turn. Miss the order and the ring forgets: begin again.",
+      "giver": 24,
+      "ender": 24,
+      "prerequisite": 63,
+      "objectives": [{"inspect": {"spot": 23}}, {"work_in_order": {"sequence": 1, "count": 4}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": []}
+    },
+    {
+      "id": 65,
+      "name": "The Grave Robber",
+      "text": "The digger took my barrow's torc. His turned earth leads west of the ring, past his dropped spade: follow it and find him. Talk the torc out of him if you can, take it if you must, and bring it home.",
+      "giver": 24,
+      "ender": 24,
+      "prerequisite": 64,
+      "objectives": [{"inspect": {"spot": 24}}, {"decide": {"npc": 60}}, {"collect": {"item": 46, "count": 1, "source": 29}}],
+      "decision": [{"label": "Talk Cobb into handing the torc back", "hands": 46}, {"label": "Take the torc from Cobb by force", "fight": true}],
+      "rewards": {"experience": 450, "copper": 35, "choices": [7, 9]}
+    },
+    {
+      "id": 66,
+      "name": "A Matter of Belief",
+      "text": "Maud will tell you what her barrow keeps, but not with a staff in plain sight. Put it away, bring a friend she trusts, or, if you brought back my grain, tell her I sent you.",
+      "giver": 22,
+      "ender": 24,
+      "prerequisite": 65,
+      "objectives": [{"interview": {"npc": 24}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
     }
   ],
   "departures": [
@@ -638,10 +679,12 @@
   ],
   "attitudes": [
     {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36},
-    {"npc": 49, "distrusts": ["necromancer"], "sponsor": true, "recommendation": 58}
+    {"npc": 49, "distrusts": ["necromancer"], "sponsor": true, "recommendation": 58},
+    {"npc": 24, "distrusts": [], "arcane": true, "sponsor": true, "recommendation": 15}
   ],
   "confrontations": [
-    {"npc": 45, "evidence": 41, "foe": 2930}
+    {"npc": 45, "evidence": 41, "foe": 2930},
+    {"npc": 60, "foe": 2931}
   ],
   "evidence": [
     {"id": 1, "name": "the cut sacks", "at": [-6050, 1036, 1150], "reach": 200},
@@ -663,7 +706,11 @@
     {"id": 17, "name": "the east gap in the hedge", "at": [15900, 739, 46700], "reach": 250},
     {"id": 18, "name": "the Tollys' emptied chest", "at": [-8400, 601, 32300], "reach": 250},
     {"id": 19, "name": "a child's shoe by the field lane", "at": [-13000, 714, 34100], "reach": 250},
-    {"id": 20, "name": "handcart ruts by the hollow", "at": [-16400, 933, 39800], "reach": 250}
+    {"id": 20, "name": "handcart ruts by the hollow", "at": [-16400, 933, 39800], "reach": 250},
+    {"id": 21, "name": "spade marks at the north-east stone", "at": [47620, 653, 59380], "reach": 250},
+    {"id": 22, "name": "an offering scattered at the south-west stone", "at": [46380, 653, 60620], "reach": 250},
+    {"id": 23, "name": "the lintel's inscription", "at": [47000, 653, 60000], "reach": 250},
+    {"id": 24, "name": "turned earth west of the ring", "at": [45300, 653, 59400], "reach": 250}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},

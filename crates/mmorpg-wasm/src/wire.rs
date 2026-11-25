@@ -297,6 +297,8 @@ mirror!(
         FlockUnsettled,
         FlockFell,
         StrayBolted,
+        OutOfOrder,
+        StaffShown,
     }
 );
 mirror!(

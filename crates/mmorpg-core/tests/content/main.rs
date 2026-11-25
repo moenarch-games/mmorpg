@@ -6,6 +6,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod barrowdown;
 mod carry_delivery;
 mod cave_bat;
 mod core_vale_actions;

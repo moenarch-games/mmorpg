@@ -13,7 +13,10 @@
 //! - **Interview**: an NPC with an [`NpcAttitude`] hears only a player it trusts: one whose class
 //!   it does not distrust, one who turned in its recommendation quest, or one whose party mate it
 //!   trusts stands within reach of it to speak for them (the sponsor). Otherwise it refuses with
-//!   [`crate::ErrorCode::Distrusted`]. Sponsoring completes nothing for the sponsor.
+//!   [`crate::ErrorCode::Distrusted`]. Sponsoring completes nothing for the sponsor. An NPC that
+//!   distrusts obvious arcane equipment ([`NpcAttitude::arcane`]) also distrusts anyone with a
+//!   staff in the main hand, read from what is equipped; when only the staff stands between them it
+//!   refuses with [`crate::ErrorCode::StaffShown`], and putting the staff away is enough.
 //! - **Escort**: starts an [`EscortState`]: the NPC follows the player's trail at a wounded
 //!   walk, keeping [`ESCORT_GAP_UNITS`] behind. Inside the objective's area it has arrived: the
 //!   objective is done for the escorting player and for each party mate with the same objective
@@ -41,7 +44,10 @@
 //!   and no watch runs; otherwise [`crate::ErrorCode::FlockUnsettled`]. It completes nothing itself.
 //! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
 //!   ([`crate::DecisionOption::copper`]) takes its copper at once, or is refused with
-//!   [`crate::ErrorCode::NotEnoughMoney`].
+//!   [`crate::ErrorCode::NotEnoughMoney`]. An option that hands over an item puts it in the bag
+//!   (a full bag refuses the choice), and a fight option turns the NPC hostile through its
+//!   [`Confrontation`]. While the quest still has an open objective after the decision, a quest
+//!   action at the NPC carries the option out again ([`crate::Quest::unresolved_decision`]).
 //!
 //! The escorts are canonical zone state, so snapshots, replay and recovery continue them; the
 //! log stores the completed objectives like a talk objective's.
@@ -98,26 +104,45 @@ pub struct NpcAttitude {
     pub npc: NpcId,
     /// The classes whose visible practice it distrusts.
     pub distrusts: Vec<PlayerClass>,
+    /// It distrusts obvious arcane equipment (#1019): a staff in the main hand, whatever the class.
+    /// Putting the staff away conceals it.
+    pub arcane: bool,
     /// A trusted party mate within reach may speak for a player it distrusts.
     pub sponsor: bool,
     /// Having turned in this quest is a recommendation it accepts.
     pub recommendation: Option<QuestId>,
 }
 
-/// Why an NPC hears a player, or that it does not.
+/// Why an NPC hears a player, or why it does not.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Admission {
     Trusted,
     Recommended,
     Sponsored(PlayerId),
+    /// It distrusts the player's class.
     Refused,
+    /// It distrusts only the staff the player holds (#1019): put away, it would hear them.
+    StaffShown,
 }
 
-/// An NPC who turns hostile when shown `evidence` (#1019): its reserved `foe` stands and fights.
+impl Admission {
+    /// The refusal a quest action answers with, if it is one (#1019).
+    #[must_use]
+    pub const fn refusal(self) -> Option<ErrorCode> {
+        match self {
+            Self::Refused => Some(ErrorCode::Distrusted),
+            Self::StaffShown => Some(ErrorCode::StaffShown),
+            Self::Trusted | Self::Recommended | Self::Sponsored(_) => None,
+        }
+    }
+}
+
+/// An NPC who turns hostile (#1019): when shown `evidence`, or when a quest decision's fight
+/// option is chosen at it ([`crate::DecisionOption::fight`]). Its reserved `foe` stands and fights.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Confrontation {
     pub npc: NpcId,
-    pub evidence: ItemId,
+    pub evidence: Option<ItemId>,
     pub foe: CreatureId,
 }
 
@@ -187,12 +212,24 @@ impl ZoneSimulation {
         let Some(attitude) = self.content.attitude(npc) else {
             return Ok(Admission::Trusted);
         };
-        let distrusted = |player: PlayerId| {
+        let class_distrusted = |player: PlayerId| {
             self.players
                 .get(&player)
                 .and_then(|state| state.class)
                 .is_some_and(|choice| attitude.distrusts.contains(&choice.class))
         };
+        // Obvious arcane equipment (#1019): a staff in the main hand, read from what is equipped.
+        let staff_shown = |player: PlayerId| {
+            attitude.arcane
+                && self.players.get(&player).is_some_and(|state| {
+                    state
+                        .equipment
+                        .item(crate::EquipmentSlot::MainHand)
+                        .and_then(crate::item_template)
+                        .is_some_and(|template| template.weapon == Some(crate::WeaponFamily::Staff))
+                })
+        };
+        let distrusted = |player: PlayerId| class_distrusted(player) || staff_shown(player);
         let player = self
             .players
             .get(&player_id)
@@ -220,7 +257,12 @@ impl ZoneSimulation {
                 }
             }
         }
-        Ok(Admission::Refused)
+        // Put away, the staff would not stand between them (#1019).
+        Ok(if class_distrusted(player_id) {
+            Admission::Refused
+        } else {
+            Admission::StaffShown
+        })
     }
 
     /// The `QuestAction` intent (#1019) at `npc`, or with `decision` the `Decide` intent: see the
@@ -275,6 +317,21 @@ impl ZoneSimulation {
             }
         }
         let Some((quest, index, objective)) = open else {
+            // A decided option that still acts in the world (#1019) is carried out again: the
+            // item handed over anew, the fight faced again.
+            if decision.is_none() {
+                let unresolved = player.quests.entries.iter().find_map(|entry| {
+                    let quest = content.quest(entry.quest)?;
+                    let current =
+                        crate::quest::progress(quest, entry, &player.inventory, *player.depths);
+                    quest
+                        .unresolved_decision(&current, npc)
+                        .map(|(_, option)| option.clone())
+                });
+                if let Some(option) = unresolved {
+                    return self.carry_out(player_id, npc, &option);
+                }
+            }
             return Ok(Some((ErrorCode::InvalidQuest, target)));
         };
         match objective {
@@ -293,14 +350,14 @@ impl ZoneSimulation {
                 self.complete_objective(player_id, quest, index);
                 if let Some(confrontation) = content
                     .confrontation(npc)
-                    .filter(|confrontation| confrontation.evidence == item)
+                    .filter(|confrontation| confrontation.evidence == Some(item))
                 {
                     self.confront(*confrontation, player_id)?;
                 }
             }
             QuestObjective::Interview { .. } => {
-                if self.admission(player_id, npc)? == Admission::Refused {
-                    return Ok(Some((ErrorCode::Distrusted, target)));
+                if let Some(code) = self.admission(player_id, npc)?.refusal() {
+                    return Ok(Some((code, target)));
                 }
                 self.complete_objective(player_id, quest, index);
             }
@@ -339,8 +396,8 @@ impl ZoneSimulation {
             }
             // A recruit (#1019) counts for the recruiter and each party mate with it open.
             QuestObjective::Recruit { .. } => {
-                if self.admission(player_id, npc)? == Admission::Refused {
-                    return Ok(Some((ErrorCode::Distrusted, target)));
+                if let Some(code) = self.admission(player_id, npc)?.refusal() {
+                    return Ok(Some((code, target)));
                 }
                 self.complete_objective(player_id, quest, index);
                 for mate in self.party_mates(player_id) {
@@ -359,14 +416,15 @@ impl ZoneSimulation {
                 self.complete_objective(player_id, quest, index);
             }
             // A decision (#1019) stores the chosen option until the turn-in keeps it; a paid
-            // option takes its copper now or is refused.
+            // option takes its copper now or is refused, an option that hands over an item needs
+            // room for it, and a fight option turns the NPC on the player.
             QuestObjective::Decide { .. } => {
-                let Some((option, cost)) = decision.and_then(|option| {
+                let Some((option, chosen)) = decision.and_then(|option| {
                     let chosen = content
                         .quest(quest)?
                         .decision
                         .get(usize::from(option).checked_sub(1)?)?;
-                    Some((option, chosen.copper))
+                    Some((option, chosen.clone()))
                 }) else {
                     return Ok(Some((ErrorCode::InvalidQuest, target)));
                 };
@@ -374,14 +432,21 @@ impl ZoneSimulation {
                     .players
                     .get_mut(&player_id)
                     .ok_or_else(|| ZoneError::new("deciding player is absent"))?;
-                if cost > 0 {
-                    let Some(copper) = player.copper.checked_sub(cost) else {
+                let mut bag = player.inventory.clone();
+                if let Some(item) = chosen.hands
+                    && bag.insert(item, 1).is_err()
+                {
+                    return Ok(Some((ErrorCode::InventoryFull, target)));
+                }
+                if chosen.copper > 0 || chosen.hands.is_some() {
+                    let Some(copper) = player.copper.checked_sub(chosen.copper) else {
                         return Ok(Some((ErrorCode::NotEnoughMoney, target)));
                     };
                     let Some(revision) = player.inventory_revision.checked_add(1) else {
                         return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
                     };
                     player.copper = copper;
+                    player.inventory = bag;
                     player.inventory_revision = revision;
                 }
                 if let Some(entry) = player
@@ -400,6 +465,11 @@ impl ZoneSimulation {
                         },
                     );
                 }
+                if chosen.fight
+                    && let Some(confrontation) = content.confrontation(npc)
+                {
+                    self.confront(*confrontation, player_id)?;
+                }
             }
             // A defence (#1019) starts at its NPC; it completes when it holds.
             QuestObjective::Defend { npc } => {
@@ -415,6 +485,43 @@ impl ZoneSimulation {
             }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),
         }
+        Ok(None)
+    }
+
+    /// Carries a decided option out again at `npc` (#1019, [`crate::Quest::unresolved_decision`]):
+    /// hands its item over once more while the bag holds none, or turns the NPC on the player
+    /// again. Nothing to do is an invalid quest.
+    fn carry_out(
+        &mut self,
+        player_id: PlayerId,
+        npc: NpcId,
+        option: &crate::DecisionOption,
+    ) -> Result<Refusal, ZoneError> {
+        let target = Some(EntityRef::Npc(npc));
+        if option.fight {
+            let Some(confrontation) = self.content.confrontation(npc).copied() else {
+                return Ok(Some((ErrorCode::InvalidQuest, target)));
+            };
+            self.confront(confrontation, player_id)?;
+            return Ok(None);
+        }
+        let player = self
+            .players
+            .get_mut(&player_id)
+            .ok_or_else(|| ZoneError::new("acting player is absent"))?;
+        let Some(item) = option
+            .hands
+            .filter(|item| player.inventory.count(*item) == 0)
+        else {
+            return Ok(Some((ErrorCode::InvalidQuest, target)));
+        };
+        let Some(revision) = player.inventory_revision.checked_add(1) else {
+            return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
+        };
+        if player.inventory.insert(item, 1).is_err() {
+            return Ok(Some((ErrorCode::InventoryFull, target)));
+        }
+        player.inventory_revision = revision;
         Ok(None)
     }
 

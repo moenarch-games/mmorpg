@@ -236,9 +236,9 @@ pub use mastery::{
     valid_practice,
 };
 pub use mechanism::{
-    MAX_MECHANISM_REACH_UNITS, MAX_SEAL_MECHANISMS, MAX_SEALS, Mechanism, MechanismId,
-    SEAL_OPEN_TICKS, SEAL_WINDOW_TICKS, Seal, SealState, SealView, WARD_EXPOSED_TICKS, Ward,
-    WardState, WardView,
+    MAX_MECHANISM_REACH_UNITS, MAX_SEAL_MECHANISMS, MAX_SEALS, MAX_SEQUENCE_MECHANISMS, Mechanism,
+    MechanismId, MechanismSequence, SEAL_OPEN_TICKS, SEAL_WINDOW_TICKS, Seal, SealState, SealView,
+    SequenceId, WARD_EXPOSED_TICKS, Ward, WardState, WardView,
 };
 pub use melee::{JUMP_STRIKE_AIR_TICKS, MeleeState, PendingStrike};
 pub use minion::{

@@ -60,6 +60,8 @@ pub mod templates {
     /// The Sunken Shrine's guardian in its sealed vault (#1019): warded until a glyph exposes its
     /// weak point.
     pub const SHRINE_WARDEN: CreatureTemplateId = CreatureTemplateId::new(28);
+    /// Cobb the Digger once he fights for the barrow's torc (#1019).
+    pub const GRAVE_ROBBER: CreatureTemplateId = CreatureTemplateId::new(29);
 }
 
 /// Default respawn time: 60 s.
@@ -135,7 +137,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 27] = {
+const TEMPLATES: [TemplateRow; 28] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
@@ -186,6 +188,8 @@ const TEMPLATES: [TemplateRow; 27] = {
         // The Sunken Shrine's warden (#1019): a level 6 elite of an ogre's frame and heavy, slow blows,
         // turned aside by its ward until a glyph exposes its weak point; Garrick's respawn.
         (SHRINE_WARDEN, "Shrine Warden", Ogre, Aggressive, [6, 6], true, 420, 0, [9, 15], 0, crate::ticks_from_ms(2_800), GARRICK_RESPAWN_TICKS, OGRE),
+        // Barrowdown's grave robber (#1019): a level 4 marauder's body; he stands only when faced.
+        (GRAVE_ROBBER, "Grave Robber", Marauder, Aggressive, [4, 4], false, 80, 16, [4, 7], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
     ]
 };
 
@@ -532,6 +536,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::flock::spawns())
         // The granary's raiders (#1019).
         .chain(super::granary::raider_spawns())
+        // Barrowdown's grave robber once he fights (#1019).
+        .chain(super::barrowdown::spawns())
         .collect()
 }
 
@@ -554,6 +560,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::flock::npcs())
         // The Tollys and the granary hands (#1019).
         .chain(super::granary::npcs())
+        // Barrowdown's grave robber (#1019).
+        .chain(super::barrowdown::npcs())
         .collect()
 }
 

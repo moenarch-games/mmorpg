@@ -174,6 +174,23 @@ pub const HANDCART_RUTS: EvidenceId = EvidenceId::new(20);
 pub const PLOUGHMAN_GARR: NpcId = NpcId::new(37);
 pub const WATCHMAN_DUNSTAN: NpcId = NpcId::new(49);
 
+/// Barrowdown's ring and barrow (#1019, slice 5a): Old Maud's warning about her stones, the
+/// ring's measure worked in an inscription's order, the grave robber talked round or fought for
+/// the barrow's torc, and what Maud keeps from anyone showing a staff
+/// ([`super::barrowdown`]).
+pub const MAUDS_WARNING: QuestId = QuestId::new(63);
+pub const THE_RINGS_MEASURE: QuestId = QuestId::new(64);
+pub const THE_GRAVE_ROBBER: QuestId = QuestId::new(65);
+pub const A_MATTER_OF_BELIEF: QuestId = QuestId::new(66);
+/// The barrow's torc, handed over or taken from Cobb's body.
+pub const BARROW_TORC: ItemId = ItemId::new(46);
+/// Their evidence: the spade marks and the scattered offering at two of the ring's stones, the
+/// lintel's inscription at its heart, and Cobb's turned earth west of the ring.
+pub const SPADE_MARKS: EvidenceId = EvidenceId::new(21);
+pub const SCATTERED_OFFERING: EvidenceId = EvidenceId::new(22);
+pub const RING_INSCRIPTION: EvidenceId = EvidenceId::new(23);
+pub const TURNED_EARTH: EvidenceId = EvidenceId::new(24);
+
 pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
 pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
 /// Their supplies: the bait and the snare, worth nothing to a vendor.
@@ -278,6 +295,9 @@ struct AttitudeSource {
     npc: u32,
     /// Class names, as in `warden`.
     distrusts: Vec<String>,
+    /// Distrusts a staff shown in the main hand (#1019).
+    #[serde(default)]
+    arcane: bool,
     sponsor: bool,
     #[serde(default)]
     recommendation: Option<u32>,
@@ -287,7 +307,9 @@ struct AttitudeSource {
 #[serde(deny_unknown_fields)]
 struct ConfrontationSource {
     npc: u32,
-    evidence: u32,
+    /// Absent for an NPC only a decision's fight option turns (#1019).
+    #[serde(default)]
+    evidence: Option<u32>,
     foe: u32,
 }
 
@@ -336,19 +358,37 @@ struct QuestSource {
     decision: Vec<OptionSource>,
 }
 
-/// A decision option (#1019): free as a plain label, or paid.
+/// A decision option (#1019): free as a plain label, or with its copper, the item the NPC hands
+/// over or a fight.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum OptionSource {
     Free(String),
-    Paid { label: String, copper: u32 },
+    Full(FullOptionSource),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FullOptionSource {
+    label: String,
+    #[serde(default)]
+    copper: u32,
+    #[serde(default)]
+    hands: Option<u32>,
+    #[serde(default)]
+    fight: bool,
 }
 
 impl From<OptionSource> for DecisionOption {
     fn from(source: OptionSource) -> Self {
         match source {
             OptionSource::Free(label) => Self::free(label),
-            OptionSource::Paid { label, copper } => Self { label, copper },
+            OptionSource::Full(option) => Self {
+                label: option.label,
+                copper: option.copper,
+                hands: option.hands.map(ItemId::new),
+                fight: option.fight,
+            },
         }
     }
 }
@@ -443,6 +483,10 @@ enum ObjectiveSource {
     },
     Recruit {
         npc: u32,
+    },
+    WorkInOrder {
+        sequence: u32,
+        count: u8,
     },
 }
 
@@ -582,6 +626,11 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::Recruit { npc } => Self::Recruit {
                 npc: NpcId::new(npc),
             },
+            // The ring's measure (#1019).
+            ObjectiveSource::WorkInOrder { sequence, count } => Self::WorkInOrder {
+                sequence: crate::SequenceId::new(sequence),
+                count,
+            },
         }
     }
 }
@@ -640,6 +689,7 @@ fn parse(source: &str) -> Result<Parsed, String> {
             Ok(NpcAttitude {
                 npc: NpcId::new(attitude.npc),
                 distrusts: classes(attitude.distrusts)?,
+                arcane: attitude.arcane,
                 sponsor: attitude.sponsor,
                 recommendation: attitude.recommendation.map(QuestId::new),
             })
@@ -650,7 +700,7 @@ fn parse(source: &str) -> Result<Parsed, String> {
         .into_iter()
         .map(|confrontation| Confrontation {
             npc: NpcId::new(confrontation.npc),
-            evidence: ItemId::new(confrontation.evidence),
+            evidence: confrontation.evidence.map(ItemId::new),
             foe: CreatureId::new(confrontation.foe),
         })
         .collect();

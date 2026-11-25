@@ -343,6 +343,16 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                             .area_at(spot.at[0], spot.at[2])
                             .map(Area::id)
                     }),
+                // The ring's measure (#1019) hints at the area its first stone stands in.
+                QuestObjective::WorkInOrder { sequence, .. } => content
+                    .sequence(sequence)
+                    .and_then(|sequence| content.mechanism(*sequence.mechanisms.first()?))
+                    .and_then(|stone| {
+                        content
+                            .areas()
+                            .area_at(stone.at[0], stone.at[2])
+                            .map(Area::id)
+                    }),
                 QuestObjective::Unseal { piece } => content
                     .seal(piece)
                     .and_then(|seal| content.mechanism(*seal.mechanisms.first()?))

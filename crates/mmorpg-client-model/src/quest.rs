@@ -237,7 +237,32 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
         QuestObjective::Recruit { npc } => {
             format!("Win {} to the muster", objective_npc(content, npc))
         }
+        // The ring's measure (#1019): "Wake the ring's stones in the inscription's order"; the
+        // quest view names the order once the inscription is read ([`quest_view`]).
+        QuestObjective::WorkInOrder { sequence, .. } => format!(
+            "Wake {} in the inscription's order",
+            content
+                .sequence(sequence)
+                .map_or("the stones", |sequence| sequence.name.as_str())
+        ),
     }
+}
+
+/// The order of an in-order objective's mechanisms (#1019), as in "the dawn stone, the noon
+/// stone, the dusk stone, then the night stone".
+fn sequence_order(content: &ZoneContent, sequence: mmorpg_core::SequenceId) -> Option<String> {
+    let names: Vec<&str> = content
+        .sequence(sequence)?
+        .mechanisms
+        .iter()
+        .map(|id| {
+            content
+                .mechanism(*id)
+                .map_or("a stone", |m| m.name.as_str())
+        })
+        .collect();
+    let (last, rest) = names.split_last()?;
+    Some(format!("{}, then {last}", rest.join(", ")))
 }
 
 fn objective_npc(content: &ZoneContent, npc: NpcId) -> &str {
@@ -282,7 +307,8 @@ pub fn objective_view(
         | QuestObjective::DefeatWithLoan { .. }
         | QuestObjective::Crush { .. }
         | QuestObjective::Aid { .. }
-        | QuestObjective::Transcribe { .. } => {
+        | QuestObjective::Transcribe { .. }
+        | QuestObjective::WorkInOrder { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
         QuestObjective::Talk { .. }
@@ -343,19 +369,35 @@ pub struct QuestView {
     pub complete: bool,
 }
 
-/// `quest` at `progress`, one count per objective (missing counts are 0).
+/// `quest` at `progress`, one count per objective (missing counts are 0). An in-order objective
+/// (#1019) names its order once every earlier objective is done, the inscription read: "Wake the
+/// ring's stones in the inscription's order: the dawn stone, ..., then the night stone: 2/4".
 #[must_use]
 pub fn quest_view(quest: &Quest, progress: &[u8], content: &ZoneContent) -> QuestView {
+    let count = |index: usize| progress.get(index).copied().unwrap_or(0);
     let objectives: Vec<_> = quest
         .objectives
         .iter()
         .enumerate()
         .map(|(index, objective)| {
-            objective_view(
-                *objective,
-                progress.get(index).copied().unwrap_or(0),
-                content,
-            )
+            let mut view = objective_view(*objective, count(index), content);
+            let read = quest.objectives[..index]
+                .iter()
+                .enumerate()
+                .all(|(earlier, objective)| count(earlier) >= objective.required());
+            if let QuestObjective::WorkInOrder { sequence, .. } = *objective
+                && read
+                && let Some(order) = sequence_order(content, sequence)
+            {
+                view.label = format!("{}: {order}", view.label);
+                view.text = format!(
+                    "{}: {}/{}",
+                    view.label,
+                    view.current.min(view.required),
+                    view.required
+                );
+            }
+            view
         })
         .collect();
     QuestView {
@@ -710,10 +752,27 @@ pub fn lift_in_reach(
 
 /// The quest action (#1019) Interact performs at `npc` for a player with the active quests
 /// `entries`: the first open use-item, escort or interview objective at that NPC, in log order,
-/// whose quest's earlier objectives are all done, as the zone picks it. `None` leaves Interact
-/// to talk. The zone checks reach, the bag, the NPC's trust and everything else again.
+/// whose quest's earlier objectives are all done, as the zone picks it; otherwise a decision
+/// decided there whose option still acts in the world ([`Quest::unresolved_decision`]: the fight
+/// faced again, the item handed over anew). `None` leaves Interact to talk. The zone checks
+/// reach, the bag, the NPC's trust and everything else again.
 #[must_use]
 pub fn quest_action_at(
+    content: &ZoneContent,
+    entries: &[QuestEntry],
+    npc: NpcId,
+) -> Option<QuestObjective> {
+    open_action_at(content, entries, npc).or_else(|| {
+        entries.iter().find_map(|entry| {
+            let quest = content.quest(entry.quest)?;
+            quest
+                .unresolved_decision(&entry.progress, npc)
+                .map(|(index, _)| quest.objectives[index])
+        })
+    })
+}
+
+fn open_action_at(
     content: &ZoneContent,
     entries: &[QuestEntry],
     npc: NpcId,
@@ -860,7 +919,8 @@ mod tests {
                     | QuestObjective::DefeatWithLoan { .. }
                     | QuestObjective::Crush { .. }
                     | QuestObjective::Aid { .. }
-                    | QuestObjective::Transcribe { .. } => {
+                    | QuestObjective::Transcribe { .. }
+                    | QuestObjective::WorkInOrder { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
                     QuestObjective::Talk { .. }

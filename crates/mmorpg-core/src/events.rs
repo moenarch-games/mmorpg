@@ -169,6 +169,11 @@ pub enum ErrorCode {
     FlockFell,
     /// The stray was left alone or stuck too long and bolted back where it was found (#1019).
     StrayBolted,
+    /// A stone worked out of its sequence's order (#1019): the order starts over from its first.
+    OutOfOrder,
+    /// The NPC will not hear a player showing a staff (#1019): put it away, or bring a party mate
+    /// it trusts or a recommendation it accepts.
+    StaffShown,
 }
 
 /// One feedback event addressed to a player.
