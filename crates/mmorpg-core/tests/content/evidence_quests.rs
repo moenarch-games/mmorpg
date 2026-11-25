@@ -290,6 +290,10 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
                 _ => false,
             })
         });
-        assert!(named, "{}: no quest inspects, transcribes or lays at it", spot.name);
+        assert!(
+            named,
+            "{}: no quest inspects, transcribes or lays at it",
+            spot.name
+        );
     }
 }

@@ -168,7 +168,12 @@ fn content(strays: usize) -> Result<Arc<ZoneContent>, Box<dyn Error>> {
         .with_quests(vec![quest])?
         .with_flock(
             (0..strays)
-                .map(|index| Ok(Stray { npc: stray(index)?, pen: PEN }))
+                .map(|index| {
+                    Ok(Stray {
+                        npc: stray(index)?,
+                        pen: PEN,
+                    })
+                })
                 .collect::<Result<Vec<_>, Box<dyn Error>>>()?,
             Some(watch),
         )?;
@@ -194,7 +199,10 @@ fn place(zone: ZoneSimulation, strays: usize) -> Result<ZoneSimulation, Box<dyn 
             [x, z - BEHIND_UNITS]
         } else {
             let index = i32::try_from(player)? - i32::try_from(strays)? - 1;
-            [(index % 64) * SPACING - 32 * SPACING, -15_000 - (index / 64) * SPACING]
+            [
+                (index % 64) * SPACING - 32 * SPACING,
+                -15_000 - (index / 64) * SPACING,
+            ]
         };
         record.position = mmorpg_core::physics::from_units([at[0], 90, at[1]]);
         record.velocity = [0.0; 3];

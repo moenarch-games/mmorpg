@@ -297,7 +297,9 @@ impl ZoneSimulation {
             let (dx, dz) = crate::ai::offset(here, goal);
             return Ok(Some(([0, 0], crate::trig::yaw_from_vector(dx, dz))));
         }
-        let toward = self.route_waypoint(centre, half, goal, stop)?.unwrap_or(goal);
+        let toward = self
+            .route_waypoint(centre, half, goal, stop)?
+            .unwrap_or(goal);
         let (dx, dz) = crate::ai::offset(here, toward);
         Ok(Some((
             crate::ai::steer(dx, dz, speed),
@@ -354,7 +356,10 @@ impl ZoneSimulation {
         let mut state = self.strays.get(&npc).cloned().unwrap_or(StrayState {
             npc,
             position: post,
-            facing: self.content.npc(npc).map_or(0, |definition| definition.facing),
+            facing: self
+                .content
+                .npc(npc)
+                .map_or(0, |definition| definition.facing),
             velocity: [0, 0],
             driver: None,
             still: 0,
@@ -434,7 +439,11 @@ impl ZoneSimulation {
             let EntityRef::Player(player) = entity else {
                 continue;
             };
-            if !self.players.get(&player).is_some_and(|state| state.is_alive()) {
+            if !self
+                .players
+                .get(&player)
+                .is_some_and(|state| state.is_alive())
+            {
                 continue;
             }
             let at = self.player_position(player)?;
@@ -554,7 +563,8 @@ impl ZoneSimulation {
                 },
             );
         }
-        let all_stood = usize::try_from(state.stood.count_ones()).ok() == Some(watch.prowlers.len());
+        let all_stood =
+            usize::try_from(state.stood.count_ones()).ok() == Some(watch.prowlers.len());
         let none_left = watch.prowlers.iter().all(|prowler| {
             self.creatures
                 .get(&prowler.creature)
@@ -620,16 +630,19 @@ impl ZoneSimulation {
         };
         state.quests.entries.iter().any(|entry| {
             self.content.quest(entry.quest).is_some_and(|quest| {
-                let current =
-                    crate::quest::progress(quest, entry, &state.inventory, *state.depths);
-                quest.objectives.iter().enumerate().any(|(index, candidate)| {
-                    *candidate == objective
-                        && current[index] < candidate.required()
-                        && quest.objectives[..index]
-                            .iter()
-                            .zip(current)
-                            .all(|(earlier, count)| count >= earlier.required())
-                })
+                let current = crate::quest::progress(quest, entry, &state.inventory, *state.depths);
+                quest
+                    .objectives
+                    .iter()
+                    .enumerate()
+                    .any(|(index, candidate)| {
+                        *candidate == objective
+                            && current[index] < candidate.required()
+                            && quest.objectives[..index]
+                                .iter()
+                                .zip(current)
+                                .all(|(earlier, count)| count >= earlier.required())
+                    })
             })
         })
     }

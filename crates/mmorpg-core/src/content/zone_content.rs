@@ -2434,21 +2434,19 @@ impl ZoneContent {
                 return Err(ZoneError::new("the watch is invalid"));
             }
         }
-        let objectives_valid = self
-            .quests
-            .iter()
-            .flat_map(|quest| &quest.objectives)
-            .all(|objective| match *objective {
-                crate::QuestObjective::Herd { npc } => {
-                    strays.iter().any(|stray| stray.npc == npc)
-                }
+        let objectives_valid = self.quests.iter().flat_map(|quest| &quest.objectives).all(
+            |objective| match *objective {
+                crate::QuestObjective::Herd { npc } => strays.iter().any(|stray| stray.npc == npc),
                 crate::QuestObjective::Watch { npc } => {
                     watch.as_ref().is_some_and(|watch| watch.npc == npc)
                 }
                 _ => true,
-            });
+            },
+        );
         if !objectives_valid {
-            return Err(ZoneError::new("a herd or watch objective names no livestock"));
+            return Err(ZoneError::new(
+                "a herd or watch objective names no livestock",
+            ));
         }
         self.quest_npcs.extend(strays.iter().map(|stray| stray.npc));
         self.quest_npcs.sort_unstable();

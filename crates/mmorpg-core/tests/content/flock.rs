@@ -13,8 +13,8 @@ use std::sync::Arc;
 use mmorpg_core::greyhaven_vale::{self, flock, quests};
 use mmorpg_core::{
     CharacterId, CharacterLocation, EntityKind, ErrorCode, EvidenceId, GAP_HOLD_TICKS, ItemId,
-    NpcId, QuestId, QuestLog, RECOVER_TICKS, STRAY_TIMEOUT_TICKS, StrayState,
-    ZoneCommand, ZoneEvent, ZoneId, ZoneSimulation, sell_price,
+    NpcId, QuestId, QuestLog, RECOVER_TICKS, STRAY_TIMEOUT_TICKS, StrayState, ZoneCommand,
+    ZoneEvent, ZoneId, ZoneSimulation, sell_price,
 };
 use support::classes;
 
@@ -199,7 +199,11 @@ impl World {
             for _ in 0..30 {
                 self.zone.advance_tick().unwrap();
             }
-            if self.zone.stray(EWE).is_some_and(|stray| stray.rests_until > 0) {
+            if self
+                .zone
+                .stray(EWE)
+                .is_some_and(|stray| stray.rests_until > 0)
+            {
                 return true;
             }
         }
@@ -285,7 +289,11 @@ fn the_missing_ewe_is_tracked_by_its_trail_and_driven_into_the_fold() {
             rests_until: 0,
         }];
     });
-    assert!(world.drive_south(1, 40), "ewe stopped at {:?}", world.ewe_at());
+    assert!(
+        world.drive_south(1, 40),
+        "ewe stopped at {:?}",
+        world.ewe_at()
+    );
     let (min, max) = flock::FOLD;
     let penned = world.ewe_at();
     assert!((min[0]..=max[0]).contains(&penned[0]) && (min[1]..=max[1]).contains(&penned[1]));

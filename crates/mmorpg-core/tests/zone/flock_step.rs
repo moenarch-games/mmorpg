@@ -23,6 +23,10 @@ fn flock_work_follows_the_strays_and_not_the_idle_population() {
     // Linear in the strays, constant in the idle population.
     let at = |point: (usize, usize)| runs.iter().find(|(p, _)| *p == point).unwrap().1;
     for idle in [64, 160] {
-        assert_eq!(at((16, idle)), at((16, 16)), "flock work grew with {idle} idle");
+        assert_eq!(
+            at((16, idle)),
+            at((16, 16)),
+            "flock work grew with {idle} idle"
+        );
     }
 }
