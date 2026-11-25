@@ -91,6 +91,9 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   // Barrowdown's ring and Old Maud (#1019).
   "out-of-order": "The stones fall silent: that was not the inscription's order. Begin again from its first stone.",
   "staff-shown": "They will not speak with a staff held in plain sight. Put it away, or bring a party member they trust or a good word they accept.",
+  // The Downs road's supply patrol (#1019).
+  "patrol-resting": "Lookout Brenna: \"The last patrol has only just passed. Give them time to form up again.\"",
+  "patrol-arrived": "Lookout Brenna: \"They made the camp in the hollow. I will watch for the next patrol; ask me when you are ready.\"",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

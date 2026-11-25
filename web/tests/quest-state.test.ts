@@ -175,6 +175,27 @@ describe("quest state", () => {
     expect(questActionAt(sheet({ entries: [{ quest: 66, progress: [0, 0, 0] }] }), 24)).toBe("Be heard by Old Maud");
   });
 
+  test("calls the Downs supply patrol out at the lookout once the beacon is lit (#1019)", () => {
+    // *The Roadside Signal* (quest 68): the beacon first, then the watch with Lookout Brenna (NPC 61).
+    expect(objectiveViews(68, [0, 0]).map((objective) => objective.text)).toEqual([
+      "Lay Signal Tinder at the cold signal beacon",
+      "Watch the supply patrol come up the road with Lookout Brenna",
+    ]);
+    expect(questActionAt(sheet({ entries: [{ quest: 68, progress: [0, 0, 0] }] }), 61)).toBeNull();
+    expect(questActionAt(sheet({ entries: [{ quest: 68, progress: [1, 0, 0] }] }), 61)).toBe(
+      "Watch the supply patrol come up the road with Lookout Brenna",
+    );
+    // *The Downs Ambush* (quest 69): Interact at Brenna calls the next patrol out until it is stopped.
+    expect(questActionAt(sheet({ entries: [{ quest: 69, progress: [0, 0, 0] }] }), 61)).toBe(
+      "Stop the supply patrol before it reaches its camp",
+    );
+    expect(questActionAt(sheet({ entries: [{ quest: 69, progress: [1, 0, 0] }] }), 61)).toBeNull();
+    expect(objectiveViews(69, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Stop the supply patrol before it reaches its camp (done)",
+      "Redbrand Order Pouch: 0/1",
+    ]);
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

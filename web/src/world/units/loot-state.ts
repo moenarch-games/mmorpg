@@ -213,4 +213,6 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "stray-bolted": null,
   "out-of-order": null,
   "staff-shown": null,
+  "patrol-resting": null,
+  "patrol-arrived": null,
 };
