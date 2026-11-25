@@ -220,6 +220,8 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::StrayBolted => 67,
         ErrorCode::OutOfOrder => 68,
         ErrorCode::StaffShown => 69,
+        ErrorCode::PatrolResting => 70,
+        ErrorCode::PatrolArrived => 71,
     }
 }
 
@@ -294,6 +296,8 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         67 => ErrorCode::StrayBolted,
         68 => ErrorCode::OutOfOrder,
         69 => ErrorCode::StaffShown,
+        70 => ErrorCode::PatrolResting,
+        71 => ErrorCode::PatrolArrived,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1804,11 +1808,13 @@ mod tests {
             (67, ErrorCode::StrayBolted),
             (68, ErrorCode::OutOfOrder),
             (69, ErrorCode::StaffShown),
+            (70, ErrorCode::PatrolResting),
+            (71, ErrorCode::PatrolArrived),
         ] {
             assert_eq!(error_code(code), wire);
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 70, u16::MAX] {
+        for unknown in [0, 72, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

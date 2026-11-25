@@ -146,6 +146,8 @@ pub struct ZoneContent {
     strays: Vec<crate::Stray>,
     /// The night watch over a flock (#1019).
     watch: Option<crate::HedgeWatch>,
+    /// Supply patrols on the roads (#1019), in lookout order.
+    supply_patrols: Vec<crate::SupplyPatrol>,
     /// Named places clients mark on their maps (#1063).
     landmarks: Vec<crate::Landmark>,
 }
@@ -312,6 +314,7 @@ impl ZoneContent {
             companions: Vec::new(),
             strays: Vec::new(),
             watch: None,
+            supply_patrols: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -393,6 +396,7 @@ impl ZoneContent {
             companions: Vec::new(),
             strays: Vec::new(),
             watch: None,
+            supply_patrols: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -1886,7 +1890,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_flock_fingerprint();
+        let fingerprint = self.compute_supply_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -2702,6 +2706,130 @@ impl ZoneContent {
         self.watch
             .as_ref()
             .is_some_and(|watch| watch.prowler(creature).is_some())
+    }
+
+    /// Binds the supply patrols (#1019), after the livestock: at most
+    /// [`crate::MAX_SUPPLY_PATROLS`], each called by a distinct known lookout NPC that keeps no
+    /// routine, with `1..=MAX_SUPPLY_MEMBERS` distinct creature spawns reserved for it alone (in no
+    /// raid, depths site, hunt, cart, den, confrontation, watch or other patrol), a route of
+    /// `2..=MAX_SUPPLY_ROUTE_POINTS` points in bounds, and a positive sight and post. Every sight
+    /// and ambush objective names a patrol's lookout.
+    pub fn with_supply_patrols(
+        mut self,
+        mut patrols: Vec<crate::SupplyPatrol>,
+    ) -> Result<Self, ZoneError> {
+        patrols.sort_by_key(|patrol| patrol.npc);
+        let reserved_elsewhere = |creature: CreatureId| {
+            self.is_raider(creature)
+                || self.is_depths_creature(creature)
+                || self.is_hunt_beast(creature)
+                || self.is_cart_bandit(creature)
+                || self.is_confrontation_foe(creature)
+                || self.is_prowler(creature)
+                || self
+                    .dens
+                    .iter()
+                    .any(|den| den.pack.contains(&creature) || den.prey.contains(&creature))
+        };
+        let mut members: Vec<CreatureId> = patrols
+            .iter()
+            .flat_map(|patrol| patrol.members.iter().copied())
+            .collect();
+        members.sort_unstable();
+        let distinct = members.windows(2).all(|pair| pair[0] != pair[1]);
+        let patrol_valid = |patrol: &crate::SupplyPatrol| {
+            self.npc(patrol.npc).is_some()
+                && self.routine(patrol.npc).is_none()
+                && (1..=crate::MAX_SUPPLY_MEMBERS).contains(&patrol.members.len())
+                && patrol.members.iter().all(|&member| {
+                    self.creature_spawns()
+                        .iter()
+                        .any(|spawn| spawn.id == member)
+                        && !reserved_elsewhere(member)
+                })
+                && (2..=crate::MAX_SUPPLY_ROUTE_POINTS).contains(&patrol.route.len())
+                && patrol.route.iter().all(|point| {
+                    point
+                        .iter()
+                        .all(|value| value.abs() <= crate::MAX_CONTENT_COORDINATE_UNITS)
+                })
+                && patrol.sight > 0
+                && patrol.post > 0
+        };
+        if patrols.len() > crate::MAX_SUPPLY_PATROLS
+            || patrols.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+            || !distinct
+            || !patrols.iter().all(patrol_valid)
+        {
+            return Err(ZoneError::new("supply patrols are invalid"));
+        }
+        let objectives_valid = self.quests.iter().flat_map(|quest| &quest.objectives).all(
+            |objective| match *objective {
+                crate::QuestObjective::Sight { npc } | crate::QuestObjective::Ambush { npc } => {
+                    patrols.iter().any(|patrol| patrol.npc == npc)
+                }
+                _ => true,
+            },
+        );
+        if !objectives_valid {
+            return Err(ZoneError::new(
+                "a sight or ambush objective names no supply patrol",
+            ));
+        }
+        self.supply_patrols = patrols;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Every supply patrol (#1019), in lookout order.
+    #[must_use]
+    pub fn supply_patrols(&self) -> &[crate::SupplyPatrol] {
+        &self.supply_patrols
+    }
+
+    /// The supply patrol lookout `npc` calls out (#1019), if any.
+    #[must_use]
+    pub fn supply_patrol(&self, npc: crate::NpcId) -> Option<&crate::SupplyPatrol> {
+        self.supply_patrols
+            .binary_search_by_key(&npc, |patrol| patrol.npc)
+            .ok()
+            .map(|index| &self.supply_patrols[index])
+    }
+
+    /// The supply patrol `creature` marches in (#1019), if any: it stands only while a run is
+    /// under way and never respawns on its own.
+    #[must_use]
+    pub fn supply_patrol_of(&self, creature: CreatureId) -> Option<&crate::SupplyPatrol> {
+        self.supply_patrols
+            .iter()
+            .find(|patrol| patrol.member(creature).is_some())
+    }
+
+    /// Supply patrols (#1019) enter the identity only where authored.
+    fn compute_supply_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_flock_fingerprint();
+        if self.supply_patrols.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/supply-v1");
+        hash.u64(fingerprint);
+        hash.len(self.supply_patrols.len());
+        for patrol in &self.supply_patrols {
+            hash.u32(patrol.npc.get());
+            hash.len(patrol.members.len());
+            for member in &patrol.members {
+                hash.u32(member.get());
+            }
+            hash.len(patrol.route.len());
+            for point in &patrol.route {
+                hash.i32(point[0]);
+                hash.i32(point[1]);
+            }
+            hash.i32(patrol.sight);
+            hash.i32(patrol.post);
+        }
+        hash.finish()
     }
 
     /// Livestock (#1019) enters the identity only where authored.
@@ -3639,6 +3767,10 @@ impl ZoneContent {
                     crate::QuestObjective::WorkInOrder { sequence, count } => {
                         hash.u32(sequence.get());
                         hash.u8(count);
+                    }
+                    crate::QuestObjective::Sight { npc }
+                    | crate::QuestObjective::Ambush { npc } => {
+                        hash.u32(npc.get());
                     }
                 }
             }

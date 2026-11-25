@@ -672,6 +672,49 @@
       "prerequisite": 65,
       "objectives": [{"interview": {"npc": 24}}],
       "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 67,
+      "name": "The Unpaid Ale",
+      "text": "Corin and Tobin drank here the night the digger came, and each swears the other stood the round. Hear them both out, then tell me how my slate is settled: shared between them, or paid by you to keep the peace.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 63,
+      "objectives": [{"interview": {"npc": 23}}, {"interview": {"npc": 25}}, {"decide": {"npc": 22}}],
+      "decision": ["Corin and Tobin split the round", {"label": "Pay Gwen for the round yourself", "copper": 15}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 68,
+      "name": "The Roadside Signal",
+      "text": "Redbrands carry supplies down the Downs road. Light the cold beacon by Lookout Brenna on the rise north-east of here, then ask her to keep watch and stay with her until their patrol comes up the road.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 67,
+      "objectives": [{"lay": {"spot": 25, "item": 47}}, {"sight": {"npc": 61}}],
+      "supplies": [{"item": 47}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 69,
+      "name": "The Downs Ambush",
+      "text": "Their patrol carries orders to the camp in the hollow. Ask Brenna to watch again, stop the patrol on the road before it gets there and bring me the packbearer's pouch. If it gets through, she watches for the next.",
+      "giver": 22,
+      "ender": 22,
+      "prerequisite": 68,
+      "objectives": [{"ambush": {"npc": 61}}, {"collect": {"item": 48, "count": 1, "source": 30}}],
+      "rewards": {"experience": 550, "copper": 40, "choices": [8, 5]}
+    },
+    {
+      "id": 70,
+      "name": "Peace at the Rest",
+      "text": "The torc sleeps in my barrow again, and Gwen's slate is clean. Tell Corin and Tobin the barrow bears the Rest no grudge, then take Gwen my word: there is peace between the ring and the Rest.",
+      "giver": 24,
+      "ender": 22,
+      "prerequisite": 67,
+      "requires": [65],
+      "objectives": [{"talk": {"npc": 23}}, {"talk": {"npc": 25}}],
+      "rewards": {"experience": 400, "copper": 30, "choices": []}
     }
   ],
   "departures": [
@@ -710,7 +753,8 @@
     {"id": 21, "name": "spade marks at the north-east stone", "at": [47620, 653, 59380], "reach": 250},
     {"id": 22, "name": "an offering scattered at the south-west stone", "at": [46380, 653, 60620], "reach": 250},
     {"id": 23, "name": "the lintel's inscription", "at": [47000, 653, 60000], "reach": 250},
-    {"id": 24, "name": "turned earth west of the ring", "at": [45300, 653, 59400], "reach": 250}
+    {"id": 24, "name": "turned earth west of the ring", "at": [45300, 653, 59400], "reach": 250},
+    {"id": 25, "name": "the cold signal beacon", "at": [65200, 615, 57300], "reach": 250}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},

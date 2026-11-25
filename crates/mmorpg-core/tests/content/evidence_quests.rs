@@ -257,10 +257,10 @@ fn every_evidence_spot_has_its_art_and_its_quest() {
     // The 32 quests before #1019, slice 1's three evidence quests, slice 2's seven (35, 37–42)
     // the first delivery, *The Last Sack* (43, #1077), slice 3a's farm defence (44–46), slice 3b's
     // shrine and ledger (47–50), slice 4a's farmland stories (51, 52, 54, 56–58), slice 4b's
-    // flock (53, 55), slice 4c's missing family and granary (59–62) and slice 5a's ring and
-    // barrow (63–66).
-    assert_eq!(content.quests().len(), 66);
-    assert_eq!(content.evidence().len(), 24);
+    // flock (53, 55), slice 4c's missing family and granary (59–62), slice 5a's ring and
+    // barrow (63–66) and slice 5b's debt and Downs road (67–70).
+    assert_eq!(content.quests().len(), 70);
+    assert_eq!(content.evidence().len(), 25);
     for spot in content.evidence() {
         let art = placements.iter().find(|placement| {
             let (dx, dz) = (

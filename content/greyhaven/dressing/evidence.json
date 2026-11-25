@@ -29,6 +29,8 @@
     {"id":"quest-ring-offering","asset":"wolf-den.kit.bone-scatter","position":[46380,653,60620],"yaw":24000,"scale":[600,800,600]},
     {"id":"quest-ring-lintel","asset":"discoveries.kit.fen-marker","position":[47000,653,60000],"yaw":16384,"scale":[1000,1000,1000]},
     {"id":"quest-turned-earth","asset":"discoveries.kit.hunter-clue","position":[45300,653,59400],"yaw":45000,"scale":[1100,1100,1100]},
-    {"id":"quest-dropped-spade","asset":"discoveries.kit.hunter-clue","position":[43700,664,58450],"yaw":12000,"scale":[1000,1000,1000]}
+    {"id":"quest-dropped-spade","asset":"discoveries.kit.hunter-clue","position":[43700,664,58450],"yaw":12000,"scale":[1000,1000,1000]},
+    {"id":"quest-downs-beacon","asset":"discoveries.kit.fire-ring","position":[65200,615,57300],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"quest-downs-beacon-wood","asset":"settlement.props.firewood","position":[65200,615,57300],"yaw":16384,"scale":[900,900,900]}
   ]
 }

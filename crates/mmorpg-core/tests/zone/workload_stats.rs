@@ -29,9 +29,15 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
     let raiders = content.raids().iter().map(|site| site.raiders().count()).sum::<usize>()
         + usize::from(content.hunt().is_some())
         + content.cart().map_or(0, |cart| cart.bandits.len())
-        // The courier's foe (#1019) waits until he is unmasked, and the watch's wolves for a watch.
+        // The courier's foe (#1019) waits until he is unmasked, the watch's wolves for a watch and
+        // the Downs road's supply patrol until the lookout calls it out.
         + content.confrontations().len()
-        + content.watch().map_or(0, |watch| watch.prowlers.len());
+        + content.watch().map_or(0, |watch| watch.prowlers.len())
+        + content
+            .supply_patrols()
+            .iter()
+            .map(|patrol| patrol.members.len())
+            .sum::<usize>();
     // Far-away idle creatures sleep and near ones decide on their staggered tick (#814).
     let thinking = content.creature_spawns().len() - props - raiders;
     assert!(0 < work.creature_ai_evaluations && work.creature_ai_evaluations < thinking);

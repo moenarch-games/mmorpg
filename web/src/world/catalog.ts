@@ -88,7 +88,7 @@ export type AbilityRecord = {
  * (decide). The flock (#1019): a stray NPC (herd), the NPC who starts a watch (watch) and an
  * evidence spot taking item `source` (lay). The missing family and the muster (#1019): an NPC led home to NPC `source`
  * (escort_to) and an NPC won to a muster (recruit). The ring's measure (#1019): a mechanism sequence worked in its
- * order (work_in_order).
+ * order (work_in_order). The Downs road (#1019): the lookout who calls the supply patrol out (sight, ambush).
  */
 export type QuestObjectiveRecord =
   | {
@@ -110,7 +110,9 @@ export type QuestObjectiveRecord =
         | "herd"
         | "watch"
         | "recruit"
-        | "work_in_order";
+        | "work_in_order"
+        | "sight"
+        | "ambush";
       target: number;
       count: number;
     }
@@ -179,6 +181,8 @@ const OBJECTIVE_KINDS = [
   "escort_to",
   "recruit",
   "work_in_order",
+  "sight",
+  "ambush",
 ] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;

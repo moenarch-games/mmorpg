@@ -174,6 +174,11 @@ pub enum ErrorCode {
     /// The NPC will not hear a player showing a staff (#1019): put it away, or bring a party mate
     /// it trusts or a recommendation it accepts.
     StaffShown,
+    /// The supply patrol cannot be called out yet (#1019): its last run is still settling.
+    PatrolResting,
+    /// The supply patrol reached its camp before it was stopped (#1019): the lookout calls the
+    /// next one once it has rested.
+    PatrolArrived,
 }
 
 /// One feedback event addressed to a player.

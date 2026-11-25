@@ -62,6 +62,8 @@ pub mod templates {
     pub const SHRINE_WARDEN: CreatureTemplateId = CreatureTemplateId::new(28);
     /// Cobb the Digger once he fights for the barrow's torc (#1019).
     pub const GRAVE_ROBBER: CreatureTemplateId = CreatureTemplateId::new(29);
+    /// The Downs supply patrol's carrier, who bears its order pouch (#1019).
+    pub const REDBRAND_PACKBEARER: CreatureTemplateId = CreatureTemplateId::new(30);
 }
 
 /// Default respawn time: 60 s.
@@ -137,7 +139,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 28] = {
+const TEMPLATES: [TemplateRow; 29] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
@@ -190,6 +192,9 @@ const TEMPLATES: [TemplateRow; 28] = {
         (SHRINE_WARDEN, "Shrine Warden", Ogre, Aggressive, [6, 6], true, 420, 0, [9, 15], 0, crate::ticks_from_ms(2_800), GARRICK_RESPAWN_TICKS, OGRE),
         // Barrowdown's grave robber (#1019): a level 4 marauder's body; he stands only when faced.
         (GRAVE_ROBBER, "Grave Robber", Marauder, Aggressive, [4, 4], false, 80, 16, [4, 7], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
+        // The Downs supply patrol's packbearer (#1019): a level 4 bandit's body under a load, a
+        // little sturdier and slower to swing; he stands only while the patrol marches.
+        (REDBRAND_PACKBEARER, "Redbrand Packbearer", Redbrand, Aggressive, [4, 4], false, 95, 16, [3, 6], 0, crate::ticks_from_ms(2_600), RESPAWN_TICKS, HUMANOID),
     ]
 };
 
@@ -538,6 +543,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::granary::raider_spawns())
         // Barrowdown's grave robber once he fights (#1019).
         .chain(super::barrowdown::spawns())
+        // The Downs road's supply patrol, standing only while it marches (#1019).
+        .chain(super::downs::spawns())
         .collect()
 }
 
@@ -562,6 +569,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::granary::npcs())
         // Barrowdown's grave robber (#1019).
         .chain(super::barrowdown::npcs())
+        // The Downs road's lookout (#1019).
+        .chain(super::downs::npcs())
         .collect()
 }
 

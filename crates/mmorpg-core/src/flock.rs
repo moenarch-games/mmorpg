@@ -624,7 +624,7 @@ impl ZoneSimulation {
 
     /// Whether `player` has `objective` open in an active quest with every earlier objective of
     /// its quest done, so a quest's steps come in their authored order.
-    fn ready_objective(&self, player: PlayerId, objective: QuestObjective) -> bool {
+    pub(crate) fn ready_objective(&self, player: PlayerId, objective: QuestObjective) -> bool {
         let Some(state) = self.players.get(&player) else {
             return false;
         };
@@ -648,7 +648,7 @@ impl ZoneSimulation {
     }
 
     /// Completes `objective` for `player` once if it is ready ([`Self::ready_objective`]).
-    fn complete_ready(&mut self, player: PlayerId, objective: QuestObjective) {
+    pub(crate) fn complete_ready(&mut self, player: PlayerId, objective: QuestObjective) {
         if self.ready_objective(player, objective) {
             self.complete_objectives(player, |candidate| candidate == objective);
         }

@@ -1533,6 +1533,8 @@ impl ZoneSimulation {
         if let Some(rules) = self.content.boss(template).copied() {
             self.boss_falls(&rules, [position.x, position.z])?;
         }
+        // A supply patrol's carrier falling on the march stops it (#1019).
+        self.supply_member_fell(creature_id, [position.x, position.z], now)?;
         self.boss_defeated(creature_id, now)
     }
 
@@ -1765,7 +1767,8 @@ impl ZoneSimulation {
                 || content.is_hunt_beast(creature_id)
                 || content.is_cart_bandit(creature_id)
                 || content.is_confrontation_foe(creature_id)
-                || content.is_prowler(creature_id);
+                || content.is_prowler(creature_id)
+                || content.supply_patrol_of(creature_id).is_some();
             if let Life::Despawned { died_at } = creature.life
                 && !waits_for_incident
                 && now >= died_at.saturating_add(u64::from(template.respawn_ticks))

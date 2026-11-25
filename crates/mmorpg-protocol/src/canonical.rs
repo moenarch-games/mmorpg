@@ -138,7 +138,81 @@ pub fn encode_canonical_snapshot(
     encode_wards(&mut payload, &snapshot.wards)?;
     encode_flock(&mut payload, &snapshot.strays, snapshot.watch.as_ref())?;
     encode_site_raids(&mut payload, &snapshot.site_raids)?;
+    encode_supply_runs(&mut payload, &snapshot.supply_runs)?;
     Ok(payload)
+}
+
+/// The supply patrols' runs (#1019): a count (`u8`, at most
+/// [`mmorpg_core::MAX_SUPPLY_PATROLS`]), then per run in lookout order its lookout NPC (`u32`),
+/// start tick (`u64`), its members' marches (count `u8`, at most
+/// [`mmorpg_core::MAX_SUPPLY_MEMBERS`], each the next waypoint `u8` and anchor XZ `i32` each) and
+/// its rest end tick (`u64`).
+fn encode_supply_runs(
+    payload: &mut Vec<u8>,
+    runs: &[mmorpg_core::SupplyRun],
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(runs.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_SUPPLY_PATROLS)
+        .ok_or_else(|| ProtocolError::new("supply runs exceed their count"))?;
+    payload.push(count);
+    for run in runs {
+        payload.extend_from_slice(&run.npc.get().to_be_bytes());
+        payload.extend_from_slice(&run.started.to_be_bytes());
+        let marches = u8::try_from(run.marches.len())
+            .ok()
+            .filter(|count| usize::from(*count) <= mmorpg_core::MAX_SUPPLY_MEMBERS)
+            .ok_or_else(|| ProtocolError::new("a supply run's marches exceed their count"))?;
+        payload.push(marches);
+        for march in &run.marches {
+            payload.push(march.waypoint);
+            for axis in march.anchor {
+                payload.extend_from_slice(&axis.to_be_bytes());
+            }
+        }
+        payload.extend_from_slice(&run.rests_until.to_be_bytes());
+    }
+    Ok(())
+}
+
+fn decode_supply_runs(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Result<Vec<mmorpg_core::SupplyRun>, ProtocolError> {
+    let [count] = take(payload, offset)?;
+    if usize::from(count) > mmorpg_core::MAX_SUPPLY_PATROLS {
+        return Err(ProtocolError::new("supply runs exceed their count"));
+    }
+    (0..count)
+        .map(|_| {
+            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+            let started = u64::from_be_bytes(take(payload, offset)?);
+            let [marches] = take(payload, offset)?;
+            if usize::from(marches) > mmorpg_core::MAX_SUPPLY_MEMBERS {
+                return Err(ProtocolError::new(
+                    "a supply run's marches exceed their count",
+                ));
+            }
+            let marches = (0..marches)
+                .map(|_| {
+                    let [waypoint] = take(payload, offset)?;
+                    Ok(mmorpg_core::SupplyMarch {
+                        waypoint,
+                        anchor: [
+                            i32::from_be_bytes(take(payload, offset)?),
+                            i32::from_be_bytes(take(payload, offset)?),
+                        ],
+                    })
+                })
+                .collect::<Result<_, ProtocolError>>()?;
+            Ok(mmorpg_core::SupplyRun {
+                npc,
+                started,
+                marches,
+                rests_until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect()
 }
 
 /// Each further raid site's state (#1019): a count (`u8`, at most one fewer than
@@ -1464,6 +1538,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let wards = decode_wards(payload, &mut offset)?;
     let (strays, watch) = decode_flock(payload, &mut offset)?;
     let site_raids = decode_site_raids(payload, &mut offset)?;
+    let supply_runs = decode_supply_runs(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1495,6 +1570,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         escorts,
         strays,
         watch,
+        supply_runs,
         loads,
         constructions,
         seals,
@@ -3428,6 +3504,21 @@ pub(crate) mod tests {
                 stood: 0b0011,
                 recovers_at: 0,
             }),
+            supply_runs: vec![mmorpg_core::SupplyRun {
+                npc: mmorpg_core::NpcId::new(61),
+                started: 3,
+                marches: vec![
+                    mmorpg_core::SupplyMarch {
+                        waypoint: 2,
+                        anchor: [68_400, 56_600],
+                    },
+                    mmorpg_core::SupplyMarch {
+                        waypoint: 5,
+                        anchor: [-1, 2],
+                    },
+                ],
+                rests_until: 0,
+            }],
             loads: vec![
                 mmorpg_core::LoadState {
                     player: 1,

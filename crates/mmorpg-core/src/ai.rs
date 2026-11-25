@@ -317,6 +317,7 @@ impl ZoneSimulation {
             || template.family.flies()
             || creature.raid.is_some()
             || self.prowling(id)
+            || self.supply_marching(id)
             || !matches!(creature.ai, CreatureAi::Idle { .. })
             || current.velocity().y != 0
         {
@@ -484,11 +485,14 @@ impl ZoneSimulation {
             }
             _ => None,
         };
-        // A raider on its march (#530) walks its route instead of wandering; a pack wolf or its
-        // prey (#912) roams, hunts or flees.
+        // A raider on its march (#530) walks its route instead of wandering, as does a supply
+        // patrol's member (#1019); a pack wolf or its prey (#912) roams, hunts or flees.
         let march = match self.march(id, centre, half)? {
             None => match self.prowl(id, centre, half)? {
-                None => self.den_step(id, here, spawn.wander_radius, elapsed),
+                None => match self.supply_step(id, centre, half)? {
+                    None => self.den_step(id, here, spawn.wander_radius, elapsed),
+                    supply => supply,
+                },
                 prowl => prowl,
             },
             march => march,

@@ -219,6 +219,8 @@ fn starter_tables_are_pinned_and_cover_every_hosted_template() {
         ([20, 30], vec![item(1, ItemId::new(5), [1, 1]), nothing(1)]),
         // Barrowdown's Grave Robber (#1019): a little coin; the torc is the quest's.
         ([2, 6], vec![nothing(1)]),
+        // The Downs supply patrol's Redbrand Packbearer (#1019): coin; the pouch is the quest's.
+        ([3, 8], vec![nothing(1)]),
     ];
     let content = greyhaven_vale::content();
     // Breakable props (#288) drop nothing and have no table.

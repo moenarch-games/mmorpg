@@ -92,6 +92,7 @@ mod stance;
 mod strike;
 mod structure;
 mod summoned;
+pub mod supply;
 mod swing;
 mod threat_cache;
 mod transfer;
@@ -342,6 +343,10 @@ pub use structure::{
 pub use summoned::{
     MAX_SUMMONED_TERRAIN, MAX_VISIBLE_SUMMONED, PROJECTILE_SUMMONED_DAMAGE, SUMMON_DISTANCE_UNITS,
     SWING_SUMMONED_DAMAGE, SummonedTerrain, SummonedTerrainKind, SummonedView,
+};
+pub use supply::{
+    INTERCEPT_RADIUS_UNITS, MAX_SUPPLY_MEMBERS, MAX_SUPPLY_PATROLS, MAX_SUPPLY_ROUTE_POINTS,
+    SupplyMarch, SupplyPatrol, SupplyRun,
 };
 pub use surface::{SurfaceEffect, SurfaceKind, SurfacePatch};
 pub use swing::{

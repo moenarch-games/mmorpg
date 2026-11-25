@@ -418,6 +418,20 @@ fn templates_follow_the_design_contract() {
                 2200,
                 60000
             ),
+            // The Downs supply patrol's packbearer (#1019): a level 4 bandit's body under a load,
+            // standing only while the patrol marches.
+            (
+                "Redbrand Packbearer",
+                Redbrand,
+                Aggressive,
+                [4, 4],
+                false,
+                95,
+                16,
+                [3, 6],
+                2600,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -441,6 +455,8 @@ fn spawns_populate_their_subzones() {
             // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
             || content.is_prowler(spawn.id)
+            // The Downs road's supply patrol (#1019) only while the lookout's run marches.
+            || content.supply_patrol_of(spawn.id).is_some()
         {
             continue;
         }
@@ -808,6 +824,12 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::wilds::KINGS_ROAD_DOWNS)
             ),
+            // The Downs road's lookout by her beacon above the road (#1019).
+            (
+                "Lookout Brenna",
+                NpcRole::Resident,
+                Some(greyhaven_vale::wilds::KINGS_ROAD_DOWNS)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -842,6 +864,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
             || content.is_prowler(spawn.id)
+            // The Downs road's supply patrol (#1019) only while the lookout's run marches.
+            || content.supply_patrol_of(spawn.id).is_some()
         {
             assert!(matches!(
                 creature.life,
@@ -959,6 +983,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             // watch's wolves only while Lise's fold is watched.
             || content.is_confrontation_foe(spawn.id)
             || content.is_prowler(spawn.id)
+            // The Downs road's supply patrol (#1019) only while the lookout's run marches.
+            || content.supply_patrol_of(spawn.id).is_some()
             || content
                 .dens()
                 .iter()

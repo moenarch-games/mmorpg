@@ -703,7 +703,9 @@ impl Resident {
             | "Watchman Garth"
             | "Watchman Pell"
             | "Guardsman Tam Hollis"
-            | "Watchman Dunstan" => Some(Self::Guard),
+            | "Watchman Dunstan"
+            // The Downs road's lookout (#1019).
+            | "Lookout Brenna" => Some(Self::Guard),
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
@@ -754,7 +756,10 @@ impl Resident {
         match name {
             // Barrowdown's grave robber (#1019) wears the marauder's kit.
             "Field Marauder" | "Grave Robber" => Some(Self::Marauder),
-            "Redbrand Bandit" | "Redbrand Courier" => Some(Self::RedbrandBandit),
+            // The Downs supply patrol's packbearer (#1019) wears the bandit's kit too.
+            "Redbrand Bandit" | "Redbrand Courier" | "Redbrand Packbearer" => {
+                Some(Self::RedbrandBandit)
+            }
             "Redbrand Crossbowman" => Some(Self::RedbrandCrossbowman),
             "Redbrand Brute" => Some(Self::RedbrandBrute),
             "Garrick Redbrand" => Some(Self::Garrick),
@@ -1052,6 +1057,8 @@ mod tests {
                 Some("resident.farmer"),
                 // Barrowdown's grave robber, Cobb the Digger (#1019).
                 Some("resident.farmer"),
+                // The Downs road's Lookout Brenna (#1019).
+                Some("resident.guard"),
             ])
             .collect::<Vec<_>>()
         );
@@ -1094,6 +1101,8 @@ mod tests {
                 "enemy.redbrand.bandit",
                 // Barrowdown's Grave Robber (#1019) the marauder's.
                 "enemy.marauder",
+                // The Downs supply patrol's Redbrand Packbearer (#1019) the bandit's.
+                "enemy.redbrand.bandit",
             ]
         );
         // Each is authored in the shared presets both clients draw.
