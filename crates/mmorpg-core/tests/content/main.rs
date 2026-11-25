@@ -14,6 +14,7 @@ mod discovery_caches;
 mod environment_credit;
 mod evidence_quests;
 mod farmland;
+mod flock;
 mod forest_lynx;
 mod garrick;
 mod greyhaven_vale;

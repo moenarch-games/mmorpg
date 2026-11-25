@@ -324,6 +324,12 @@ pub struct ZoneTickWork {
     /// Raiders on the assault the raid step checked against the objective and, in a defence,
     /// its civilians (#1019): each living assault raider once.
     pub raid_raiders_visited: usize,
+    /// Strays the flock step visited (#1019): each content stray once, every tick.
+    pub strays_visited: usize,
+    /// Ways a driven stray tested for a blocker (#1019): at most five per stray a player drives.
+    pub stray_ways_tested: usize,
+    /// Prowlers the flock step visited (#1019): each prowler of a running watch once.
+    pub prowlers_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -394,6 +400,10 @@ pub struct ZoneSimulation {
     pub(crate) wakes: BTreeMap<crate::NpcId, crate::NpcWake>,
     /// Running quest escorts (#1019), canonical.
     pub(crate) escorts: BTreeMap<crate::NpcId, crate::EscortState>,
+    /// Strays away from their scatter points (#1019), canonical.
+    pub(crate) strays: BTreeMap<crate::NpcId, crate::StrayState>,
+    /// The running or settling watch over the flock (#1019), canonical.
+    pub(crate) watch: Option<crate::WatchState>,
     /// Every player's one load, carried or set down (#1077), canonical.
     pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
     /// Every construction site's material and raising (#1019), canonical.
@@ -455,6 +465,7 @@ impl ZoneSimulation {
                 || zone.content.is_hunt_beast(id)
                 || zone.content.is_cart_bandit(id)
                 || zone.content.is_confrontation_foe(id)
+                || zone.content.is_prowler(id)
             {
                 zone.reserve_raider(id)?;
             } else {
@@ -602,6 +613,8 @@ impl ZoneSimulation {
             raid: crate::RaidState::default(),
             wakes: BTreeMap::new(),
             escorts: BTreeMap::new(),
+            strays: BTreeMap::new(),
+            watch: None,
             loads: BTreeMap::new(),
             constructions,
             seals,
@@ -1091,6 +1104,8 @@ impl ZoneSimulation {
         self.advance_cart(now)?;
         // Escorts follow, arrive or fail, and confronted foes out of their fight leave (#1019).
         self.advance_npc_quests(now)?;
+        // Strays shy, are penned or bolt, and a watch over the flock runs (#1019).
+        self.advance_flock(now)?;
         // Set-down loads run out, and fallen or drowned carriers lose theirs (#1077).
         self.advance_loads(now)?;
         self.advance_depths(now)?;

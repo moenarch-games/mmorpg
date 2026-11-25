@@ -65,9 +65,9 @@ impl Walker {
 fn brook_bridge_ford_gate_culvert_and_recovery() {
     let content = greyhaven_vale::content();
     // The Outpost's 21, then the region's people (#819) and the smith (#917).
-    // ... the Core Vale's wounded watchman and courier, Millbrook's farmfolk and the farmland
-    // tower's watchman (#1019).
-    assert_eq!(content.npcs().len(), 49);
+    // ... the Core Vale's wounded watchman and courier, Millbrook's farmfolk, the farmland
+    // tower's watchman and Lise's four ewes (#1019).
+    assert_eq!(content.npcs().len(), 53);
     for id in 60000..=60002 {
         assert!(content.definition().colliders().iter().any(|c| c.id == id));
     }

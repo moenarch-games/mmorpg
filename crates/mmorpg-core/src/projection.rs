@@ -753,6 +753,9 @@ impl ZoneSimulation {
                     // wounded after a defence, shows its wounds.
                     health_percent: if let Some(health) = self.civilian_health(npc_id) {
                         health.max(1)
+                    } else if let Some(health) = self.sheep_health(npc_id) {
+                        // A sheep of a watch (#1019) shows what it has left, a fallen one barely alive.
+                        health.max(1)
                     } else if self
                         .content
                         .raid()

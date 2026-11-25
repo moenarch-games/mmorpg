@@ -25,6 +25,8 @@
 //!   ([`crate::LoadState`]); empty arms are refused with [`crate::ErrorCode::NotCarrying`].
 //! - **Defence**: starts the raid site's defence ([`crate::raid`]) at once when the site is ready;
 //!   otherwise [`crate::ErrorCode::SiteNotReady`]. It completes nothing itself.
+//! - **Watch**: starts the watch over the flock ([`crate::flock`]) at once when the flock stands
+//!   and no watch runs; otherwise [`crate::ErrorCode::FlockUnsettled`]. It completes nothing itself.
 //! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
 //!   ([`crate::DecisionOption::copper`]) takes its copper at once, or is refused with
 //!   [`crate::ErrorCode::NotEnoughMoney`].
@@ -342,6 +344,12 @@ impl ZoneSimulation {
             QuestObjective::Defend { .. } => {
                 if !self.begin_defence()? {
                     return Ok(Some((ErrorCode::SiteNotReady, target)));
+                }
+            }
+            // A watch over the flock (#1019) starts at its shepherd; it completes when it holds.
+            QuestObjective::Watch { .. } => {
+                if !self.begin_watch() {
+                    return Ok(Some((ErrorCode::FlockUnsettled, target)));
                 }
             }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),

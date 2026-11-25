@@ -46,6 +46,7 @@ mod evidence;
 mod finds;
 mod flank;
 pub mod flight;
+mod flock;
 mod forced;
 mod gathering;
 #[doc(hidden)]
@@ -240,6 +241,11 @@ pub use minion::{
     FORMATION_RADIUS_UNITS, MAX_MINIONS, MAX_MINIONS_PER_SUMMONER, MINION_HALF_EXTENTS_UNITS,
     Minion, MinionOrder, ORDER_RANGE_UNITS, RAISE_DEAD_LIMIT, is_companion, minion_ability,
     minion_half_extents,
+};
+pub use flock::{
+    BITE_REACH_UNITS, GAP_HOLD_TICKS, GAP_REACH_UNITS, HedgeWatch, MAX_FLOCK, MAX_PROWLERS, MAX_STRAYS,
+    PEN_REST_TICKS, Prowler, RECOVER_TICKS, SHY_RADIUS_UNITS, STRAY_TIMEOUT_TICKS,
+    STRAY_UNITS_PER_TICK, Stray, StrayState, WATCH_TICKS, WatchState,
 };
 pub use nav::NAV_CELL_UNITS;
 pub use npc_quest::{
