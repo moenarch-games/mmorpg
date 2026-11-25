@@ -88,6 +88,9 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   "flock-unsettled": "Not yet: a watch is still on at the fold, or Lise's ewes are still getting back on their feet.",
   "flock-fell": "Shepherd Lise: \"The wolves got to too many of my ewes. Once they are up again, we watch again.\"",
   "stray-bolted": "Left alone too long, the ewe bolted back to where you found her.",
+  // Barrowdown's ring and Old Maud (#1019).
+  "out-of-order": "The stones fall silent: that was not the inscription's order. Begin again from its first stone.",
+  "staff-shown": "They will not speak with a staff held in plain sight. Put it away, or bring a party member they trust or a good word they accept.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

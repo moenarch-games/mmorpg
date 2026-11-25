@@ -18,6 +18,12 @@
 //!   for [`WARD_EXPOSED_TICKS`], and damage lands. Working the mechanism again while exposed
 //!   changes nothing; afterwards it exposes the weak point anew, so one party member can keep the
 //!   ward down while the others strike.
+//! - **Sequences**: a [`MechanismSequence`] is an authored order of mechanisms, the standing
+//!   stones of a ring. It holds no zone state: each character works it for itself through a
+//!   [`crate::QuestObjective::WorkInOrder`] whose earlier objectives are done. Working its next
+//!   stone counts one more; working the stone just counted again changes nothing; any other of its
+//!   stones starts the order over (at one when that stone is its first) and tells the player
+//!   [`crate::ErrorCode::OutOfOrder`]. The log stores the count, so recovery and replay keep it.
 //!
 //! Set ticks, openers, the opening tick and each ward's exposure belong to canonical zone state
 //! ([`SealState`], [`WardState`]); every projection carries each seal's set mechanisms and
@@ -43,6 +49,34 @@ pub const MAX_MECHANISM_REACH_UNITS: i32 = 300;
 pub const MAX_SEAL_MECHANISMS: usize = 4;
 /// The most seals, and the most wards, one zone may have.
 pub const MAX_SEALS: usize = 8;
+/// The most mechanisms one sequence may order (#1019).
+pub const MAX_SEQUENCE_MECHANISMS: usize = 8;
+
+/// Stable sequence identity within one content revision (#1019); `0` names none.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SequenceId(u32);
+
+impl SequenceId {
+    #[must_use]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// An authored order of mechanisms (#1019): the stones of a ring worked in an inscription's order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MechanismSequence {
+    pub id: SequenceId,
+    /// What clients call the whole, as in "the ring's stones".
+    pub name: String,
+    /// The mechanisms in the order they are worked, `2..=MAX_SEQUENCE_MECHANISMS`, distinct.
+    pub mechanisms: Vec<MechanismId>,
+}
 
 /// Stable mechanism identity within one content revision; `0` names none.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -199,6 +233,10 @@ impl ZoneSimulation {
         if !mechanism.within(feet) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
+        if content.sequence_of(id).is_some() {
+            self.work_in_order(player_id, id);
+            return Ok(None);
+        }
         if let Some(index) = content.wards().iter().position(|ward| ward.mechanism == id) {
             let state = &mut self.wards[index];
             if state.exposed_until <= now {
@@ -234,6 +272,83 @@ impl ZoneSimulation {
             self.open_seal(index, seal, now)?;
         }
         Ok(None)
+    }
+
+    /// Works sequence mechanism `id` toward the player's open in-order objectives (#1019): see
+    /// the module documentation. Nothing else changes, and a player with none open is unaffected.
+    fn work_in_order(&mut self, player_id: PlayerId, id: MechanismId) {
+        let content = Arc::clone(&self.content);
+        let Some(player) = self.players.get(&player_id) else {
+            return;
+        };
+        let mut changes = Vec::new();
+        let mut broken = false;
+        for entry in &player.quests.entries {
+            let Some(quest) = content.quest(entry.quest) else {
+                continue;
+            };
+            let current = crate::quest::progress(quest, entry, &player.inventory, *player.depths);
+            for (index, objective) in quest.objectives.iter().enumerate() {
+                let QuestObjective::WorkInOrder { sequence, count } = *objective else {
+                    continue;
+                };
+                let done = current[index];
+                let Some(order) = content
+                    .sequence(sequence)
+                    .filter(|order| done < count && order.mechanisms.contains(&id))
+                else {
+                    continue;
+                };
+                let ready = quest.objectives[..index]
+                    .iter()
+                    .zip(current)
+                    .all(|(earlier, count)| count >= earlier.required());
+                if !ready {
+                    continue;
+                }
+                let at = usize::from(done);
+                let next = if order.mechanisms.get(at) == Some(&id) {
+                    done + 1
+                } else if at > 0 && order.mechanisms[at - 1] == id {
+                    // The stone just counted, worked again.
+                    continue;
+                } else {
+                    broken = true;
+                    u8::from(order.mechanisms.first() == Some(&id))
+                };
+                changes.push((quest.id, index, next));
+            }
+        }
+        let Some(player) = self.players.get_mut(&player_id) else {
+            return;
+        };
+        for (quest, index, count) in changes {
+            if let Some(entry) = player
+                .quests
+                .entries
+                .iter_mut()
+                .find(|entry| entry.quest == quest)
+            {
+                entry.progress[index] = count;
+                crate::events::push_event(
+                    &mut player.events,
+                    crate::ZoneEvent::QuestProgress {
+                        quest,
+                        objective: u8::try_from(index).unwrap_or(u8::MAX),
+                        count,
+                    },
+                );
+            }
+        }
+        if broken {
+            crate::events::push_event(
+                &mut player.events,
+                crate::ZoneEvent::Error {
+                    code: ErrorCode::OutOfOrder,
+                    target: None,
+                },
+            );
+        }
     }
 
     /// Sinks seal `index`'s piece and credits its openers.

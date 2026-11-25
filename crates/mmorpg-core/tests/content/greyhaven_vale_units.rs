@@ -405,6 +405,19 @@ fn templates_follow_the_design_contract() {
                 2800,
                 120000
             ),
+            // Barrowdown's grave robber (#1019): a level 4 marauder's body, standing only when faced.
+            (
+                "Grave Robber",
+                Marauder,
+                Aggressive,
+                [4, 4],
+                false,
+                80,
+                16,
+                [4, 7],
+                2200,
+                60000
+            ),
         ]
     );
     let wolf = content
@@ -789,6 +802,12 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
             ),
+            // Barrowdown's grave robber at his diggings west of the ring (#1019).
+            (
+                "Cobb the Digger",
+                NpcRole::Resident,
+                Some(greyhaven_vale::wilds::KINGS_ROAD_DOWNS)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -971,7 +990,8 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
     vec![
         giver("Alewife Gwen Barrow", settlements::BARROWDOWN),
         resident("Shepherd Corin", settlements::BARROWDOWN),
-        resident("Old Maud", settlements::BARROWDOWN),
+        // Old Maud gives the ring's quests (#1019).
+        giver("Old Maud", settlements::BARROWDOWN),
         resident("Farmer Tobin Hale", settlements::BARROWDOWN),
         resident("Pip", settlements::BARROWDOWN),
         giver("Innkeeper Hob Ferris", settlements::FENFORD),

@@ -180,6 +180,8 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::FlockUnsettled => "Not yet: a watch is still on at the fold, or Lise's ewes are still getting back on their feet.".into(),
         ErrorCode::FlockFell => "Shepherd Lise: \"The wolves got to too many of my ewes. Once they are up again, we watch again.\"".into(),
         ErrorCode::StrayBolted => "Left alone too long, the ewe bolted back to where you found her.".into(),
+        ErrorCode::OutOfOrder => "The stones fall silent: that was not the inscription's order. Begin again from its first stone.".into(),
+        ErrorCode::StaffShown => "They will not speak with a staff held in plain sight. Put it away, or bring a party member they trust or a good word they accept.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -473,6 +475,7 @@ impl Logs {
                     let text = match (code, target) {
                         (
                             ErrorCode::Distrusted
+                            | ErrorCode::StaffShown
                             | ErrorCode::NpcBusy
                             | ErrorCode::EscortLost
                             | ErrorCode::NotCarrying,

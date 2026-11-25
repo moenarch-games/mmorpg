@@ -173,6 +173,15 @@ pub enum QuestObjective {
     /// every party mate in the zone with the same objective open, so a party gathers its recruits
     /// in parallel while each character's log keeps its own. A quest's recruits come in any order.
     Recruit { npc: NpcId },
+    /// Work the `count` mechanisms of [`crate::MechanismSequence`] `sequence` in its order (#1019)
+    /// with [`crate::ZoneCommand::Operate`] once the quest's earlier objectives are done: the
+    /// standing stones of a ring, in the order an inscription gives. Progress is the stones worked
+    /// in order so far; a stone out of order starts it over ([`crate::ErrorCode::OutOfOrder`]).
+    /// The log stores it.
+    WorkInOrder {
+        sequence: crate::SequenceId,
+        count: u8,
+    },
 }
 
 impl QuestObjective {
@@ -184,7 +193,8 @@ impl QuestObjective {
             | Self::Collect { count, .. }
             | Self::DefeatWithLoan { count, .. }
             | Self::Crush { count, .. }
-            | Self::Aid { count, .. } => count,
+            | Self::Aid { count, .. }
+            | Self::WorkInOrder { count, .. } => count,
             Self::Talk { .. }
             | Self::Explore { .. }
             | Self::Retrieve { .. }
@@ -211,7 +221,7 @@ impl QuestObjective {
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
     /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
-    /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit.
+    /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit, 26 work in order.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -240,6 +250,7 @@ impl QuestObjective {
             Self::Lay { .. } => 23,
             Self::EscortTo { .. } => 24,
             Self::Recruit { .. } => 25,
+            Self::WorkInOrder { .. } => 26,
         }
     }
 
@@ -316,11 +327,21 @@ pub struct Quest {
 /// A paid option settles a matter with the player's own copper: deciding it takes `copper` from
 /// the player at once and is refused ([`ErrorCode::NotEnoughMoney`]) without enough. Both the
 /// payment and the choice stand; abandoning the quest later returns neither.
+///
+/// An option may also settle a matter in the world (#1019): one that `hands` an item has the NPC
+/// hand it over at once (a full bag refuses the choice), and a `fight` option turns the NPC on
+/// the player ([`crate::Confrontation`]). While a later objective of the quest is still open, an
+/// action at the NPC carries the chosen option out again ([`Quest::unresolved_decision`]): a lost
+/// item is handed over anew, and a foe that gave up its fight is faced again.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DecisionOption {
     pub label: String,
     /// Copper the option costs, at most [`MAX_DECISION_COPPER`]; zero for most.
     pub copper: u32,
+    /// A plain bag item the NPC hands over when it is chosen (#1019).
+    pub hands: Option<ItemId>,
+    /// Whether choosing it turns the NPC hostile (#1019).
+    pub fight: bool,
 }
 
 impl DecisionOption {
@@ -329,8 +350,39 @@ impl DecisionOption {
     pub fn free(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
-            copper: 0,
+            ..Self::default()
         }
+    }
+
+    /// Whether choosing it does something in the world beyond the choice (#1019).
+    #[must_use]
+    pub const fn acts(&self) -> bool {
+        self.hands.is_some() || self.fight
+    }
+}
+
+impl Quest {
+    /// The decide objective at `npc` whose chosen option acts in the world but has not yet settled
+    /// the quest (#1019): with `current` progress (a decide objective's is the chosen option), an
+    /// option that [`DecisionOption::acts`] while a later objective is still open. Its index and
+    /// the option.
+    #[must_use]
+    pub fn unresolved_decision(
+        &self,
+        current: &[u8],
+        npc: NpcId,
+    ) -> Option<(usize, &DecisionOption)> {
+        let index = self
+            .objectives
+            .iter()
+            .position(|objective| *objective == QuestObjective::Decide { npc })?;
+        let chosen = usize::from(*current.get(index)?).checked_sub(1)?;
+        let option = self.decision.get(chosen).filter(|option| option.acts())?;
+        let open = self.objectives[index + 1..]
+            .iter()
+            .zip(current.get(index + 1..)?)
+            .any(|(objective, count)| *count < objective.required());
+        open.then_some((index, option))
     }
 }
 
@@ -463,8 +515,14 @@ pub(crate) fn validate_quests(
             .iter()
             .filter(|objective| matches!(objective, QuestObjective::Decide { .. }))
             .count();
+        // An option hands over a plain bag item; the NPC binding checks a fighting NPC has its
+        // confrontation.
         let options_valid = quest.decision.iter().all(|option| {
-            text(&option.label, MAX_DECISION_BYTES) && option.copper <= MAX_DECISION_COPPER
+            text(&option.label, MAX_DECISION_BYTES)
+                && option.copper <= MAX_DECISION_COPPER
+                && option.hands.is_none_or(|item| {
+                    item_template(item).is_some_and(|template| template.slot.is_none())
+                })
         });
         if !options_valid
             || match decides {
@@ -619,6 +677,12 @@ pub(crate) fn validate_quests(
                             matches!(*earlier, QuestObjective::Lay { spot: other, .. } if other == spot)
                         })
                 }
+                // An ordered sequence (#1019): a known one, its whole length, once per quest.
+                QuestObjective::WorkInOrder { sequence, count } => {
+                    content.sequence(sequence).is_some_and(|known| {
+                        usize::from(count) == known.mechanisms.len()
+                    }) && !quest.objectives[..index].contains(objective)
+                }
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -761,6 +825,10 @@ pub(crate) fn progress(
     for (index, objective) in quest.objectives.iter().enumerate() {
         current[index] = match (*objective, objective.carried_item()) {
             (QuestObjective::DefeatThorn, _) => u8::from(depths.thorn_defeated),
+            // A decision's progress is its chosen option (#1019), so clients see which.
+            (QuestObjective::Decide { .. }, _) => {
+                entry.progress[index].min(stored_limit(quest, Some(objective)))
+            }
             (_, Some(item)) => {
                 let count = objective.required();
                 u8::try_from(bag.count(item).min(u32::from(count))).unwrap_or(count)
@@ -1549,7 +1617,8 @@ impl ZoneSimulation {
                         | QuestObjective::Watch { .. }
                         | QuestObjective::Lay { .. }
                         | QuestObjective::EscortTo { .. }
-                        | QuestObjective::Recruit { .. } => false,
+                        | QuestObjective::Recruit { .. }
+                        | QuestObjective::WorkInOrder { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

@@ -24,6 +24,11 @@
     {"id":"quest-snare-gap","asset":"discoveries.kit.hunter-clue","position":[15900,739,46700],"yaw":49152,"scale":[900,900,900]},
     {"id":"quest-tolly-chest","asset":"discoveries.kit.hunter-chest","position":[-8400,601,32300],"yaw":16384,"scale":[1000,1000,1000]},
     {"id":"quest-tolly-shoe","asset":"discoveries.kit.hunter-clue","position":[-13000,714,34100],"yaw":49152,"scale":[700,700,700]},
-    {"id":"quest-tolly-ruts","asset":"discoveries.kit.hunter-clue","position":[-16400,933,39800],"yaw":40000,"scale":[1100,1100,1100]}
+    {"id":"quest-tolly-ruts","asset":"discoveries.kit.hunter-clue","position":[-16400,933,39800],"yaw":40000,"scale":[1100,1100,1100]},
+    {"id":"quest-ring-spade-marks","asset":"discoveries.kit.hunter-clue","position":[47620,653,59380],"yaw":8000,"scale":[900,900,900]},
+    {"id":"quest-ring-offering","asset":"wolf-den.kit.bone-scatter","position":[46380,653,60620],"yaw":24000,"scale":[600,800,600]},
+    {"id":"quest-ring-lintel","asset":"discoveries.kit.fen-marker","position":[47000,653,60000],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"quest-turned-earth","asset":"discoveries.kit.hunter-clue","position":[45300,653,59400],"yaw":45000,"scale":[1100,1100,1100]},
+    {"id":"quest-dropped-spade","asset":"discoveries.kit.hunter-clue","position":[43700,664,58450],"yaw":12000,"scale":[1000,1000,1000]}
   ]
 }

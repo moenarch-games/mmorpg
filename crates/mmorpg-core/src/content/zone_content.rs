@@ -130,6 +130,8 @@ pub struct ZoneContent {
     mechanisms: Vec<crate::Mechanism>,
     seals: Vec<crate::Seal>,
     wards: Vec<crate::Ward>,
+    /// Ordered mechanism sequences (#1019), in ID order.
+    sequences: Vec<crate::MechanismSequence>,
     /// NPCs who leave a character's world after its quest decision (#1019), in NPC order.
     departures: Vec<crate::NpcDeparture>,
     /// NPC attitudes toward interviewers (#1019), in NPC order.
@@ -302,6 +304,7 @@ impl ZoneContent {
             mechanisms: Vec::new(),
             seals: Vec::new(),
             wards: Vec::new(),
+            sequences: Vec::new(),
             departures: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
@@ -382,6 +385,7 @@ impl ZoneContent {
             mechanisms: Vec::new(),
             seals: Vec::new(),
             wards: Vec::new(),
+            sequences: Vec::new(),
             departures: Vec::new(),
             attitudes: Vec::new(),
             confrontations: Vec::new(),
@@ -2105,21 +2109,32 @@ impl ZoneContent {
     /// Adds mechanisms and the seals and wards they work (#1019), after the structures and
     /// creature templates they name and before the quests that unseal them: each mechanism has a
     /// unique nonzero ID, a short name, a reach of at most [`crate::MAX_MECHANISM_REACH_UNITS`]
-    /// and a spot in bounds, and serves exactly one seal or ward; each seal closes a distinct
-    /// stone piece that is no construction site with `1..=MAX_SEAL_MECHANISMS` mechanisms; each
-    /// ward names a known template once.
+    /// and a spot in bounds, and serves exactly one seal, ward or sequence; each seal closes a
+    /// distinct stone piece that is no construction site with `1..=MAX_SEAL_MECHANISMS`
+    /// mechanisms; each ward names a known template once; each sequence has a unique nonzero ID, a
+    /// short name and `2..=MAX_SEQUENCE_MECHANISMS` mechanisms.
     pub fn with_mechanisms(
         mut self,
         mut mechanisms: Vec<crate::Mechanism>,
         seals: Vec<crate::Seal>,
         wards: Vec<crate::Ward>,
+        mut sequences: Vec<crate::MechanismSequence>,
     ) -> Result<Self, ZoneError> {
         mechanisms.sort_by_key(|mechanism| mechanism.id);
+        sequences.sort_by_key(|sequence| sequence.id);
         let invalid = || ZoneError::new("shrine mechanisms, seals or wards are invalid");
         if mechanisms.first().is_some_and(|m| m.id.get() == 0)
             || mechanisms.windows(2).any(|pair| pair[0].id == pair[1].id)
             || seals.len() > crate::MAX_SEALS
             || wards.len() > crate::MAX_SEALS
+            || sequences.len() > crate::MAX_SEALS
+            || sequences.first().is_some_and(|s| s.id.get() == 0)
+            || sequences.windows(2).any(|pair| pair[0].id == pair[1].id)
+            || sequences.iter().any(|sequence| {
+                sequence.name.trim().is_empty()
+                    || sequence.name.len() > MAX_UNIT_NAME_BYTES
+                    || !(2..=crate::MAX_SEQUENCE_MECHANISMS).contains(&sequence.mechanisms.len())
+            })
         {
             return Err(invalid());
         }
@@ -2145,6 +2160,11 @@ impl ZoneContent {
             .iter()
             .flat_map(|seal| seal.mechanisms.iter().copied())
             .chain(wards.iter().map(|ward| ward.mechanism))
+            .chain(
+                sequences
+                    .iter()
+                    .flat_map(|sequence| sequence.mechanisms.iter().copied()),
+            )
             .collect();
         served.sort_unstable();
         let pieces: Vec<crate::PieceId> = seals.iter().map(|seal| seal.piece).collect();
@@ -2186,8 +2206,32 @@ impl ZoneContent {
         self.mechanisms = mechanisms;
         self.seals = seals;
         self.wards = wards;
+        self.sequences = sequences;
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
+    }
+
+    /// Ordered mechanism sequences (#1019), in ID order.
+    #[must_use]
+    pub fn sequences(&self) -> &[crate::MechanismSequence] {
+        &self.sequences
+    }
+
+    /// The sequence `id` (#1019), if any.
+    #[must_use]
+    pub fn sequence(&self, id: crate::SequenceId) -> Option<&crate::MechanismSequence> {
+        self.sequences
+            .binary_search_by_key(&id, |sequence| sequence.id)
+            .ok()
+            .map(|index| &self.sequences[index])
+    }
+
+    /// The sequence mechanism `id` belongs to (#1019), if any.
+    #[must_use]
+    pub fn sequence_of(&self, id: crate::MechanismId) -> Option<&crate::MechanismSequence> {
+        self.sequences
+            .iter()
+            .find(|sequence| sequence.mechanisms.contains(&id))
     }
 
     /// Mechanisms (#1019), in ID order.
@@ -2335,8 +2379,10 @@ impl ZoneContent {
             .any(|pair| pair[0].npc == pair[1].npc)
             || confrontations.iter().any(|confrontation| {
                 self.npc(confrontation.npc).is_none()
-                    || crate::item_template(confrontation.evidence)
-                        .is_none_or(|template| template.slot.is_some())
+                    || confrontation.evidence.is_some_and(|evidence| {
+                        crate::item_template(evidence)
+                            .is_none_or(|template| template.slot.is_some())
+                    })
                     || !self
                         .creature_spawns()
                         .iter()
@@ -2345,6 +2391,19 @@ impl ZoneContent {
             })
         {
             return Err(ZoneError::new("npc confrontations are invalid"));
+        }
+        // A decision's fight option (#1019) turns its NPC through that NPC's confrontation.
+        let unarmed = self.quests.iter().any(|quest| {
+            quest.decision.iter().any(|option| option.fight)
+                && quest.objectives.iter().any(|objective| match *objective {
+                    crate::QuestObjective::Decide { npc } => confrontations
+                        .binary_search_by_key(&npc, |confrontation| confrontation.npc)
+                        .is_err(),
+                    _ => false,
+                })
+        });
+        if unarmed {
+            return Err(ZoneError::new("a fight option's npc has no confrontation"));
         }
         let mut quest_npcs: Vec<crate::NpcId> = self
             .quests
@@ -2719,6 +2778,19 @@ impl ZoneContent {
             hash.u32(ward.template.get());
             hash.u32(ward.mechanism.get());
         }
+        // Ordered sequences (#1019), only where authored.
+        if !self.sequences.is_empty() {
+            hash.bytes(b"sequences");
+            hash.len(self.sequences.len());
+            for sequence in &self.sequences {
+                hash.u32(sequence.id.get());
+                hash.text(&sequence.name);
+                hash.len(sequence.mechanisms.len());
+                for mechanism in &sequence.mechanisms {
+                    hash.u32(mechanism.get());
+                }
+            }
+        }
         hash.len(self.departures.len());
         for departure in &self.departures {
             hash.u32(departure.npc.get());
@@ -2747,11 +2819,15 @@ impl ZoneContent {
             }
             hash.u8(u8::from(attitude.sponsor));
             hash.u32(attitude.recommendation.map_or(0, crate::QuestId::get));
+            // Distrust of a staff shown in hand (#1019), only where authored.
+            if attitude.arcane {
+                hash.bytes(b"arcane");
+            }
         }
         hash.len(self.confrontations.len());
         for confrontation in &self.confrontations {
             hash.u32(confrontation.npc.get());
-            hash.u32(confrontation.evidence.get());
+            hash.u32(confrontation.evidence.map_or(0, crate::ItemId::get));
             hash.u32(confrontation.foe.get());
         }
         // Escort companions (#1019), where authored.
@@ -3560,6 +3636,10 @@ impl ZoneContent {
                         hash.u32(to.get());
                     }
                     crate::QuestObjective::Recruit { npc } => hash.u32(npc.get()),
+                    crate::QuestObjective::WorkInOrder { sequence, count } => {
+                        hash.u32(sequence.get());
+                        hash.u8(count);
+                    }
                 }
             }
             hash.u32(quest.rewards.experience);
@@ -3597,6 +3677,14 @@ impl ZoneContent {
                     if option.copper > 0 {
                         hash.bytes(b"paid");
                         hash.u32(option.copper);
+                    }
+                    // An option that acts in the world (#1019), only where authored.
+                    if let Some(item) = option.hands {
+                        hash.bytes(b"hands");
+                        hash.u32(item.get());
+                    }
+                    if option.fight {
+                        hash.bytes(b"fight");
                     }
                 }
             }

@@ -211,4 +211,6 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "flock-unsettled": null,
   "flock-fell": null,
   "stray-bolted": null,
+  "out-of-order": null,
+  "staff-shown": null,
 };

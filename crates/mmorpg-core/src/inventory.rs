@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 45] = [
+pub const ITEM_CATALOG: [ItemTemplate; 46] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -474,6 +474,15 @@ pub const ITEM_CATALOG: [ItemTemplate; 45] = [
     ItemTemplate {
         id: ItemId::new(45),
         name: "Wolf Snare",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    // The barrow's torc Cobb the Digger took (#1019), worth nothing to a vendor.
+    ItemTemplate {
+        id: ItemId::new(46),
+        name: "Barrow Torc",
         max_stack: 1,
         slot: None,
         weapon: None,
