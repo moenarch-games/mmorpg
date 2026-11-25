@@ -705,7 +705,9 @@ impl Resident {
             | "Guardsman Tam Hollis"
             | "Watchman Dunstan"
             // The Downs road's lookout (#1019).
-            | "Lookout Brenna" => Some(Self::Guard),
+            | "Lookout Brenna"
+            // Fenford's watchman at the ford (#1019).
+            | "Watchman Corwin" => Some(Self::Guard),
             "Innkeeper Bram Tolliver" => Some(Self::Innkeeper),
             "Farmer Osric Mill" => Some(Self::Farmer),
             "Brother Aldous" => Some(Self::Healer),
@@ -745,7 +747,9 @@ impl Resident {
             | "Granary Hand Piet"
             | "Granary Hand Wilm"
             // Barrowdown's grave robber (#1019).
-            | "Cobb the Digger" => Some(Self::Villager),
+            | "Cobb the Digger"
+            // Fenford's boatman above the ford (#1019).
+            | "Boatman Teague" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -1059,6 +1063,9 @@ mod tests {
                 Some("resident.farmer"),
                 // The Downs road's Lookout Brenna (#1019).
                 Some("resident.guard"),
+                // Fenford's Watchman Corwin and Boatman Teague (#1019).
+                Some("resident.guard"),
+                Some("resident.farmer"),
             ])
             .collect::<Vec<_>>()
         );

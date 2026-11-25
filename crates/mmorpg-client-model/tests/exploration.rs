@@ -152,6 +152,34 @@ fn a_hidden_find_reads_its_directions_and_marks_nothing_on_the_map() {
             "Pay Lise for the grazing yourself (20 copper)"
         ]
     );
+
+    // Fenford's smuggler's token (#1019): the shipment is found from its directions with no map
+    // hint, and each option at the watchman names what it pays at the turn-in.
+    let token = content.quest(QuestId::new(77)).unwrap();
+    assert_eq!(
+        objective_label(token.objectives[0], &content),
+        "Find Smuggler's Token in sailcloth among the alder roots, upstream of the boatman's mooring"
+    );
+    let map = exploration_map(&content, &BTreeSet::new(), Some(&sheet(77, [0; 3])));
+    assert!(
+        map.hints.iter().all(|hint| !hint.label.starts_with("Find")),
+        "{:?}",
+        map.hints
+    );
+    // The sheet carries the find's count from the bag.
+    let watchman = NpcId::new(62);
+    assert_eq!(
+        decision_at(&content, &sheet(77, [0, 1, 0]).entries, watchman),
+        None
+    );
+    let decision = decision_at(&content, &sheet(77, [1, 1, 0]).entries, watchman).unwrap();
+    assert_eq!(
+        decision.options,
+        [
+            "Hand the token to the Watch (+20 copper)",
+            "Say nothing; Osk settles it (+10 copper)"
+        ]
+    );
 }
 
 /// Points of interest (#1063) show only in discovered areas, each kind with its own marker, and

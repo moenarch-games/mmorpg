@@ -196,7 +196,22 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
                 .unwrap_or("the seal")
         ),
         QuestObjective::Decide { npc } => {
-            format!("Decide what becomes of {}", objective_npc(content, npc))
+            // A decision over an item the quest had the player bring first, such as Fenford's
+            // smuggler's token (#1019), is about that item, told to the NPC.
+            let subject = content.quests().iter().find_map(|quest| {
+                let index = quest.objectives.iter().position(|o| *o == objective)?;
+                quest.objectives[..index]
+                    .iter()
+                    .find_map(|earlier| earlier.carried_item())
+            });
+            match subject {
+                Some(id) => format!(
+                    "Tell {} what becomes of the {}",
+                    objective_npc(content, npc),
+                    item(id)
+                ),
+                None => format!("Decide what becomes of {}", objective_npc(content, npc)),
+            }
         }
         // Lise's flock (#1019): "Drive Lise's Stray Ewe into Lise's fold", "Keep 2 of the 3 ewes
         // standing through the watch", "Lay Tainted Mutton at the north-east gap in the hedge".
@@ -611,15 +626,19 @@ pub fn decision_at(
                 .iter()
                 .zip(entry.progress)
                 .all(|(earlier, count)| count >= earlier.required());
-        // A paid option (#1019) names its price.
+        // A paid option (#1019) names its price, and one that pays at the turn-in its reward.
         ready.then(|| DecisionView {
             quest: quest.id,
             options: quest
                 .decision
                 .iter()
-                .map(|option| match option.copper {
-                    0 => option.label.clone(),
-                    copper => format!("{} ({copper} copper)", option.label),
+                .map(|option| match (option.copper, option.reward) {
+                    (0, 0) => option.label.clone(),
+                    (0, reward) => format!("{} (+{reward} copper)", option.label),
+                    (copper, 0) => format!("{} ({copper} copper)", option.label),
+                    (copper, reward) => {
+                        format!("{} ({copper} copper, +{reward} copper)", option.label)
+                    }
                 })
                 .collect(),
         })
