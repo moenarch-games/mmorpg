@@ -57,6 +57,9 @@ pub mod templates {
     pub const SOUTHWOOD_STAG: CreatureTemplateId = CreatureTemplateId::new(26);
     /// The courier at the east gate once he drops his act (#1019).
     pub const REDBRAND_COURIER: CreatureTemplateId = CreatureTemplateId::new(27);
+    /// The Sunken Shrine's guardian in its sealed vault (#1019): warded until a glyph exposes its
+    /// weak point.
+    pub const SHRINE_WARDEN: CreatureTemplateId = CreatureTemplateId::new(28);
 }
 
 /// Default respawn time: 60 s.
@@ -132,7 +135,7 @@ type TemplateRow = (
 );
 
 #[rustfmt::skip]
-const TEMPLATES: [TemplateRow; 26] = {
+const TEMPLATES: [TemplateRow; 27] = {
     use CreatureBehaviour::{Aggressive, Neutral, Prop};
     use CreatureFamily::{Adder, Bat, Bear, Boar, Crayfish, Lurker, Lynx, Marauder, Mirefin, Ogre, Redbrand, Spider, Stag, Vermin, Wolf};
     use crate::PropKind;
@@ -180,6 +183,9 @@ const TEMPLATES: [TemplateRow; 26] = {
         (SOUTHWOOD_STAG, "Southwood Stag", Stag, Neutral, [3, 4], false, 80, 16, [5, 9], 1, crate::ticks_from_ms(3_000), RESPAWN_TICKS, STAG),
         // The east gate's courier (#1019): a level 4 bandit's body; he stands only when unmasked.
         (REDBRAND_COURIER, "Redbrand Courier", Redbrand, Aggressive, [4, 4], false, 75, 16, [4, 7], 0, crate::ticks_from_ms(2_200), RESPAWN_TICKS, HUMANOID),
+        // The Sunken Shrine's warden (#1019): a level 6 elite of an ogre's frame and heavy, slow blows,
+        // turned aside by its ward until a glyph exposes its weak point; Garrick's respawn.
+        (SHRINE_WARDEN, "Shrine Warden", Ogre, Aggressive, [6, 6], true, 420, 0, [9, 15], 0, crate::ticks_from_ms(2_800), GARRICK_RESPAWN_TICKS, OGRE),
     ]
 };
 
@@ -518,6 +524,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::crayfish::spawns())
         // The Southwood stags (#997).
         .chain(super::stag::spawns())
+        // The Sunken Shrine's warden in its sealed vault (#1019).
+        .chain(super::shrine::vault::spawns())
         // The Core Vale's confrontation foes (#1019).
         .chain(super::quests::spawns())
         .collect()

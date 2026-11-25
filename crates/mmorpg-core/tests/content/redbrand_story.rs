@@ -45,6 +45,7 @@ fn character(name: &str, garrick_slain: u8) -> CharacterRecord {
             progress: [garrick_slain, 0, 0],
         }],
         completed: before_garrick(),
+        outcomes: Default::default(),
     };
     record
 }

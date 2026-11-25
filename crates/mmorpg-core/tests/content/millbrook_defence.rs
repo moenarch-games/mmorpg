@@ -164,6 +164,7 @@ fn farmhand(done: QuestId) -> Player {
     record.quests = QuestLog {
         entries: Vec::new(),
         completed,
+        outcomes: Default::default(),
     };
     let [x, z] = content.npc(quests::OSRIC_MILL).unwrap().position;
     record.location = CharacterLocation {

@@ -20,6 +20,7 @@ EXAMPLES = [
     ("mmorpg-core", "escort_step_work"),
     ("mmorpg-core", "carry_step_work"),
     ("mmorpg-core", "defence_step_work"),
+    ("mmorpg-core", "seal_step_work"),
     ("sim-foundation", "grounded_work"),
     ("mmorpg-game-server", "claim_expiry_work"),
     ("mmorpg-game-server", "departure_poll_work"),

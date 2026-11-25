@@ -33,6 +33,7 @@ mod progression_rules;
 mod quests;
 mod recovery;
 mod routines;
+mod seal_step;
 mod vendor;
 mod waystones;
 mod workload_stats;

@@ -77,11 +77,24 @@ pub const FALLEN_BLOCKS: [i32; 2] = [4_700, -5_050];
 /// The altar's base centre, its carved front facing back down the cave.
 pub const ALTAR: ([i32; 2], u16) = ([11_900, CAVE_Z], facing::WEST);
 
-/// Whether the terrain is flattened to [`FLOOR_Y`] at `(x, z)`: on the plaza, the cave floor
-/// or under the air-pocket room.
+/// The sealed passage beyond the altar (#1019): the cave's former end wall, now the shrine's
+/// seal at its start.
+pub const PASSAGE: ([i32; 2], [i32; 2]) = ([12_000, -5_600], [12_400, -5_200]);
+/// The guardian's vault (#1019): a second 8 × 8 m kit room beyond the passage, dry because the
+/// seal held the lake back, then a last tunnel cell to its end wall.
+pub const VAULT: ([i32; 2], [i32; 2]) = ([12_400, -5_800], [13_200, -5_000]);
+pub const VAULT_END: ([i32; 2], [i32; 2]) = ([13_200, -5_600], [13_600, -5_200]);
+/// The ground under the vault stays flat over the grid vertices around it, as under the room.
+const VAULT_FLOOR: ([i32; 2], [i32; 2]) = ([12_400, -6_000], [13_200, -4_800]);
+/// The seal's stone across the passage's start: 1 m thick, the cave's height and width.
+pub const SEAL: ([i32; 3], [i32; 3]) =
+    ([12_050, FLOOR_Y + CLEAR / 2, CAVE_Z], [50, CLEAR / 2, 200]);
+
+/// Whether the terrain is flattened to [`FLOOR_Y`] at `(x, z)`: on the plaza, the cave floor,
+/// under the air-pocket room, along the sealed passage or under the vault (#1019).
 #[must_use]
 pub fn flattens(x: i32, z: i32) -> bool {
-    [PLAZA, CAVE, ROOM_FLOOR]
+    [PLAZA, CAVE, ROOM_FLOOR, PASSAGE, VAULT_FLOOR, VAULT_END]
         .iter()
         .any(|(min, max)| (min[0]..=max[0]).contains(&x) && (min[1]..=max[1]).contains(&z))
 }
@@ -157,33 +170,95 @@ pub fn ruins(first_id: u32) -> Vec<StaticCollider> {
         .collect()
 }
 
-/// The cave's rock walls from `first_id`: north and south along its length either side of the
-/// room, the end wall behind the altar, the room's own side walls up to its vault, and its
-/// four shoulders.
+/// The cave's rock walls from `first_id`: north and south along its length (on through the
+/// sealed passage) either side of the room, the room's own side walls up to its vault, and its
+/// four shoulders. The seal (#1019) closes the passage where the end wall stood.
 #[must_use]
 pub fn walls(first_id: u32) -> Vec<StaticCollider> {
     let [(min, max)] = [CAVE];
-    let ([rx0, rz0], [rx1, rz1]) = ROOM;
-    let (end, side) = (max[0] + CELL, CELL);
-    let [deep, off] = SHOULDER;
+    let ([rx0, _], [rx1, _]) = ROOM;
+    let (end, side) = (PASSAGE.1[0], CELL);
     let parts = [
         ([min[0], max[1]], [rx0, max[1] + side], CLEAR),
         ([rx1, max[1]], [end, max[1] + side], CLEAR),
         ([min[0], min[1] - side], [rx0, min[1]], CLEAR),
         ([rx1, min[1] - side], [end, min[1]], CLEAR),
-        ([max[0], min[1]], [end, max[1]], CLEAR),
+    ]
+    .into_iter()
+    .chain(room_walls(ROOM));
+    parts
+        .zip(first_id..)
+        .map(|((min, max, height), id)| block(id, min, max, FLOOR_Y, height))
+        .collect()
+}
+
+/// A kit room's side walls up to its vault and its four shoulders, as `(min, max, height)`.
+fn room_walls(([rx0, rz0], [rx1, rz1]): ([i32; 2], [i32; 2])) -> [([i32; 2], [i32; 2], i32); 6] {
+    let side = CELL;
+    let [deep, off] = SHOULDER;
+    [
         ([rx0, rz1], [rx1, rz1 + 2 * side - 200], ROOM_CLEAR),
         ([rx0, rz0 - 2 * side + 200], [rx1, rz0], ROOM_CLEAR),
         ([rx0, rz0], [rx0 + deep, CAVE_Z - off], ROOM_CLEAR),
         ([rx0, CAVE_Z + off], [rx0 + deep, rz1], ROOM_CLEAR),
         ([rx1 - deep, rz0], [rx1, CAVE_Z - off], ROOM_CLEAR),
         ([rx1 - deep, CAVE_Z + off], [rx1, rz1], ROOM_CLEAR),
-    ];
-    parts
-        .iter()
+    ]
+}
+
+/// The guardian's vault (#1019) from `first_id`: the kit room's side walls and shoulders, the
+/// last cell's north and south walls, and its end wall.
+#[must_use]
+pub fn vault_walls(first_id: u32) -> Vec<StaticCollider> {
+    let (min, max) = VAULT_END;
+    let end = max[0] + CELL;
+    room_walls(VAULT)
+        .into_iter()
+        .chain([
+            ([min[0], max[1]], [end, max[1] + CELL], CLEAR),
+            ([min[0], min[1] - CELL], [end, min[1]], CLEAR),
+            ([max[0], min[1]], [end, max[1]], CLEAR),
+        ])
         .zip(first_id..)
-        .map(|(&(min, max, height), id)| block(id, min, max, FLOOR_Y, height))
+        .map(|((min, max, height), id)| block(id, min, max, FLOOR_Y, height))
         .collect()
+}
+
+/// The rock cover over the vault (#1019): the room's two cover cells, the cave's last tunnel cell
+/// and its end cell, moved beyond the passage; IDs from `first_id`.
+#[must_use]
+pub fn vault_cover(first_id: u32) -> Vec<crate::StaticMesh> {
+    let meshes = collision_meshes();
+    let cell = |from: i32| {
+        meshes
+            .iter()
+            .find(|mesh| {
+                mesh.vertices
+                    .iter()
+                    .map(|vertex| vertex[0] + mesh.position[0])
+                    .min()
+                    == Some(from)
+            })
+            .cloned()
+            .expect("the rock cover has a cell there")
+    };
+    let [room0, room1] = [ROOM.0[0], ROOM.0[0] + CELL];
+    let shift = VAULT.0[0] - ROOM.0[0];
+    let tail = VAULT_END.0[0] - (CAVE.1[0] - CELL);
+    [
+        (cell(room0), shift),
+        (cell(room1), shift),
+        (cell(CAVE.1[0] - CELL), tail),
+        (cell(CAVE.1[0]), tail),
+    ]
+    .into_iter()
+    .zip(first_id..)
+    .map(|((mut mesh, dx), id)| {
+        mesh.id = id;
+        mesh.position[0] += dx;
+        mesh
+    })
+    .collect()
 }
 
 /// Repository-authored closed rock cover, with the former roof IDs and shared cell edges.

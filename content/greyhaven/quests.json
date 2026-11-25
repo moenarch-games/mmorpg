@@ -467,7 +467,52 @@
       "prerequisite": 45,
       "objectives": [{"aid": {"chore": "mend", "count": 1}}, {"aid": {"chore": "tend", "count": 1}}],
       "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 47,
+      "name": "The Drowned Inscription",
+      "text": "The relic bears marks I cannot read, and the same marks run round the shrine's arch under the lake. Dive to its lakeward face, take a rubbing of the inscription and bring it to me.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 10,
+      "objectives": [{"transcribe": {"spot": 9, "item": 42}}],
+      "rewards": {"experience": 250, "copper": 20, "choices": []}
+    },
+    {
+      "id": 48,
+      "name": "The Shrine's Seal",
+      "text": "The rubbing names a seal past the altar and two glyphs that sink it: one by the plaza's south wall, one in the cave's air room. Work both within a minute of each other and the passage opens.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 47,
+      "objectives": [{"unseal": {"piece": 6}}],
+      "rewards": {"experience": 350, "copper": 30, "choices": []}
+    },
+    {
+      "id": 49,
+      "name": "The Guardian Below",
+      "text": "Something guards the vault behind that seal, and blades slide off it. The rubbing speaks of a third glyph by its far wall that bares the warden's heart. Work it, strike while it is open, and bring friends.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 48,
+      "objectives": [{"kill": {"template": 28, "count": 1}}],
+      "rewards": {"experience": 700, "copper": 60, "choices": [12, 13, 14]}
+    },
+    {
+      "id": 50,
+      "name": "The Ledger's Other Half",
+      "text": "Hilda's ledger lost a load, the courier carried a forged pass, and Davin saw who met him. Hear Davin out, read the toll book at Greyfang Watch, then face Watchman Garth. Expose him to me or keep him as our ear.",
+      "giver": 1,
+      "ender": 1,
+      "prerequisite": 41,
+      "requires": [28, 36],
+      "objectives": [{"talk": {"npc": 13}}, {"inspect": {"spot": 10}}, {"decide": {"npc": 34}}],
+      "decision": ["Expose Garth to the Marshal", "Keep Garth as an informant"],
+      "rewards": {"experience": 600, "copper": 50, "choices": []}
     }
+  ],
+  "departures": [
+    {"npc": 34, "quest": 50, "outcome": 1}
   ],
   "attitudes": [
     {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36}
@@ -483,7 +528,9 @@
     {"id": 5, "name": "the second red rag", "at": [-7600, 1100, -400], "reach": 250},
     {"id": 6, "name": "the courier's cache", "at": [-8300, 1100, -1300], "reach": 250},
     {"id": 7, "name": "Hilda's ledger", "at": [-2650, -10, 3000], "reach": 200},
-    {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250}
+    {"id": 8, "name": "Millbrook's delivery tally", "at": [6550, 1100, 3950], "reach": 250},
+    {"id": 9, "name": "the drowned inscription", "at": [-7620, 200, -5400], "reach": 250},
+    {"id": 10, "name": "the Greyfang toll book", "at": [13500, 8299, -88200], "reach": 200}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},

@@ -51,6 +51,7 @@ fn walker() -> Player {
     walker_with(QuestLog {
         entries: Vec::new(),
         completed: [quests::THE_WOLFRUN_CART].into(),
+        outcomes: Default::default(),
     })
 }
 
@@ -164,6 +165,7 @@ fn characters_saved_under_the_old_wolf_quests_still_load() {
             progress,
         }],
         completed: Default::default(),
+        outcomes: Default::default(),
     });
     assert_eq!(
         player.log().entries,
@@ -176,6 +178,7 @@ fn characters_saved_under_the_old_wolf_quests_still_load() {
     let mut player = walker_with(QuestLog {
         entries: Vec::new(),
         completed: [quests::THE_WOLFRUN_CART, quests::PELTS_FOR_THE_TANNER].into(),
+        outcomes: Default::default(),
     });
     player.beside(quests::TANNER);
     let events = player.send(ZoneCommand::AcceptQuest {

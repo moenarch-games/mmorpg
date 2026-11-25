@@ -120,6 +120,19 @@ impl ZoneSimulation {
             })
     }
 
+    /// Whether `npc` left `player_id`'s world (#1019): a [`crate::NpcDeparture`] whose quest the
+    /// character turned in with its outcome. Everyone else still sees and reaches it.
+    #[must_use]
+    pub fn npc_departed(&self, player_id: PlayerId, npc: NpcId) -> bool {
+        let Some(player) = self.players.get(&player_id) else {
+            return false;
+        };
+        self.content.departures().iter().any(|departure| {
+            departure.npc == npc
+                && player.quests.outcome(departure.quest) == Some(departure.outcome)
+        })
+    }
+
     /// The running escort of `npc`, if any.
     #[must_use]
     pub fn escort(&self, npc: NpcId) -> Option<&EscortState> {
@@ -171,15 +184,17 @@ impl ZoneSimulation {
         Ok(Admission::Refused)
     }
 
-    /// The `QuestAction` intent (#1019) at `npc`: see the module documentation.
+    /// The `QuestAction` intent (#1019) at `npc`, or with `decision` the `Decide` intent: see the
+    /// module documentation.
     pub(crate) fn quest_action(
         &mut self,
         player_id: PlayerId,
         npc: NpcId,
+        decision: Option<u8>,
     ) -> Result<Refusal, ZoneError> {
         let target = Some(EntityRef::Npc(npc));
         let content = Arc::clone(&self.content);
-        if content.npc(npc).is_none() || self.npc_hidden(npc) {
+        if content.npc(npc).is_none() || self.npc_hidden(npc) || self.npc_departed(player_id, npc) {
             return Ok(Some((ErrorCode::InvalidTarget, target)));
         }
         if !self.within_quest_reach(player_id, npc)? {
@@ -196,7 +211,12 @@ impl ZoneSimulation {
             };
             let current = crate::quest::progress(quest, entry, &player.inventory, *player.depths);
             for (index, objective) in quest.objectives.iter().enumerate() {
-                if objective.action_npc() != Some(npc) || current[index] >= objective.required() {
+                // A decision is only ever decided, never acted on (#1019).
+                let deciding = matches!(objective, QuestObjective::Decide { .. });
+                if objective.action_npc() != Some(npc)
+                    || current[index] >= objective.required()
+                    || deciding != decision.is_some()
+                {
                     continue;
                 }
                 let ready = quest.objectives[..index]
@@ -271,6 +291,36 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::NotCarrying, target)));
                 }
                 self.complete_objective(player_id, quest, index);
+            }
+            // A decision (#1019) stores the chosen option until the turn-in keeps it.
+            QuestObjective::Decide { .. } => {
+                let Some(option) = decision.filter(|option| {
+                    content.quest(quest).is_some_and(|definition| {
+                        (1..=definition.decision.len()).contains(&usize::from(*option))
+                    })
+                }) else {
+                    return Ok(Some((ErrorCode::InvalidQuest, target)));
+                };
+                let player = self
+                    .players
+                    .get_mut(&player_id)
+                    .ok_or_else(|| ZoneError::new("deciding player is absent"))?;
+                if let Some(entry) = player
+                    .quests
+                    .entries
+                    .iter_mut()
+                    .find(|entry| entry.quest == quest)
+                {
+                    entry.progress[index] = option;
+                    push_event(
+                        &mut player.events,
+                        ZoneEvent::QuestProgress {
+                            quest,
+                            objective: u8::try_from(index).unwrap_or(u8::MAX),
+                            count: 1,
+                        },
+                    );
+                }
             }
             // A defence (#1019) starts at its NPC; it completes when it holds.
             QuestObjective::Defend { .. } => {

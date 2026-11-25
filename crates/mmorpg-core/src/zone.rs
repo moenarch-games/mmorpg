@@ -316,6 +316,11 @@ pub struct ZoneTickWork {
     pub loads_visited: usize,
     /// Construction sites the construction step visited (#1019): each content site once.
     pub constructions_visited: usize,
+    /// Seals and wards the mechanism step visited (#1019): each content seal and ward once.
+    pub mechanisms_visited: usize,
+    /// Bodies the mechanism step's chamber queries returned (#1019): only while an open seal is due to
+    /// close, the bodies in its chamber's box, never the zone's idle players.
+    pub seal_bodies_checked: usize,
     /// Raiders on the assault the raid step checked against the objective and, in a defence,
     /// its civilians (#1019): each living assault raider once.
     pub raid_raiders_visited: usize,
@@ -393,6 +398,10 @@ pub struct ZoneSimulation {
     pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
     /// Every construction site's material and raising (#1019), canonical.
     pub(crate) constructions: BTreeMap<crate::PieceId, crate::ConstructionState>,
+    /// Every seal's set mechanisms and opening, and every ward's exposure (#1019), canonical, in
+    /// content order.
+    pub(crate) seals: Vec<crate::SealState>,
+    pub(crate) wards: Vec<crate::WardState>,
     /// The private run bound to this depths zone (#404); `None` in every other zone.
     pub(crate) depths: Option<crate::DepthsRun>,
     /// Where bodies stood over the last ticks, for capped hit rewind (#680); canonical,
@@ -525,6 +534,7 @@ impl ZoneSimulation {
         // Destructible pieces (#305) stand intact.
         let pieces = Self::build_pieces(&mut world, &content)?;
         let constructions = Self::build_constructions(&content);
+        let (seals, wards) = Self::build_mechanisms(&content);
         // Platforms (#56) start at their tick-0 centre.
         for platform in content.platforms() {
             let [x, y, z] = platform.centre_at(0);
@@ -594,6 +604,8 @@ impl ZoneSimulation {
             escorts: BTreeMap::new(),
             loads: BTreeMap::new(),
             constructions,
+            seals,
+            wards,
             depths: None,
             rewind_history: crate::rewind::RewindHistory::new(),
             rewards: None,
@@ -951,6 +963,8 @@ impl ZoneSimulation {
             ZoneCommand::Gather { node } => Some(PlayerIntent::Gather(node)),
             ZoneCommand::Inspect { spot } => Some(PlayerIntent::Inspect(spot)),
             ZoneCommand::QuestAction { npc } => Some(PlayerIntent::QuestAction(npc)),
+            ZoneCommand::Decide { npc, option } => Some(PlayerIntent::Decide(npc, option)),
+            ZoneCommand::Operate { mechanism } => Some(PlayerIntent::Operate(mechanism)),
             ZoneCommand::Lift { source } => Some(PlayerIntent::Lift(source)),
             ZoneCommand::SetDown => Some(PlayerIntent::SetDown),
             ZoneCommand::Skin { creature } => Some(PlayerIntent::Skin(creature)),
@@ -1069,6 +1083,8 @@ impl ZoneSimulation {
         self.regrow_pieces(now)?;
         // Construction sites rise, stand their time or come down (#1019).
         self.advance_constructions(now)?;
+        // Shrine glyphs drop back and open seals close again (#1019).
+        self.advance_mechanisms(now)?;
         self.advance_summoned(now);
         self.advance_raid(now)?;
         self.advance_hunt(now)?;

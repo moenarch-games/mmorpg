@@ -698,8 +698,13 @@ impl ZoneSimulation {
                     },
                 }
             }
-            // A confronted NPC (#1019) is out of the world while its foe stands.
-            EntityRef::Npc(npc_id) if self.npc_hidden(npc_id) => return Ok(None),
+            // A confronted NPC (#1019) is out of the world while its foe stands, and a departed one
+            // out of its viewer's.
+            EntityRef::Npc(npc_id)
+                if self.npc_hidden(npc_id) || self.npc_departed(viewer, npc_id) =>
+            {
+                return Ok(None);
+            }
             EntityRef::Npc(npc_id) => {
                 let npc = self
                     .content

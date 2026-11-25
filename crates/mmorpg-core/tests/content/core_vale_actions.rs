@@ -46,6 +46,7 @@ impl World {
             record.quests = QuestLog {
                 entries: Vec::new(),
                 completed: completed.iter().copied().collect(),
+                outcomes: Default::default(),
             };
             let [x, z] = content.npc(quests::MARSHAL).unwrap().position;
             record.location = CharacterLocation {

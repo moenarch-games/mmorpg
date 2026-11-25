@@ -32,8 +32,8 @@ use serde::Deserialize;
 
 use crate::{
     AidChore, AreaId, Confrontation, CreatureId, CreatureTemplateId, EvidenceId, EvidenceSpot,
-    ItemId, LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcId, PieceId, PlayerClass, Quest,
-    QuestId, QuestObjective, QuestRewards, QuestSupply,
+    ItemId, LoadKind, LoadSpot, LoadSpotId, NpcAttitude, NpcDeparture, NpcId, PieceId, PlayerClass,
+    Quest, QuestId, QuestObjective, QuestRewards, QuestSupply,
 };
 use strum::VariantArray;
 
@@ -220,6 +220,17 @@ struct Source {
     /// NPCs who turn hostile when shown evidence (#1019).
     #[serde(default)]
     confrontations: Vec<ConfrontationSource>,
+    /// NPCs who leave a character's world after its quest decision (#1019).
+    #[serde(default)]
+    departures: Vec<DepartureSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DepartureSource {
+    npc: u32,
+    quest: u32,
+    outcome: u8,
 }
 
 #[derive(Deserialize)]
@@ -278,6 +289,12 @@ struct QuestSource {
     /// What the giver hands over on accepting (#1019).
     #[serde(default)]
     supplies: Vec<SupplySource>,
+    /// Further quests to turn in first (#1019).
+    #[serde(default)]
+    requires: Vec<u32>,
+    /// A decide objective's options (#1019).
+    #[serde(default)]
+    decision: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -300,6 +317,9 @@ enum ObjectiveSource {
     Build { piece: u32 },
     Defend { npc: u32 },
     Aid { chore: ChoreSource, count: u8 },
+    Transcribe { spot: u32, item: u32 },
+    Unseal { piece: u32 },
+    Decide { npc: u32 },
 }
 
 /// An aid objective's chore (#1019).
@@ -406,6 +426,16 @@ impl From<ObjectiveSource> for QuestObjective {
                 },
                 count,
             },
+            ObjectiveSource::Transcribe { spot, item } => Self::Transcribe {
+                spot: EvidenceId::new(spot),
+                item: ItemId::new(item),
+            },
+            ObjectiveSource::Unseal { piece } => Self::Unseal {
+                piece: PieceId::new(piece),
+            },
+            ObjectiveSource::Decide { npc } => Self::Decide {
+                npc: NpcId::new(npc),
+            },
         }
     }
 }
@@ -417,6 +447,7 @@ struct Parsed {
     loads: Vec<LoadSpot>,
     attitudes: Vec<NpcAttitude>,
     confrontations: Vec<Confrontation>,
+    departures: Vec<NpcDeparture>,
 }
 
 fn parse(source: &str) -> Result<Parsed, String> {
@@ -451,6 +482,8 @@ fn parse(source: &str) -> Result<Parsed, String> {
                         })
                     })
                     .collect::<Result<_, String>>()?,
+                requires: quest.requires.into_iter().map(QuestId::new).collect(),
+                decision: quest.decision,
             })
         })
         .collect::<Result<_, String>>()?;
@@ -499,12 +532,22 @@ fn parse(source: &str) -> Result<Parsed, String> {
             })
         })
         .collect::<Result<_, String>>()?;
+    let departures = source
+        .departures
+        .into_iter()
+        .map(|departure| NpcDeparture {
+            npc: NpcId::new(departure.npc),
+            quest: QuestId::new(departure.quest),
+            outcome: departure.outcome,
+        })
+        .collect();
     Ok(Parsed {
         quests,
         evidence,
         loads,
         attitudes,
         confrontations,
+        departures,
     })
 }
 
@@ -563,4 +606,15 @@ pub fn attitudes() -> Vec<NpcAttitude> {
 #[must_use]
 pub fn confrontations() -> Vec<Confrontation> {
     source().confrontations
+}
+
+/// The NPCs who leave a character's world after its quest decision (#1019), as
+/// `content/greyhaven/quests.json` lists them.
+///
+/// # Panics
+///
+/// When the committed quest file does not parse.
+#[must_use]
+pub fn departures() -> Vec<NpcDeparture> {
+    source().departures
 }

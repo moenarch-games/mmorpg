@@ -158,6 +158,10 @@ pub enum ErrorCode {
     /// The raid site is not ready for a defence (#1019): a raid or defence is still running, or
     /// the site is still being mended or tended after the last one.
     SiteNotReady,
+    /// The seal already stands open (#1019): its glyphs rest until it closes again.
+    SealOpen,
+    /// A ward turns the blow aside (#1019): work its mechanism to expose the weak point first.
+    Warded,
 }
 
 /// One feedback event addressed to a player.

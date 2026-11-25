@@ -35,6 +35,7 @@ fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
         supports: Vec::new(),
         name: String::new(),
         rubble,
+        material: mmorpg_core::PieceMaterial::Timber,
     };
     let pieces = vec![
         wall(1, -300, Some(([-300, 20, -1_450], [40, 20, 150]))),
@@ -49,6 +50,7 @@ fn content(regrowth_ticks: u32) -> Arc<ZoneContent> {
             supports: vec![PieceId::new(1), PieceId::new(2)],
             name: String::new(),
             rubble: None,
+            material: mmorpg_core::PieceMaterial::Timber,
         },
     ];
     let content = arena::arena(

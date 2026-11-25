@@ -7,6 +7,11 @@
     {"id":"evidence-couriers-cache","asset":"discoveries.kit.supply-crates","position":[-8300,1100,-1300],"yaw":8000,"scale":[1000,1000,1000]},
     {"id":"evidence-hildas-ledger","asset":"discoveries.kit.hunter-chest","position":[-2650,-10,3000],"yaw":16384,"scale":[1000,1000,1000]},
     {"id":"evidence-delivery-tally","asset":"discoveries.kit.supply-crates","position":[6550,1100,3950],"yaw":49152,"scale":[900,900,900]},
-    {"id":"quest-timber-pile","asset":"settlement.props.firewood","position":[7000,1100,4400],"yaw":16384,"scale":[1300,1300,1300]}
+    {"id":"quest-timber-pile","asset":"settlement.props.firewood","position":[7000,1100,4400],"yaw":16384,"scale":[1300,1300,1300]},
+    {"id":"quest-drowned-inscription","asset":"discoveries.kit.fen-marker","position":[-7620,200,-5400],"yaw":16384,"scale":[900,900,900]},
+    {"id":"quest-greyfang-toll-book","asset":"discoveries.kit.hunter-chest","position":[13500,8299,-88200],"yaw":32768,"scale":[900,900,900]},
+    {"id":"quest-lakeward-glyph","asset":"discoveries.kit.fen-marker","position":[-8500,200,-4960],"yaw":0,"scale":[800,800,800]},
+    {"id":"quest-cave-glyph","asset":"discoveries.kit.fen-marker","position":[-12000,200,-5080],"yaw":32768,"scale":[800,800,800]},
+    {"id":"quest-vault-glyph","asset":"discoveries.kit.fen-marker","position":[-16200,200,-5060],"yaw":32768,"scale":[800,800,800]}
   ]
 }

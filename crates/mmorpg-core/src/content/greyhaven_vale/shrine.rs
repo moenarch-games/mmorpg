@@ -3,6 +3,7 @@
 //! collision, water, areas and client kit on the western shore with stable IDs.
 
 pub mod authored;
+pub mod vault;
 use super::{ids, lake};
 use crate::{AirPocket, StaticCollider, WaterVolume, XzBounds};
 pub use authored::{CELL, CLEAR, FLOOR_Y, ROOM_CLEAR, SHORE_Y, SUNKEN_SHRINE, facing};
@@ -62,6 +63,7 @@ fn placed_collider(mut collider: StaticCollider) -> StaticCollider {
 pub fn collision_meshes() -> Vec<crate::StaticMesh> {
     authored::collision_meshes()
         .into_iter()
+        .chain(authored::vault_cover(*ids::SHRINE_VAULT_COVER.start()))
         .map(lake::place_mesh)
         .collect()
 }
@@ -75,6 +77,7 @@ fn colliders() -> Vec<StaticCollider> {
     ruins(*ids::SHRINE_RUINS.start())
         .into_iter()
         .chain(walls(*ids::SHRINE_CAVE_WALLS.start()))
+        .chain(vault::walls())
         .collect()
 }
 pub const AREAS: &[(crate::AreaId, &str, XzBounds)] = &[(

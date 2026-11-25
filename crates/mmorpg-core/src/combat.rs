@@ -254,6 +254,8 @@ impl ZoneSimulation {
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
             | PlayerIntent::QuestAction(_)
+            | PlayerIntent::Decide(..)
+            | PlayerIntent::Operate(_)
             | PlayerIntent::Lift(_)
             | PlayerIntent::SetDown
             | PlayerIntent::Skin(_)
@@ -273,6 +275,7 @@ impl ZoneSimulation {
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
             | PlayerIntent::QuestAction(_)
+            | PlayerIntent::Decide(..)
             | PlayerIntent::Skin(_)
                 if self.players.get(&player_id).is_some_and(|p| p.weapon_drawn) =>
             {
@@ -291,6 +294,8 @@ impl ZoneSimulation {
             | PlayerIntent::Gather(_)
             | PlayerIntent::Inspect(_)
             | PlayerIntent::QuestAction(_)
+            | PlayerIntent::Decide(..)
+            | PlayerIntent::Operate(_)
             | PlayerIntent::Skin(_)
                 if self.in_handoff_corridor(player_id) =>
             {
@@ -384,7 +389,9 @@ impl ZoneSimulation {
             PlayerIntent::RaidPrepare(prep) => self.prepare_raid(player_id, prep)?,
             PlayerIntent::Gather(node) => self.gather(player_id, node)?,
             PlayerIntent::Inspect(spot) => self.inspect(player_id, spot)?,
-            PlayerIntent::QuestAction(npc) => self.quest_action(player_id, npc)?,
+            PlayerIntent::QuestAction(npc) => self.quest_action(player_id, npc, None)?,
+            PlayerIntent::Decide(npc, option) => self.quest_action(player_id, npc, Some(option))?,
+            PlayerIntent::Operate(mechanism) => self.operate(player_id, mechanism, now)?,
             PlayerIntent::Lift(source) => self.lift(player_id, source)?,
             PlayerIntent::SetDown => self.set_down(player_id, now)?,
             PlayerIntent::Skin(creature) => self.skin(player_id, creature)?,
@@ -881,6 +888,18 @@ impl ZoneSimulation {
         if self.creature_evades(player_id, creature_id) {
             self.notify(player_id, ZoneEvent::Evade { source, target });
             return Ok(());
+        }
+        // A ward (#1019) turns the blow aside until its weak point is exposed; the guardian still
+        // turns on whoever struck it.
+        if self.warded(creature_id) {
+            self.notify(
+                player_id,
+                ZoneEvent::Error {
+                    code: ErrorCode::Warded,
+                    target: Some(target),
+                },
+            );
+            return self.engage(creature_id, source, true);
         }
         // A resting boss locks its attempt's profile before the first damage resolves (#276).
         if creature.ai != CreatureAi::Engaged && self.is_boss(creature_id)? {

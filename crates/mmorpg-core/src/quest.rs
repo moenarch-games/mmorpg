@@ -15,7 +15,11 @@
 //! Inspect objectives (#1019) complete when the player inspects their authored evidence spot
 //! ([`crate::EvidenceSpot`]) with the quest active; the log stores that progress.
 
-use std::{collections::BTreeSet, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 use crate::events::push_event;
 use crate::{
@@ -130,6 +134,20 @@ pub enum QuestObjective {
         chore: crate::raid::AidChore,
         count: u8,
     },
+    /// Take one `item` from authored spot `spot` (#1019) with [`crate::ZoneCommand::Inspect`] while
+    /// the bag holds none: a rubbing of a drowned inscription. Progress is the bag's count, and the
+    /// turn-in consumes it; a lost one is taken again.
+    Transcribe {
+        spot: crate::EvidenceId,
+        item: ItemId,
+    },
+    /// Help open seal `piece` (#1019): work one of its mechanisms ([`crate::ZoneCommand::Operate`])
+    /// toward the opening ([`crate::Seal`]). The log stores it.
+    Unseal { piece: crate::PieceId },
+    /// Decide the quest's [`Quest::decision`] at `npc` (#1019) with [`crate::ZoneCommand::Decide`].
+    /// The log stores the chosen option (1-based) until the turn-in keeps it with the character
+    /// ([`QuestLog::outcomes`]).
+    Decide { npc: NpcId },
 }
 
 impl QuestObjective {
@@ -153,13 +171,17 @@ impl QuestObjective {
             | Self::Demolish { .. }
             | Self::DeliverLoad { .. }
             | Self::Build { .. }
-            | Self::Defend { .. } => 1,
+            | Self::Defend { .. }
+            | Self::Transcribe { .. }
+            | Self::Unseal { .. }
+            | Self::Decide { .. } => 1,
         }
     }
 
     /// Wire and fingerprint code: 1 kill, 2 collect, 3 talk, 4 explore, 5 retrieve, 6 Thorn,
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
-    /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid.
+    /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
+    /// 20 decide.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -180,6 +202,9 @@ impl QuestObjective {
             Self::Build { .. } => 15,
             Self::Defend { .. } => 16,
             Self::Aid { .. } => 17,
+            Self::Transcribe { .. } => 18,
+            Self::Unseal { .. } => 19,
+            Self::Decide { .. } => 20,
         }
     }
 
@@ -192,7 +217,8 @@ impl QuestObjective {
             | Self::Escort { npc, .. }
             | Self::Interview { npc }
             | Self::DeliverLoad { npc, .. }
-            | Self::Defend { npc } => Some(npc),
+            | Self::Defend { npc }
+            | Self::Decide { npc } => Some(npc),
             _ => None,
         }
     }
@@ -201,7 +227,9 @@ impl QuestObjective {
     #[must_use]
     pub const fn carried_item(self) -> Option<ItemId> {
         match self {
-            Self::Collect { item, .. } | Self::Retrieve { item, .. } => Some(item),
+            Self::Collect { item, .. }
+            | Self::Retrieve { item, .. }
+            | Self::Transcribe { item, .. } => Some(item),
             _ => None,
         }
     }
@@ -238,10 +266,34 @@ pub struct Quest {
     pub rewards: QuestRewards,
     /// What the giver hands over on accepting (#1019), at most [`MAX_QUEST_SUPPLIES`].
     pub supplies: Vec<QuestSupply>,
+    /// Earlier quests that must be turned in too before it is offered, beside its prerequisite
+    /// (#1019), at most [`MAX_QUEST_REQUIRES`].
+    pub requires: Vec<QuestId>,
+    /// The options of its [`QuestObjective::Decide`] (#1019), as clients offer them; empty
+    /// without one, else `2..=MAX_DECISION_OPTIONS`.
+    pub decision: Vec<String>,
 }
 
 /// A quest gives at most this many kinds of supplies.
 pub const MAX_QUEST_SUPPLIES: usize = 4;
+/// A quest requires at most this many quests beside its prerequisite.
+pub const MAX_QUEST_REQUIRES: usize = 3;
+/// A decision offers at most this many options.
+pub const MAX_DECISION_OPTIONS: usize = 3;
+/// An option's label is at most this long.
+pub const MAX_DECISION_BYTES: usize = 48;
+
+/// An NPC that leaves a character's world once the character turned in `quest` with
+/// decision `outcome` (#1019): the character no longer sees or reaches it; everyone else does.
+/// Content lets only an NPC leave whose own quests all come before the decision, so leaving
+/// strands none.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NpcDeparture {
+    pub npc: NpcId,
+    pub quest: QuestId,
+    /// The 1-based option of the quest's decision.
+    pub outcome: u8,
+}
 
 /// One item a quest's giver hands over on accepting (#1019), to a character of one of
 /// `classes` (every class when empty): a bandage, a draught, a forged pass or a loaned weapon.
@@ -325,13 +377,42 @@ pub(crate) fn validate_quests(
         if !quest_giver(quest.giver) || !quest_giver(quest.ender) {
             return Err(QuestContentError::InvalidNpc);
         }
-        if let Some(prerequisite) = quest.prerequisite
-            && (prerequisite >= quest.id
-                || quests
+        let earlier = |prerequisite: QuestId| {
+            prerequisite < quest.id
+                && quests
                     .binary_search_by_key(&prerequisite, |quest| quest.id)
-                    .is_err())
+                    .is_ok()
+        };
+        if quest
+            .prerequisite
+            .is_some_and(|prerequisite| !earlier(prerequisite))
+            || quest.requires.len() > MAX_QUEST_REQUIRES
+            || quest.requires.iter().enumerate().any(|(index, required)| {
+                !earlier(*required)
+                    || quest.prerequisite == Some(*required)
+                    || quest.requires[..index].contains(required)
+            })
         {
             return Err(QuestContentError::InvalidPrerequisite);
+        }
+        // A decision (#1019): its options with exactly one decide objective, and back.
+        let decides = quest
+            .objectives
+            .iter()
+            .filter(|objective| matches!(objective, QuestObjective::Decide { .. }))
+            .count();
+        let options_valid = quest
+            .decision
+            .iter()
+            .all(|option| text(option, MAX_DECISION_BYTES));
+        if !options_valid
+            || match decides {
+                0 => !quest.decision.is_empty(),
+                1 => !(2..=MAX_DECISION_OPTIONS).contains(&quest.decision.len()),
+                _ => true,
+            }
+        {
+            return Err(QuestContentError::InvalidObjective);
         }
         if quest.objectives.is_empty() || quest.objectives.len() > MAX_QUEST_OBJECTIVES {
             return Err(QuestContentError::InvalidObjective);
@@ -444,6 +525,19 @@ pub(crate) fn validate_quests(
                             matches!(*earlier, QuestObjective::Aid { chore: other, .. } if other == chore)
                         })
                 }
+                // A transcription (#1019) takes a plain item from a known spot, one per item.
+                QuestObjective::Transcribe { spot, item } => {
+                    let repeated = quest.objectives[..index]
+                        .iter()
+                        .any(|earlier| earlier.carried_item() == Some(item));
+                    !repeated
+                        && content.evidence_spot(spot).is_some()
+                        && item_template(item).is_some_and(|template| template.slot.is_none())
+                }
+                QuestObjective::Unseal { piece } => {
+                    content.seal(piece).is_some() && !quest.objectives[..index].contains(objective)
+                }
+                QuestObjective::Decide { npc } => content.npc(npc).is_some(),
             };
             if !valid {
                 return Err(QuestContentError::InvalidObjective);
@@ -502,9 +596,18 @@ pub struct QuestEntry {
 pub struct QuestLog {
     pub entries: Vec<QuestEntry>,
     pub completed: BTreeSet<QuestId>,
+    /// The option each turned-in quest with a decision was turned in with (#1019), 1-based:
+    /// the character's durable story outcome.
+    pub outcomes: BTreeMap<QuestId, u8>,
 }
 
 impl QuestLog {
+    /// The option `quest`'s decision was turned in with (#1019), if it was.
+    #[must_use]
+    pub fn outcome(&self, quest: QuestId) -> Option<u8> {
+        self.outcomes.get(&quest).copied()
+    }
+
     #[must_use]
     pub fn entry(&self, quest: QuestId) -> Option<&QuestEntry> {
         self.entries.iter().find(|entry| entry.quest == quest)
@@ -672,13 +775,28 @@ pub(crate) fn markers(
         .collect()
 }
 
-/// Neither active nor turned in, and its prerequisite was turned in.
+/// Neither active nor turned in, and its prerequisite and required quests were turned in.
 fn available(log: &QuestLog, quest: &Quest) -> bool {
-    log.entry(quest.id).is_none()
-        && !log.is_completed(quest.id)
-        && quest
-            .prerequisite
-            .is_none_or(|prerequisite| log.is_completed(prerequisite))
+    log.entry(quest.id).is_none() && !log.is_completed(quest.id) && unlocked(log, quest)
+}
+
+/// Whether `quest`'s prerequisite and required quests (#1019) were turned in.
+pub(crate) fn unlocked(log: &QuestLog, quest: &Quest) -> bool {
+    quest
+        .prerequisite
+        .iter()
+        .chain(&quest.requires)
+        .all(|before| log.is_completed(*before))
+}
+
+/// The most progress the log may store for `objective` of `quest`: its count where it stores
+/// progress, a decision's chosen option (#1019), zero otherwise.
+fn stored_limit(quest: &Quest, objective: Option<&QuestObjective>) -> u8 {
+    match objective {
+        Some(QuestObjective::Decide { .. }) => u8::try_from(quest.decision.len()).unwrap_or(0),
+        Some(objective) if objective.stores_progress() => objective.required(),
+        _ => 0,
+    }
 }
 
 /// Recovery checks of a log against its content: ordered unique active
@@ -700,13 +818,18 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         return invalid();
     }
     for quest in content.log_quests() {
-        if log.is_completed(quest.id)
-            && quest
-                .prerequisite
-                .is_some_and(|prerequisite| !log.is_completed(prerequisite))
-        {
+        if log.is_completed(quest.id) && !unlocked(log, quest) {
             return invalid();
         }
+    }
+    // A decision's outcome (#1019) belongs to a turned-in quest with one of its options.
+    if log.outcomes.iter().any(|(quest, outcome)| {
+        !log.is_completed(*quest)
+            || content
+                .log_quest(*quest)
+                .is_none_or(|quest| !(1..=quest.decision.len()).contains(&usize::from(*outcome)))
+    }) {
+        return invalid();
     }
     if log
         .completed
@@ -719,19 +842,11 @@ pub(crate) fn validate_log(content: &ZoneContent, log: &QuestLog) -> Result<(), 
         let Some(quest) = content.log_quest(entry.quest) else {
             return invalid();
         };
-        if log.is_completed(quest.id)
-            || quest
-                .prerequisite
-                .is_some_and(|prerequisite| !log.is_completed(prerequisite))
-        {
+        if log.is_completed(quest.id) || !unlocked(log, quest) {
             return invalid();
         }
         for (index, &stored) in entry.progress.iter().enumerate() {
-            let limit = match quest.objectives.get(index) {
-                Some(objective) if objective.stores_progress() => objective.required(),
-                _ => 0,
-            };
-            if stored > limit {
+            if stored > stored_limit(quest, quest.objectives.get(index)) {
                 return invalid();
             }
         }
@@ -750,11 +865,7 @@ pub(crate) fn fit_log(content: &ZoneContent, log: &QuestLog) -> QuestLog {
             continue;
         };
         for (index, stored) in entry.progress.iter_mut().enumerate() {
-            let limit = match quest.objectives.get(index) {
-                Some(objective) if objective.stores_progress() => objective.required(),
-                _ => 0,
-            };
-            *stored = (*stored).min(limit);
+            *stored = (*stored).min(stored_limit(quest, quest.objectives.get(index)));
         }
     }
     log
@@ -896,8 +1007,12 @@ impl ZoneSimulation {
         player_id: PlayerId,
         npc: NpcId,
     ) -> Result<bool, ZoneError> {
-        // A confronted NPC (#1019) is out of the world while its foe stands.
-        let Some(feet) = self.npc_feet(npc).filter(|_| !self.npc_hidden(npc)) else {
+        // A confronted NPC (#1019) is out of the world while its foe stands, and a departed one
+        // out of this character's.
+        let Some(feet) = self
+            .npc_feet(npc)
+            .filter(|_| !self.npc_hidden(npc) && !self.npc_departed(player_id, npc))
+        else {
             return Ok(false);
         };
         let from = self.player_position(player_id)?;
@@ -1077,6 +1192,17 @@ impl ZoneSimulation {
             .entries
             .retain(|candidate| candidate.quest != definition.id);
         player.quests.completed.insert(definition.id);
+        // The decision (#1019) stays with the character.
+        if let Some(index) = definition
+            .objectives
+            .iter()
+            .position(|objective| matches!(objective, QuestObjective::Decide { .. }))
+        {
+            player
+                .quests
+                .outcomes
+                .insert(definition.id, entry.progress[index]);
+        }
         push_event(
             &mut player.events,
             ZoneEvent::QuestCompleted {
@@ -1334,7 +1460,10 @@ impl ZoneSimulation {
                         | QuestObjective::DeliverLoad { .. }
                         | QuestObjective::Build { .. }
                         | QuestObjective::Defend { .. }
-                        | QuestObjective::Aid { .. } => false,
+                        | QuestObjective::Aid { .. }
+                        | QuestObjective::Transcribe { .. }
+                        | QuestObjective::Unseal { .. }
+                        | QuestObjective::Decide { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));
