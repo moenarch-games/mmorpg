@@ -864,8 +864,7 @@ fn cliff(m: &mut Model, p: &Prop, climbable: bool, scenery: &Scenery, frame: Aff
             }));
         }
         // Authored cliffs are already in world axes; their prop frame only translates them.
-        let centre = [0., metres(p.position[1]) - frame.t[1] + 2., 0.];
-        crate::handholds::cliff(&geometry, centre, [hx, hy, hz], seed(p), &mut put);
+        crate::handholds::cliff(&geometry, seed(p), &mut put);
     } else {
         crate::handholds::block(&[([hx, hz], 0., hy * 2.)], seed(p), &mut put);
     }

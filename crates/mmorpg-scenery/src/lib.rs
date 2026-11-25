@@ -587,7 +587,7 @@ pub fn visual_kind(collider: &StaticCollider) -> Option<PropKind> {
                 Building::Ruin => PropKind::House,
             }
         }
-        _ if ids::CLIFFS.contains(&id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
+        _ if greyhaven_vale::landscape_rock(id) || ids::CAVE_WALLS.contains(&id) => PropKind::Cliff,
         ids::CAVE_ROOF => PropKind::CaveRoof,
         // The sealed threshold to the deeper cave (#160): a log barricade stand-in until the
         // asset-tooling kit gives it its own kind.
@@ -998,10 +998,13 @@ fn unmasked_greyhaven_vale_scenery() -> Scenery {
         .colliders()
         .iter()
         .filter(|collider| ids::MARKET.contains(&collider.id));
+    // The basin rim's rock band (#1195) keeps the scatter off its own rock, not off its
+    // segments' bounds, which reach over the floor in front and the rim behind.
     let blockers = Blockers::new(
         structures
             .iter()
             .map(|(collider, _)| *collider)
+            .filter(|collider| !greyhaven_vale::basin_rim::is_segment(collider.id))
             .chain(market)
             .chain(cottages.iter())
             .chain(village.iter()),
@@ -1748,7 +1751,11 @@ impl Placer<'_> {
             half_extents: half,
         };
         let footprint = prop.footprint();
-        if !self.blockers.clear(footprint) {
+        if !self.blockers.clear(footprint)
+            // The scatter keeps off the basin rim's rock band (#1195); the farms' crop rows stay.
+            || kind != PropKind::CropRow
+                && greyhaven_vale::basin_rim::covers(footprint.min, footprint.max)
+        {
             return false;
         }
         if ground == Ground::Open {

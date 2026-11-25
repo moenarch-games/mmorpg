@@ -101,14 +101,14 @@ const SOUTH_HAMLET: [i32; 2] = [-8_000, 57_500];
 const FORD_INN: [i32; 2] = [104_900, 22_100];
 const WESTMERE: [i32; 2] = [-64_500, 6_000];
 /// The wildlife's haunts (#857): open ground near woods, meadows and fields, clear like the
-/// pastures.
+/// pastures. The Vale meadow lies on the basin floor clear of the rim's rock band (#1195).
 const HUNTERS_WOOD: [i32; 2] = [-46_300, 72_500];
 const WESTMERE_GLADE: [i32; 2] = [-60_000, 12_000];
 const BOAR_WOOD: [i32; 2] = [-51_600, 81_300];
 const FARMLAND_EDGE: [i32; 2] = [1_700, 47_000];
 const BARROW_MEADOW: [i32; 2] = [49_000, 64_000];
 const FARMLAND_MEADOW: [i32; 2] = [-1_600, 39_600];
-const VALE_MEADOW: [i32; 2] = [3_000, 9_100];
+const VALE_MEADOW: [i32; 2] = [1_000, 8_400];
 const FIELD_EDGE: [i32; 2] = [6_000, 50_000];
 const MILLBROOK_FIELD: [i32; 2] = [10_500, 5_300];
 const BARROW_HEDGE: [i32; 2] = [55_500, 72_500];

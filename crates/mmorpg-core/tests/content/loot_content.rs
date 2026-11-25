@@ -28,17 +28,23 @@ fn rule() -> LootTable {
     table([1, 3], 2, FUR, [1, 2])
 }
 
-// Hosted geometry and units without any loot binding.
+// Hosted geometry and units without any loot binding: the colliders, the terrain and the
+// static meshes (whose own triangles, not their bounds, keep the units clear, #1195).
 fn unbound() -> ZoneContent {
     let current = greyhaven_vale::content();
     let definition = current.definition();
+    let meshes = definition.static_meshes().to_vec();
+    let colliders = definition
+        .colliders()
+        .iter()
+        .filter(|collider| !meshes.iter().any(|mesh| mesh.id == collider.id))
+        .cloned()
+        .collect();
     ZoneContent::new(
-        ZoneDefinition::with_spawn_grid(
-            definition.gravity(),
-            definition.spawn_grid(),
-            definition.colliders().to_vec(),
-        )
-        .unwrap(),
+        ZoneDefinition::with_spawn_grid(definition.gravity(), definition.spawn_grid(), colliders)
+            .and_then(|geometry| geometry.with_terrain(definition.terrain().unwrap().clone()))
+            .and_then(|geometry| geometry.with_static_meshes(meshes))
+            .unwrap(),
         current.areas().clone(),
         current.creature_templates().to_vec(),
         current.creature_spawns().to_vec(),

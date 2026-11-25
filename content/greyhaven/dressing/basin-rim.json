@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "area": "village-basin-rim",
+  "placements": [
+    {"id":"basin-ivy-0-0","asset":"climbing.kit.vine-top","position":[-4006,1249,7063],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-1","asset":"climbing.kit.vine-strip","position":[-4006,1049,7023],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-2","asset":"climbing.kit.vine-strip","position":[-4006,849,6925],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-3","asset":"climbing.kit.vine-strip","position":[-4006,649,6847],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-4","asset":"climbing.kit.vine-strip","position":[-4006,449,6778],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-5","asset":"climbing.kit.vine-strip","position":[-4006,249,6695],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-0-6","asset":"climbing.kit.vine-strip","position":[-4006,49,6607],"yaw":32768,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-0","asset":"climbing.kit.vine-top","position":[-4028,1017,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-1","asset":"climbing.kit.vine-strip","position":[-4000,817,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-2","asset":"climbing.kit.vine-strip","position":[-3958,617,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-3","asset":"climbing.kit.vine-strip","position":[-3912,417,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-4","asset":"climbing.kit.vine-strip","position":[-3817,217,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-1-5","asset":"climbing.kit.vine-strip","position":[-3694,17,-2266],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-0","asset":"climbing.kit.vine-top","position":[-4702,1012,-5357],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-1","asset":"climbing.kit.vine-strip","position":[-4693,812,-5324],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-2","asset":"climbing.kit.vine-strip","position":[-4681,612,-5278],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-3","asset":"climbing.kit.vine-strip","position":[-4664,412,-5210],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-4","asset":"climbing.kit.vine-strip","position":[-4645,212,-5137],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-2-5","asset":"climbing.kit.vine-strip","position":[-4639,12,-5115],"yaw":2648,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-0","asset":"climbing.kit.vine-top","position":[3325,1311,9531],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-1","asset":"climbing.kit.vine-strip","position":[3255,1111,9472],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-2","asset":"climbing.kit.vine-strip","position":[2630,911,8948],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-3","asset":"climbing.kit.vine-strip","position":[2567,711,8895],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-4","asset":"climbing.kit.vine-strip","position":[2514,511,8851],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-5","asset":"climbing.kit.vine-strip","position":[2476,311,8818],"yaw":41871,"scale":[1000,1000,1000]},
+    {"id":"basin-ivy-3-6","asset":"climbing.kit.vine-strip","position":[2437,111,8786],"yaw":41871,"scale":[1000,1000,1000]}
+  ]
+}

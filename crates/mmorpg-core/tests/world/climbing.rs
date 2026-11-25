@@ -707,32 +707,129 @@ fn the_quarrys_sheer_east_wall_refuses_a_climber() {
     player.refused(east);
 }
 
+/// A seam: `(ring on the outline, outward normal, foot offset, segments either side)`.
+type Seam = ([f32; 2], [f32; 2], f32, [u32; 2]);
+
+/// Seams of the basin rim's rock band (#1195, `content/greyhaven/authoring/basin_rim.py`):
+/// where one segment's mesh passes to the next, the ring on the outline and its outward
+/// normal there (metres), the band's foot that far in front of it, and the segments either side.
+const RIM_SEAMS: [Seam; 2] = [
+    // West of the north lobe, toward Stillwater.
+    ([-50.82, -52.61], [-0.733, -0.681], -5.7, [45_008, 45_009]),
+    // South-east of the South Road's soft shoulder.
+    ([26.39, 93.47], [0.734, 0.679], -6.6, [45_020, 45_021]),
+];
+
+/// The yaw facing along `normal` on XZ: 0 faces +Z, 16 384 faces +X.
+fn facing_along(normal: [f32; 2]) -> u16 {
+    let turn = normal[0].atan2(normal[1]).rem_euclid(std::f32::consts::TAU);
+    (turn / std::f32::consts::TAU * 65_536.0) as u32 as u16
+}
+
+/// The basin rim's rock band climbs across its segments' seams (#1195): from the floor in
+/// front of each seam a player walks to the band's foot, jumps to grab it, climbs (mantling
+/// onto any bench on the way) and stands on top, over the band's rock or the rim behind it.
 #[test]
-fn a_player_climbs_the_basin_cliff_over_its_rounded_rim_without_falling() {
-    // The basin's west cliff under the Hollow rounds over at about 45° before the rim: the
-    // climber holds on over it and pulls up, rather than letting go or hanging in the mantle.
-    let west = 49_152;
-    let mut player = Player::at([-3_000, -5_200]);
-    player.hold(1, west);
-    player.ticks(300);
-    player.jump();
-    player.ticks(1);
-    player.hold(1, west);
-    let mut climbed = false;
-    for _ in 0..1_200 {
-        player.ticks(1);
-        match player.traversal() {
-            Traversal::Climbing { .. } => climbed = true,
-            Traversal::Mantling { ticks, .. } => assert!(ticks < 60, "{:?}", player.feet()),
-            Traversal::Free if climbed && player.feet()[1] > 950.0 => break,
-            _ if !climbed => {}
-            other => panic!("{other:?} at {:?}", player.feet()),
+fn a_player_climbs_the_basin_rim_band_across_its_segment_seams() {
+    for (base, normal, front, ids) in RIM_SEAMS {
+        for id in ids {
+            assert_eq!(greyhaven_vale::climbing().collider(id), Some(Grip::Rock));
         }
+        let start = [
+            ((base[0] + normal[0] * (front - 2.0)) * 100.0).round() as i32,
+            ((base[1] + normal[1] * (front - 2.0)) * 100.0).round() as i32,
+        ];
+        let (player, benches) = climb_the_benches(start, facing_along(normal));
+        let feet = player.feet();
+        assert!(
+            benches.last().is_some_and(|bench| bench.0 > 9.0),
+            "from {start:?}: {benches:?} at {feet:?}"
+        );
+        // On the rim above the band, not fallen back to the floor.
+        let ground = greyhaven_vale::content()
+            .definition()
+            .ground_at(feet[0].round() as i32, feet[2].round() as i32);
+        assert!(
+            feet[1] > 900.0 && feet[1] > ground as f32 - 20.0,
+            "on top from {start:?}: {feet:?}"
+        );
     }
-    assert!(climbed && player.feet()[1] > 950.0, "{:?}", player.feet());
-    player.hold(0, west);
-    player.ticks(60);
-    assert!(player.feet()[1] > 950.0, "on the rim: {:?}", player.feet());
+}
+
+/// The band's cliff under Stillwater's terrace is sheer (#490, #1195): its segment is authored
+/// `"grip": "sheer"`, and a player walking into it from the floor cannot grab it.
+#[test]
+fn the_basin_rims_sheer_cliff_refuses_a_climber() {
+    let sheer: Vec<_> = greyhaven_vale::content()
+        .definition()
+        .static_meshes()
+        .iter()
+        .filter(|mesh| greyhaven_vale::basin_rim::is_segment(mesh.id))
+        .filter(|mesh| greyhaven_vale::climbing().collider(mesh.id).is_none())
+        .cloned()
+        .collect();
+    assert_eq!(sheer.len(), 1, "one sheer segment");
+    let mesh = &sheer[0];
+    let lake = greyhaven_vale::SHEER_LAKE_CLIFF;
+    let bounds = mesh.bounds().unwrap();
+    assert!(
+        (lake.min[1]..lake.max[1]).contains(&bounds.position[2]),
+        "under the terrace: {bounds:?}"
+    );
+    // The steep face nearest the middle of the segment's foot, 1-2 m up: stand on the floor
+    // just in front of it and face it.
+    let point = |index: u32| -> [f32; 3] {
+        let v = mesh.vertices[index as usize];
+        std::array::from_fn(|axis| (v[axis] + mesh.position[axis]) as f32)
+    };
+    // The middle of the face's foot: its vertices on the floor.
+    let foot: Vec<[f32; 3]> = mesh
+        .vertices
+        .iter()
+        .map(|v| std::array::from_fn(|axis| (v[axis] + mesh.position[axis]) as f32))
+        .filter(|p: &[f32; 3]| (-20.0..150.0).contains(&p[1]))
+        .collect();
+    let middle = [
+        foot.iter().map(|p| p[0]).sum::<f32>() / foot.len() as f32,
+        foot.iter().map(|p| p[2]).sum::<f32>() / foot.len() as f32,
+    ];
+    let (at, out) = mesh
+        .triangles
+        .iter()
+        .filter_map(|&[a, b, c]| {
+            let [a, b, c] = [point(a), point(b), point(c)];
+            let centre: [f32; 3] = std::array::from_fn(|i| (a[i] + b[i] + c[i]) / 3.0);
+            let u: [f32; 3] = std::array::from_fn(|i| b[i] - a[i]);
+            let v: [f32; 3] = std::array::from_fn(|i| c[i] - a[i]);
+            let n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let steep = (n[1] / length).abs() < 0.3;
+            (steep && (100.0..200.0).contains(&centre[1])).then(|| {
+                let flat = n[0].hypot(n[2]);
+                ([centre[0], centre[2]], [n[0] / flat, n[2] / flat])
+            })
+        })
+        .min_by(|(p, _), (q, _)| {
+            let d = |r: &[f32; 2]| (r[0] - middle[0]).hypot(r[1] - middle[1]);
+            d(p).total_cmp(&d(q))
+        })
+        .expect("the sheer segment has a steep face near the floor");
+    let facing = facing_along([-out[0], -out[1]]);
+    let mut player = Player::in_zone(
+        hollow_without_its_camp(),
+        [
+            (at[0] + out[0] * 80.0).round() as i32,
+            (at[1] + out[1] * 80.0).round() as i32,
+        ],
+    );
+    // Up to the face's foot (onto the low lip of rock there), then a jump at the face.
+    player.hold(1, facing);
+    player.ticks(45);
+    player.refused(facing);
 }
 
 /// A basin crag's collision is generated from its art (#683): the climber grabs the generated

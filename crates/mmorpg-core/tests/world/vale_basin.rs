@@ -84,8 +84,9 @@ fn the_farm_terrace_rises_above_the_basin_behind_a_cliff() {
     let definition = greyhaven_vale::greyhaven_vale_definition();
     // The Outpost's floor, the farmyard on the terrace.
     assert_eq!(definition.ground_at(0, 2_000), 0);
-    // The authored grassy apron rises 66 cm before the cliff.
-    assert_eq!(definition.ground_at(2_000, 8_800), 66);
+    // The floor runs level to the rim rock band's foot (#1195): the terrain under the band only
+    // steps, where the old grassy apron rose before the cliff.
+    assert_eq!(definition.ground_at(2_000, 8_800), 0);
     assert_eq!(definition.ground_at(6_200, 4_150), basin::TERRACE_Y);
     // The former rectangular corner is now rock above the rounded southern apron.
     assert!(definition.ground_at(4_000, 9_000) >= basin::TERRACE_Y);
@@ -128,7 +129,16 @@ fn a_player_walks_down_the_millbrook_steps_to_the_south_road() {
     assert!((feet(&zone)[1] - basin::TERRACE_Y as f32).abs() < 20.0);
     walk(
         &mut zone,
-        &[[4_800, 3_400], [4_200, 3_400], [4_200, 8_000], [400, 8_000]],
+        // Down the ledge to its foot, then west off it onto the floor (#1195: the rim's rock
+        // band stands behind the ledge's foot, where the old apron ran on south).
+        &[
+            [4_800, 3_400],
+            [4_200, 3_400],
+            [4_200, 7_500],
+            [3_400, 7_400],
+            [2_400, 7_400],
+            [400, 8_000],
+        ],
     );
     assert!(feet(&zone)[1].abs() < 10.0, "back on the valley floor");
 }
@@ -211,7 +221,6 @@ fn a_player_walks_up_the_former_lakeshore_climb_to_the_eastern_rim() {
             [1_400, -2_800],
             [1_400, -6_200],
             [2_600, -6_200],
-            [2_600, -3_200],
             [2_600, -3_600],
         ],
     );

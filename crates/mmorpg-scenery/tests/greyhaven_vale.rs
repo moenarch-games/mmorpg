@@ -451,7 +451,9 @@ fn terrain_grid_samples_relief_and_biomes() {
     assert_eq!(color(-400, 1_600), PLAZA_COLOR);
     assert_eq!(color(-8_800, -5_400), LAKE_BED_COLOR);
     for meadow in [
-        color(-4_000, 8_000),
+        // On the basin's floor in front of the rim's rock band (#1195), which now covers the old
+        // meadow under the south-western cliff.
+        color(1_600, 7_000),
         color(9_000, -1_000),
         color(-7_000, 3_000),
     ] {

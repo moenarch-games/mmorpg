@@ -3594,6 +3594,92 @@ fn overlaps(left: BodyBox, right: BodyBox) -> bool {
     })
 }
 
+/// Whether a body overlapping collider `id`'s box is really in its way. A box collider always
+/// is. A static mesh's box is only its conservative bounds (#1195: the basin rim's rock band
+/// reaches round the floor and the rim in long arcs), so a body standing on the ground there is
+/// in its way only where it touches one of the mesh's triangles or stands inside its closed
+/// rock.
+fn mesh_blocks(definition: &ZoneDefinition, id: u32, body: BodyBox) -> bool {
+    let meshes = definition.static_meshes();
+    let Ok(index) = meshes.binary_search_by_key(&id, |mesh| mesh.id) else {
+        return true;
+    };
+    let mesh = &meshes[index];
+    let (centre, half) = body;
+    let ground = definition.ground_at(centre[0], centre[2]);
+    let centre = [
+        i64::from(centre[0]),
+        i64::from(ground) + i64::from(half[1]),
+        i64::from(centre[2]),
+    ];
+    let half = half.map(i64::from);
+    let point = |index: u32| {
+        let vertex = mesh.vertices[index as usize];
+        std::array::from_fn::<i64, 3, _>(|axis| {
+            i64::from(vertex[axis]) + i64::from(mesh.position[axis]) - centre[axis]
+        })
+    };
+    let mut crossings = 0_u32;
+    for &[a, b, c] in &mesh.triangles {
+        let triangle = [point(a), point(b), point(c)];
+        if triangle_touches_box(triangle, half) {
+            return true;
+        }
+        // Count the faces straight above the body's centre: an odd count stands it inside.
+        if above(triangle) {
+            crossings += 1;
+        }
+    }
+    crossings % 2 == 1
+}
+
+/// Whether triangle `t`, relative to a box's centre, overlaps the box of `half` extents
+/// (separating axes; touching is allowed).
+fn triangle_touches_box(t: [[i64; 3]; 3], half: [i64; 3]) -> bool {
+    let separates = |axis: [i128; 3]| {
+        let project = |v: [i64; 3]| (0..3).map(|i| i128::from(v[i]) * axis[i]).sum::<i128>();
+        let p = t.map(project);
+        let reach: i128 = (0..3).map(|i| i128::from(half[i]) * axis[i].abs()).sum();
+        let (low, high) = (p.iter().min().copied(), p.iter().max().copied());
+        low.zip(high)
+            .is_some_and(|(low, high)| low >= reach || high <= -reach)
+    };
+    let units: [[i128; 3]; 3] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    let edge =
+        |a: [i64; 3], b: [i64; 3]| std::array::from_fn::<i128, 3, _>(|i| i128::from(b[i] - a[i]));
+    let cross = |u: [i128; 3], v: [i128; 3]| {
+        [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ]
+    };
+    let edges = [edge(t[0], t[1]), edge(t[1], t[2]), edge(t[2], t[0])];
+    if units.iter().any(|&axis| separates(axis)) || separates(cross(edges[0], edges[1])) {
+        return false;
+    }
+    !edges
+        .iter()
+        .any(|&e| units.iter().any(|&axis| separates(cross(e, axis))))
+}
+
+/// Whether triangle `t`, relative to a point, lies straight above it: its XZ projection holds
+/// the point strictly and its plane passes above the point there.
+fn above(t: [[i64; 3]; 3]) -> bool {
+    let [a, b, c] = t.map(|v| v.map(i128::from));
+    let area = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]);
+    if area == 0 {
+        return false;
+    }
+    let wa = b[0] * c[2] - b[2] * c[0];
+    let wb = c[0] * a[2] - c[2] * a[0];
+    let wc = area - wa - wb;
+    let inside = [wa, wb, wc]
+        .iter()
+        .all(|&w| if area > 0 { w > 0 } else { w < 0 });
+    inside && ((wa * a[1] + wb * b[1] + wc * c[1] > 0) == (area > 0))
+}
+
 fn spawn_slot_boxes(definition: &ZoneDefinition) -> Result<Vec<BodyBox>, ZoneError> {
     (0..MAX_PLAYERS_PER_ZONE)
         .map(|slot| {
@@ -3626,11 +3712,10 @@ fn validate_unit_body(
             "unit body lies outside the content coordinate range",
         ));
     }
-    if definition
-        .colliders()
-        .iter()
-        .any(|collider| overlaps(body, (collider.position, collider.half_extents)))
-    {
+    if definition.colliders().iter().any(|collider| {
+        overlaps(body, (collider.position, collider.half_extents))
+            && mesh_blocks(definition, collider.id, body)
+    }) {
         return Err(ZoneError::new("unit body overlaps a static collider"));
     }
     if units.iter().any(|&other| overlaps(body, other)) {
