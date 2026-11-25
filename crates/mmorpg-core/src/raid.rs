@@ -90,6 +90,15 @@
 //!   the farmhands' own repairs done. Every accepted aid action, after a raid or a defence,
 //!   completes one step of the helper's open [`crate::QuestObjective::Aid`] objective of its
 //!   [`AidChore`].
+//! - **Sites** (#1019): a zone may have several raid sites ([`crate::ZoneContent::raids`]), each
+//!   with its own state, incidents and reserved raiders. The first is the night raid target and
+//!   everything above applies to it unchanged. Each later one is a quest's defence site: only a
+//!   defence its [`RaidSite::steward`] starts raids it, so it is never forewarned, warned or
+//!   braced, and it pays no participation or defence reward (its quest pays). Its defence always
+//!   leaves at least its first breach, since no night raid comes to breach it later. A defend
+//!   objective completes only at its own site, and an aid objective only in a quest the site's
+//!   steward ends. No two sites' signals overlap, so where a player stands names the one site it
+//!   sees and aids.
 //!
 //! The raid state, the participants and every raider's march are canonical. A suspended zone's
 //! tick freezes, and its raid, recovery and cooldown freeze with it.
@@ -182,6 +191,8 @@ pub const CIVILIAN_REACH_UNITS: i32 = 300;
 pub const CIVILIAN_RECOVERY_TICKS: u32 = crate::long_ticks_from_ms(300_000);
 /// Most civilians a site may name (#1019).
 pub const MAX_CIVILIANS: usize = 4;
+/// Most raid sites a zone may have (#1019): the night raid target and quest defence sites.
+pub const MAX_RAID_SITES: usize = 4;
 
 /// One preparation step (#532, 5.1.59): investigate the tracks, report them to the lookout, or
 /// brace the objective at brace spot `k`.
@@ -307,6 +318,8 @@ pub struct RaidSite {
     pub braces: Vec<[i32; 2]>,
     /// Who stands at the objective in a defence (#1019); none without defences.
     pub civilians: Vec<Civilian>,
+    /// The NPC whose [`crate::QuestObjective::Defend`] starts its defence (#1019), if any.
+    pub steward: Option<NpcId>,
 }
 
 impl RaidSite {
@@ -412,6 +425,12 @@ impl RaidSite {
             ],
             AREA_RADIUS_UNITS,
         )
+    }
+
+    /// Whether its signal reaches `at` (#1019): within [`SIGNAL_RADIUS_UNITS`] of the footprint.
+    #[must_use]
+    pub fn signals(&self, at: [i32; 2]) -> bool {
+        self.distance_squared(at) <= i64::from(SIGNAL_RADIUS_UNITS).pow(2)
     }
 
     /// The horizontal distance from `at` to the footprint, squared.
@@ -547,6 +566,7 @@ impl RaidSite {
             || content.routine(self.lookout).is_some()
             || u32::try_from(self.braces.len()).is_err()
             || !self.braces.iter().all(in_range)
+            || self.steward.is_some_and(|npc| content.npc(npc).is_none())
             // Civilians (#1019): few, known, wounded only by a defence, at a spot in range.
             || self.civilians.len() > MAX_CIVILIANS
             || self.civilians.iter().any(|civilian| {
@@ -831,10 +851,16 @@ pub fn prepared_hit(amount: u32, preparations: usize) -> u32 {
 }
 
 /// A defence's aftermath (#1019) at the objective's `damage`: the first `⌈damage × mends ÷
-/// integrity⌉` of the site's mend tasks in authored order, and a tend task for each civilian who
-/// lost health.
+/// integrity⌉` of the site's mend tasks in authored order, at least one when `breached` (a quest
+/// defence site, which no night raid comes to breach later), and a tend task for each civilian
+/// who lost health.
 #[must_use]
-pub fn defence_aftermath(site: &RaidSite, incident: &RaidIncident, damage: u32) -> BTreeSet<u32> {
+pub fn defence_aftermath(
+    site: &RaidSite,
+    incident: &RaidIncident,
+    damage: u32,
+    breached: bool,
+) -> BTreeSet<u32> {
     let mends: Vec<usize> = site
         .aid
         .iter()
@@ -842,8 +868,9 @@ pub fn defence_aftermath(site: &RaidSite, incident: &RaidIncident, damage: u32) 
         .filter(|(_, task)| task.kind == AidKind::MendBreach)
         .map(|(index, _)| index)
         .collect();
-    let breaches =
-        (u64::from(damage) * mends.len() as u64).div_ceil(u64::from(OBJECTIVE_INTEGRITY));
+    let breaches = (u64::from(damage) * mends.len() as u64)
+        .div_ceil(u64::from(OBJECTIVE_INTEGRITY))
+        .max(u64::from(breached));
     let struck = site
         .civilians
         .iter()
@@ -871,10 +898,33 @@ pub fn wave_size(phase: u8, participants: u8) -> u8 {
 }
 
 impl ZoneSimulation {
-    /// The zone's raid state.
+    /// The zone's raid state: the night raid target's.
     #[must_use]
     pub const fn raid(&self) -> &RaidState {
         &self.raid
+    }
+
+    /// Raid site `site`'s state (#1019), by its index in [`crate::ZoneContent::raids`].
+    #[must_use]
+    pub fn raid_at(&self, site: usize) -> Option<&RaidState> {
+        match site.checked_sub(1) {
+            None => Some(&self.raid),
+            Some(index) => self.site_raids.get(index),
+        }
+    }
+
+    /// Raid site `site`'s state, mutably; the night raid target's for an unknown site, which the
+    /// content never names.
+    fn site_raid(&mut self, site: usize) -> &mut RaidState {
+        match site.checked_sub(1) {
+            Some(index) if index < self.site_raids.len() => &mut self.site_raids[index],
+            _ => &mut self.raid,
+        }
+    }
+
+    /// Raid site `site`'s state; the night raid target's for an unknown site.
+    fn site_raid_ref(&self, site: usize) -> &RaidState {
+        self.raid_at(site).unwrap_or(&self.raid)
     }
 
     /// Whether a new incident may be committed at `now` (5.1.68): none is running, the objective
@@ -915,53 +965,80 @@ impl ZoneSimulation {
         Ok(true)
     }
 
-    /// Whether a defence may start now (#1019): the site has civilians, no incident runs, the
-    /// objective is whole and no aid task is open. Neither the cooldown nor the night's roll
-    /// applies.
+    /// Whether the night raid target's defence may start now (#1019); see
+    /// [`Self::defence_ready_at`].
     #[must_use]
     pub fn defence_ready(&self) -> bool {
-        self.content
-            .raid()
-            .is_some_and(|site| !site.civilians.is_empty())
-            && self.raid.active.is_none()
-            && self.raid.damage == 0
-            && self.raid.aftermath.is_empty()
+        self.defence_ready_at(0)
     }
 
-    /// Starts a defence when it is ready (#1019), in the tick of the quest action that asked;
-    /// returns whether it started. The tick expires the earlier incident's receipts.
-    pub(crate) fn begin_defence(&mut self) -> Result<bool, ZoneError> {
-        if !self.defence_ready() {
+    /// Whether raid site `site`'s defence may start now (#1019): the site has civilians, no
+    /// incident runs there, its objective is whole and no aid task is open. Neither the cooldown
+    /// nor the night's roll applies.
+    #[must_use]
+    pub fn defence_ready_at(&self, site: usize) -> bool {
+        let state = self.raid_at(site);
+        self.content
+            .raids()
+            .get(site)
+            .is_some_and(|site| !site.civilians.is_empty())
+            && state.is_some_and(|state| {
+                state.active.is_none() && state.damage == 0 && state.aftermath.is_empty()
+            })
+    }
+
+    /// Starts the defence of the site `steward` keeps when it is ready (#1019), in the tick of the
+    /// quest action that asked; returns whether it started. The tick expires the earlier
+    /// incident's receipts.
+    pub(crate) fn begin_defence(&mut self, steward: NpcId) -> Result<bool, ZoneError> {
+        let content = Arc::clone(&self.content);
+        let Some((site, definition)) = content.raid_of_steward(steward) else {
+            return Ok(false);
+        };
+        if !self.defence_ready_at(site) {
             return Ok(false);
         }
-        let civilians = self
-            .content
-            .raid()
-            .map(|site| {
-                site.civilians
-                    .iter()
-                    .map(|civilian| civilian.health)
-                    .collect()
-            })
-            .unwrap_or_default();
-        self.commit(self.tick, civilians)?;
+        let civilians = definition
+            .civilians
+            .iter()
+            .map(|civilian| civilian.health)
+            .collect();
+        self.commit(site, self.tick, civilians)?;
         Ok(true)
     }
 
-    /// The health of the running defence's civilian `npc` in percent, rounded up while any is
-    /// left (#1019); `None` outside a defence or for another NPC.
+    /// The health of a running defence's civilian `npc` in percent, rounded up while any is left
+    /// (#1019); `None` outside its site's defence or for another NPC.
     #[must_use]
     pub fn civilian_health(&self, npc: NpcId) -> Option<u8> {
-        let site = self.content.raid()?;
-        let index = site.civilian(npc)?;
+        let (site, index) = self
+            .content
+            .raids()
+            .iter()
+            .enumerate()
+            .find_map(|(site, definition)| Some((site, definition.civilian(npc)?)))?;
+        let definition = &self.content.raids()[site];
         let incident = self
-            .raid
+            .raid_at(site)?
             .active
             .as_ref()
             .filter(|incident| incident.defence())?;
         let left = u64::from(*incident.civilians.get(index)?);
-        let full = u64::from(site.civilians[index].health.max(1));
+        let full = u64::from(definition.civilians[index].health.max(1));
         u8::try_from((left * 100).div_ceil(full)).ok()
+    }
+
+    /// Where the injured guard or fallen civilian `npc` lies while its aid task is open at any
+    /// site (#531, #1019).
+    #[must_use]
+    pub(crate) fn injured_at(&self, npc: NpcId) -> Option<[i32; 2]> {
+        self.content
+            .raids()
+            .iter()
+            .enumerate()
+            .find_map(|(site, definition)| {
+                definition.injured_at(npc, &self.site_raid_ref(site).aftermath)
+            })
     }
 
     /// A recovered creature's raid membership (#530) belongs to a living reserved raider of a
@@ -974,7 +1051,10 @@ impl ZoneSimulation {
         let Some(member) = record.raid else {
             return Ok(());
         };
-        let valid = self.content.raid().is_some_and(|site| {
+        let index = self.content.raider_site(record.creature_id);
+        let state = index.and_then(|index| self.raid_at(index));
+        let site = index.and_then(|index| self.content.raids().get(index));
+        let valid = site.zip(state).is_some_and(|(site, state)| {
             let legs = match member.leg {
                 RaidLeg::Assault => {
                     site.slot_of(record.creature_id)
@@ -982,8 +1062,7 @@ impl ZoneSimulation {
                             usize::from(member.waypoint)
                                 <= site.approaches[usize::from(approach)].route.len()
                         })
-                        && self
-                            .raid
+                        && state
                             .active
                             .as_ref()
                             .is_some_and(|incident| incident.id == member.incident)
@@ -998,7 +1077,7 @@ impl ZoneSimulation {
             };
             legs && record.life == crate::CreatureLife::Alive
                 && site.slot_of(record.creature_id).is_some()
-                && (1..=self.raid.incidents).contains(&member.incident)
+                && (1..=state.incidents).contains(&member.incident)
                 && member.since <= self.tick
                 && member
                     .anchor
@@ -1029,21 +1108,21 @@ impl ZoneSimulation {
     }
 
     fn commit_incident(&mut self, now: u64) -> Result<(), ZoneError> {
-        self.commit(now, Vec::new())
+        self.commit(0, now, Vec::new())
     }
 
-    /// Commits a raid, or a defence with its `civilians`' health (#1019).
-    fn commit(&mut self, now: u64, civilians: Vec<u32>) -> Result<(), ZoneError> {
-        let id = self
-            .raid
+    /// Commits a raid at site `site`, or a defence with its `civilians`' health (#1019).
+    fn commit(&mut self, site: usize, now: u64, civilians: Vec<u32>) -> Result<(), ZoneError> {
+        let state = self.site_raid(site);
+        let id = state
             .incidents
             .checked_add(1)
             .ok_or_else(|| ZoneError::new("raid incident identities exhausted"))?;
-        self.raid.incidents = id;
-        self.raid.rewarded.clear();
+        state.incidents = id;
+        state.rewarded.clear();
         // The evening's tracks are moot once the raid is on; its readiness stays for it.
-        self.raid.scouted.clear();
-        self.raid.active = Some(RaidIncident {
+        state.scouted.clear();
+        state.active = Some(RaidIncident {
             id,
             phase: 1,
             phase_started: now,
@@ -1051,17 +1130,17 @@ impl ZoneSimulation {
             participants: Vec::new(),
             civilians,
         });
-        self.commit_wave(now)
+        self.commit_wave(site, now)
     }
 
     /// Takes the participation snapshot, records it with the phase and stands the wave up.
-    fn commit_wave(&mut self, now: u64) -> Result<(), ZoneError> {
+    fn commit_wave(&mut self, index: usize, now: u64) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
-        let Some(site) = content.raid() else {
+        let Some(site) = content.raids().get(index) else {
             return Ok(());
         };
-        let participants = self.participation(site)?;
-        let Some(incident) = self.raid.active.as_mut() else {
+        let participants = self.participation(index, site)?;
+        let Some(incident) = self.site_raid(index).active.as_mut() else {
             return Ok(());
         };
         incident.scaled_for.push(participants);
@@ -1135,8 +1214,8 @@ impl ZoneSimulation {
 
     /// The phase-boundary participation snapshot (5.1.55): recorded participants who are alive
     /// and near the objective.
-    fn participation(&self, site: &RaidSite) -> Result<u8, ZoneError> {
-        let Some(incident) = &self.raid.active else {
+    fn participation(&self, index: usize, site: &RaidSite) -> Result<u8, ZoneError> {
+        let Some(incident) = &self.site_raid_ref(index).active else {
             return Ok(0);
         };
         let mut count = 0_u8;
@@ -1158,9 +1237,9 @@ impl ZoneSimulation {
     /// Tick step 7b: the raid's bookkeeping, after combat resolved the tick's blows.
     pub(crate) fn advance_raid(&mut self, now: u64) -> Result<(), ZoneError> {
         let content = Arc::clone(&self.content);
-        let Some(site) = content.raid() else {
+        if content.raids().is_empty() {
             return Ok(());
-        };
+        }
         // A living raider never rests, so it holds its decision bit (#1086).
         let members: Vec<(CreatureId, RaidMember)> = self
             .creatures
@@ -1170,29 +1249,21 @@ impl ZoneSimulation {
                 state.raid.map(|member| (id, member))
             })
             .collect();
-        if self.raid.active.is_some() {
-            self.record_participants(&members)?;
-            self.hit_objective(site, &members)?;
-            self.advance_phase(now)?;
-        } else if self.raid.damage > 0
-            && let Some(last) = self.raid.last
-            && now > last.at
-            && (now - last.at).is_multiple_of(u64::from(RECOVERY_TICKS_PER_POINT))
-        {
-            self.raid.damage -= 1;
-            self.settle_aftermath(site)?;
+        // Each site keeps its own incidents (#1019); a site's raiders are its own, found once.
+        let mut by_site: Vec<Vec<(CreatureId, RaidMember)>> =
+            vec![Vec::new(); content.raids().len()];
+        for (id, member) in members {
+            if let Some(mine) = content
+                .raider_site(id)
+                .and_then(|index| by_site.get_mut(index))
+            {
+                mine.push((id, member));
+            }
         }
-        // A defence's aftermath closes in time (#1019): the wounded recovered, the breaches mended.
-        if self.raid.active.is_none()
-            && !self.raid.aftermath.is_empty()
-            && let Some(last) = self.raid.last
-            && last.defence
-            && now >= last.at.saturating_add(u64::from(CIVILIAN_RECOVERY_TICKS))
-        {
-            self.raid.aftermath.clear();
-            self.place_npcs(false)?;
+        for (index, (site, mine)) in content.raids().iter().zip(by_site).enumerate() {
+            self.tick_work.raid_sites_visited += 1;
+            self.advance_site(index, site, &mine, now)?;
         }
-        self.advance_marches(site, now)?;
         if time_of_day(now) == TRIGGER_TIME {
             if self.raid_eligible(now) && raid_night(self.rng_seed(), now) {
                 self.commit_incident(now)?;
@@ -1207,49 +1278,100 @@ impl ZoneSimulation {
         Ok(())
     }
 
+    /// One site's bookkeeping (#1019): its running incident, or its recovery, its defence's
+    /// aftermath in time and its raiders' marches.
+    fn advance_site(
+        &mut self,
+        index: usize,
+        site: &RaidSite,
+        members: &[(CreatureId, RaidMember)],
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        let state = self.site_raid_ref(index);
+        if state.active.is_some() {
+            self.record_participants(index, members)?;
+            self.hit_objective(index, site, members)?;
+            self.advance_phase(index, now)?;
+        } else if state.damage > 0
+            && let Some(last) = state.last
+            && now > last.at
+            && (now - last.at).is_multiple_of(u64::from(RECOVERY_TICKS_PER_POINT))
+        {
+            self.site_raid(index).damage -= 1;
+            self.settle_aftermath(index, site)?;
+        }
+        // A defence's aftermath closes in time (#1019): the wounded recovered, the breaches mended.
+        let state = self.site_raid_ref(index);
+        if state.active.is_none()
+            && !state.aftermath.is_empty()
+            && let Some(last) = state.last
+            && last.defence
+            && now >= last.at.saturating_add(u64::from(CIVILIAN_RECOVERY_TICKS))
+        {
+            self.site_raid(index).aftermath.clear();
+            self.place_npcs(false)?;
+        }
+        self.advance_marches(site, members, now)
+    }
+
     /// Players on the threat tables of this incident's living raiders take part in it; those
     /// who caused threat (damage, or healing a defender) earn the participation reward.
     fn record_participants(
         &mut self,
+        index: usize,
         members: &[(CreatureId, RaidMember)],
     ) -> Result<(), ZoneError> {
-        let Some(incident) = self.raid.active.as_mut() else {
+        let Some(incident) = self.site_raid_ref(index).active.as_ref().map(|i| i.id) else {
             return Ok(());
         };
-        let mut defenders = Vec::new();
+        // Threat entries in member order, read before the incident changes.
+        let mut entries = Vec::new();
         for (id, member) in members {
-            if member.incident != incident.id {
+            if member.incident != incident {
                 continue;
             }
             let Some(state) = self.creatures.get(id) else {
                 continue;
             };
             for entry in &state.threat {
-                let EntityRef::Player(player) = entry.entity else {
-                    continue;
-                };
-                if let Err(at) = incident.participants.binary_search(&player)
-                    && incident.participants.len() < crate::MAX_PLAYERS_PER_ZONE
-                {
-                    incident.participants.insert(at, player);
+                if let EntityRef::Player(player) = entry.entity {
+                    entries.push((player, entry.threat > 0));
                 }
-                if entry.threat > 0 {
+            }
+        }
+        let mut defenders = Vec::new();
+        if let Some(running) = self.site_raid(index).active.as_mut() {
+            for (player, defended) in entries {
+                if let Err(at) = running.participants.binary_search(&player)
+                    && running.participants.len() < crate::MAX_PLAYERS_PER_ZONE
+                {
+                    running.participants.insert(at, player);
+                }
+                if defended {
                     defenders.push(player);
                 }
             }
         }
-        let incident = incident.id;
         defenders.sort_unstable();
         defenders.dedup();
         for player in defenders {
-            self.reward_participant(player, incident)?;
+            self.reward_participant(index, player, incident)?;
         }
         Ok(())
     }
 
     /// Grants the participation reward for `incident` to `player_id` unless it already has it
-    /// (5.1.52): once per incident and character, in the zone and in the durable receipts.
-    fn reward_participant(&mut self, player_id: PlayerId, incident: u32) -> Result<(), ZoneError> {
+    /// (5.1.52): once per incident and character, in the zone and in the durable receipts. Only
+    /// the night raid target pays it: a quest's defence site (#1019) pays its quest's reward.
+    fn reward_participant(
+        &mut self,
+        index: usize,
+        player_id: PlayerId,
+        incident: u32,
+    ) -> Result<(), ZoneError> {
+        if index != 0 {
+            return Ok(());
+        }
         let key = crate::RewardKey::RaidParticipation { incident };
         let Err(at) = self.raid.rewarded.binary_search(&player_id) else {
             return Ok(());
@@ -1301,55 +1423,66 @@ impl ZoneSimulation {
 
     /// Closes the aid tasks the objective's restoration has reached; a guard whose task
     /// closes returns to its post.
-    fn settle_aftermath(&mut self, site: &RaidSite) -> Result<(), ZoneError> {
+    fn settle_aftermath(&mut self, index: usize, site: &RaidSite) -> Result<(), ZoneError> {
+        let state = self.site_raid(index);
         // A defence's tasks (#1019) close on their own time, not the objective's.
-        if self.raid.last.is_some_and(|last| last.defence) {
+        if state.last.is_some_and(|last| last.defence) {
             return Ok(());
         }
-        let before = self.raid.aftermath.len();
-        let damage = self.raid.damage;
-        self.raid
+        let before = state.aftermath.len();
+        let damage = state.damage;
+        state
             .aftermath
             .retain(|&index| !site.aid_settled(index as usize, damage));
-        if self.raid.aftermath.len() != before {
+        if state.aftermath.len() != before {
             self.place_npcs(false)?;
         }
         Ok(())
     }
 
-    /// The `RaidAid` intent (5.1.51): tends or mends open aid task `task` within reach. The task
-    /// closes, the barn regains [`AID_RESTORE_POINTS`] (not for a civilian tended, #1019), the
-    /// helper earns the incident's participation reward once and completes a step of its open
-    /// aid objective of the task's chore (#1019).
+    /// The `RaidAid` intent (5.1.51): tends or mends open aid task `task` within reach, at the
+    /// site whose signal reaches the player (#1019; the night raid target's otherwise). The task
+    /// closes, the objective regains [`AID_RESTORE_POINTS`] (not for a civilian tended, #1019),
+    /// the helper earns the incident's participation reward once and completes a step of its open
+    /// aid objective of the task's chore in a quest the site's steward ends (#1019).
     pub(crate) fn aid_raid(
         &mut self,
         player_id: PlayerId,
         task: u32,
     ) -> Result<Option<(ErrorCode, Option<EntityRef>)>, ZoneError> {
         let content = Arc::clone(&self.content);
-        let (Some(site), Some(incident)) = (content.raid(), self.raid.current_incident()) else {
+        let at = self.player_position(player_id)?;
+        let Some((index, site)) = content
+            .raid_near([at.x, at.z])
+            .or_else(|| content.raid().map(|site| (0, site)))
+        else {
+            return Ok(Some((ErrorCode::InvalidTarget, None)));
+        };
+        let Some(incident) = self.site_raid_ref(index).current_incident() else {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         };
         let Some(AidTask { kind, at: spot }) = site.task(task) else {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         };
-        if !self.raid.aftermath.contains(&task) {
+        if !self.site_raid_ref(index).aftermath.contains(&task) {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         }
-        let at = self.player_position(player_id)?;
         if crate::ai::distance_squared([at.x, at.z], spot) > i64::from(AID_REACH_UNITS).pow(2) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
-        self.raid.aftermath.remove(&task);
+        let state = self.site_raid(index);
+        state.aftermath.remove(&task);
         if site.civilian_task(task).is_none() {
-            self.raid.damage = self.raid.damage.saturating_sub(AID_RESTORE_POINTS);
+            state.damage = state.damage.saturating_sub(AID_RESTORE_POINTS);
         }
-        self.settle_aftermath(site)?;
+        self.settle_aftermath(index, site)?;
         self.place_npcs(false)?;
-        self.reward_participant(player_id, incident)?;
+        self.reward_participant(index, player_id, incident)?;
         let chore = kind.chore();
-        self.complete_objectives(player_id, |objective| {
+        let steward = site.steward;
+        self.complete_quest_objectives(player_id, |quest, objective| {
             matches!(objective, crate::QuestObjective::Aid { chore: wanted, .. } if wanted == chore)
+                && steward.is_none_or(|steward| quest.ender == steward)
         });
         Ok(None)
     }
@@ -1424,6 +1557,7 @@ impl ZoneSimulation {
     /// within [`CIVILIAN_REACH_UNITS`] instead, for the same midpoint without preparations.
     fn hit_objective(
         &mut self,
+        index: usize,
         site: &RaidSite,
         members: &[(CreatureId, RaidMember)],
     ) -> Result<(), ZoneError> {
@@ -1446,21 +1580,23 @@ impl ZoneSimulation {
             }
             let level = state.level;
             let at = self.unit_position(EntityRef::Creature(id))?;
-            if self.strike_civilian(site, id, [at[0], at[2]], template)? {
+            if self.strike_civilian(index, site, id, [at[0], at[2]], template)? {
                 continue;
             }
             if site.distance_squared([at[0], at[2]]) > i64::from(OBJECTIVE_REACH_UNITS).pow(2) {
                 continue;
             }
             let [low, high] = template.damage_at(level);
+            let raid = self.site_raid_ref(index);
             let amount = prepared_hit(
                 (u32::from(low) + u32::from(high)).div_ceil(2),
-                usize::from(self.raid.warned) + self.raid.braced.len(),
+                usize::from(raid.warned) + raid.braced.len(),
             );
             if let Some(state) = self.creatures.get_mut(&id) {
                 state.swing_timer = template.swing_ticks;
             }
-            self.raid.damage = (self.raid.damage + amount).min(OBJECTIVE_INTEGRITY);
+            let raid = self.site_raid(index);
+            raid.damage = (raid.damage + amount).min(OBJECTIVE_INTEGRITY);
             let source = EntityRef::Creature(id);
             self.notify_observers(
                 &[source],
@@ -1479,13 +1615,14 @@ impl ZoneSimulation {
     /// is none.
     fn strike_civilian(
         &mut self,
+        site_index: usize,
         site: &RaidSite,
         id: CreatureId,
         here: [i32; 2],
         template: &crate::CreatureTemplate,
     ) -> Result<bool, ZoneError> {
         let Some(incident) = self
-            .raid
+            .site_raid_ref(site_index)
             .active
             .as_ref()
             .filter(|incident| incident.defence())
@@ -1512,7 +1649,7 @@ impl ZoneSimulation {
         state.swing_timer = template.swing_ticks;
         let amount = (u32::from(low) + u32::from(high)).div_ceil(2);
         if let Some(health) = self
-            .raid
+            .site_raid(site_index)
             .active
             .as_mut()
             .and_then(|incident| incident.civilians.get_mut(index))
@@ -1537,19 +1674,22 @@ impl ZoneSimulation {
     /// documentation).
     fn settle_defence(
         &mut self,
+        index: usize,
         site: &RaidSite,
         incident: &RaidIncident,
     ) -> Result<(), ZoneError> {
         let held = incident.standing() >= site.hold();
         if held {
             let radius = i64::from(PARTICIPANT_RADIUS_UNITS).pow(2);
+            let steward = site.steward;
             for &player_id in &incident.participants {
                 let Ok(at) = self.player_position(player_id) else {
                     continue;
                 };
+                // Only this site's defence (#1019): the one its steward starts.
                 if site.distance_squared([at.x, at.z]) <= radius {
                     self.complete_objectives(player_id, |objective| {
-                        matches!(objective, crate::QuestObjective::Defend { .. })
+                        matches!(objective, crate::QuestObjective::Defend { npc } if steward.is_none_or(|steward| npc == steward))
                     });
                 }
             }
@@ -1572,17 +1712,20 @@ impl ZoneSimulation {
         for player in near {
             self.notify(player, ZoneEvent::Raid { notice });
         }
-        self.raid.aftermath = defence_aftermath(site, incident, self.raid.damage);
+        let state = self.site_raid(index);
+        // A quest defence site's defence always forces a breach (#1019).
+        state.aftermath = defence_aftermath(site, incident, state.damage, index > 0);
         self.place_npcs(false)
     }
 
     /// Loss when the integrity ran out; otherwise the next phase, or a defence after the last.
-    fn advance_phase(&mut self, now: u64) -> Result<(), ZoneError> {
-        let Some(incident) = &self.raid.active else {
+    fn advance_phase(&mut self, index: usize, now: u64) -> Result<(), ZoneError> {
+        let state = self.site_raid_ref(index);
+        let Some(incident) = &state.active else {
             return Ok(());
         };
-        if self.raid.damage >= OBJECTIVE_INTEGRITY {
-            return self.resolve(now, RaidOutcome::Lost);
+        if state.damage >= OBJECTIVE_INTEGRITY {
+            return self.resolve(index, now, RaidOutcome::Lost);
         }
         if now
             < incident
@@ -1592,43 +1735,50 @@ impl ZoneSimulation {
             return Ok(());
         }
         if incident.phase >= RAID_PHASES {
-            return self.resolve(now, RaidOutcome::Defended);
+            return self.resolve(index, now, RaidOutcome::Defended);
         }
-        if let Some(incident) = self.raid.active.as_mut() {
+        if let Some(incident) = self.site_raid(index).active.as_mut() {
             incident.phase += 1;
             incident.phase_started = now;
         }
-        self.commit_wave(now)
+        self.commit_wave(index, now)
     }
 
-    /// Resolves the running incident once; its living raiders withdraw.
-    fn resolve(&mut self, now: u64, outcome: RaidOutcome) -> Result<(), ZoneError> {
-        let Some(incident) = self.raid.active.take() else {
+    /// Resolves site `index`'s running incident once; its living raiders withdraw.
+    fn resolve(&mut self, index: usize, now: u64, outcome: RaidOutcome) -> Result<(), ZoneError> {
+        let Some(incident) = self.site_raid(index).active.take() else {
             return Ok(());
         };
         let defence = incident.defence();
-        self.raid.last = Some(RaidResolution {
+        self.site_raid(index).last = Some(RaidResolution {
             incident: incident.id,
             at: now,
             outcome,
             defence,
         });
-        if outcome == RaidOutcome::Defended {
+        // Only the night raid target pays the defence bonus (#1019).
+        if outcome == RaidOutcome::Defended && index == 0 {
             self.reward_defenders(incident.id)?;
         }
         let content = Arc::clone(&self.content);
-        if let Some(site) = content.raid() {
+        if let Some(site) = content.raids().get(index) {
             if defence {
-                self.settle_defence(site, &incident)?;
+                self.settle_defence(index, site, &incident)?;
             } else if outcome == RaidOutcome::Lost {
                 // The farm's aftermath (5.1.50): breaches open and the guards lie injured.
-                self.raid.aftermath = site.aid_tasks();
+                self.site_raid(index).aftermath = site.aid_tasks();
                 self.place_npcs(false)?;
             }
         }
+        // Only the site's own raiders withdraw (#1019).
+        let raiders: Vec<CreatureId> = content
+            .raids()
+            .get(index)
+            .map(|site| site.raiders().collect())
+            .unwrap_or_default();
         // The preparations served this incident and retire with it (5.1.69); nearby players hear
-        // truthfully what came of them (5.1.60).
-        if self.raid.warned || !self.raid.braced.is_empty() {
+        // truthfully what came of them (5.1.60). Only the night raid target is prepared.
+        if index == 0 && (self.raid.warned || !self.raid.braced.is_empty()) {
             self.raid.warned = false;
             self.raid.braced.clear();
             let notice = match outcome {
@@ -1650,38 +1800,39 @@ impl ZoneSimulation {
                 }
             }
         }
-        // Only the raiders it concerns change (#1086).
-        self.creatures.update_where(
-            |state| {
-                state.raid.is_some_and(|member| {
-                    member.incident == incident.id && member.leg == RaidLeg::Assault
-                })
-            },
-            |state| {
-                if let Some(member) = state.raid.as_mut() {
-                    member.leg = RaidLeg::Retreat;
-                    member.waypoint = 0;
-                    member.since = now;
-                }
-            },
-        );
+        // Only the raiders it concerns change (#1086): the site's own (#1019).
+        let assault = |state: &crate::creature::CreatureState| {
+            state.raid.is_some_and(|member| {
+                member.incident == incident.id && member.leg == RaidLeg::Assault
+            })
+        };
+        for id in raiders {
+            if !self.creatures.get(&id).is_some_and(assault) {
+                continue;
+            }
+            if let Some(member) = self
+                .creatures
+                .get_mut(&id)
+                .and_then(|state| state.raid.as_mut())
+            {
+                member.leg = RaidLeg::Retreat;
+                member.waypoint = 0;
+                member.since = now;
+            }
+        }
         Ok(())
     }
 
-    /// Arrivals at the camp, the end of a camp stay and stuck retreats.
-    fn advance_marches(&mut self, site: &RaidSite, now: u64) -> Result<(), ZoneError> {
-        // A living raider never rests, so it holds its decision bit (#1086).
-        let ids: Vec<CreatureId> = self
-            .creatures
-            .active(Activity::Decide)
-            .filter(|id| {
-                self.creatures
-                    .get(id)
-                    .is_some_and(|state| state.is_alive() && state.raid.is_some())
-            })
-            .collect();
-        for id in ids {
-            let Some(state) = self.creatures.get(&id) else {
+    /// Arrivals at the camp, the end of a camp stay and stuck retreats of the site's living
+    /// raiders, `members`.
+    fn advance_marches(
+        &mut self,
+        site: &RaidSite,
+        members: &[(CreatureId, RaidMember)],
+        now: u64,
+    ) -> Result<(), ZoneError> {
+        for &(id, _) in members {
+            let Some(state) = self.creatures.get(&id).filter(|state| state.is_alive()) else {
                 continue;
             };
             let (Some(member), idle) = (state.raid, matches!(state.ai, CreatureAi::Idle { .. }))
@@ -1772,7 +1923,10 @@ impl ZoneSimulation {
             return Ok(None);
         };
         let content = Arc::clone(&self.content);
-        let (Some(site), Some(state)) = (content.raid(), self.creatures.get(&id)) else {
+        let site = content
+            .raider_site(id)
+            .and_then(|index| content.raids().get(index));
+        let (Some(site), Some(state)) = (site, self.creatures.get(&id)) else {
             return Ok(None);
         };
         if member.leg == RaidLeg::Camp || !matches!(state.ai, CreatureAi::Idle { .. }) {
@@ -1833,33 +1987,28 @@ impl ZoneSimulation {
         )))
     }
 
-    /// The raid's signals for `viewer` at `at` (5.1.53, 5.1.61).
+    /// The raid's signals for `viewer` at `at` (5.1.53, 5.1.61): those of the one site whose
+    /// signal reaches it (#1019). Only the night raid target shows forewarning signs.
     pub(crate) fn raid_view(&self, viewer: PlayerId, at: [i32; 2]) -> Option<RaidView> {
-        let site = self.content.raid()?;
-        let phase = self
-            .raid
-            .active
-            .as_ref()
-            .map_or(0, |incident| incident.phase);
-        let signs = phase == 0 && self.forewarned(self.tick);
+        let (index, _) = self.content.raid_near(at)?;
+        let raid = self.raid_at(index)?;
+        let phase = raid.active.as_ref().map_or(0, |incident| incident.phase);
+        let signs = index == 0 && phase == 0 && self.forewarned(self.tick);
         // A defence's fallen civilians (#1019) may need tending with the objective whole.
-        if (phase == 0 && self.raid.damage == 0 && !signs && self.raid.aftermath.is_empty())
-            || site.distance_squared(at) > i64::from(SIGNAL_RADIUS_UNITS).pow(2)
-        {
+        if phase == 0 && raid.damage == 0 && !signs && raid.aftermath.is_empty() {
             return None;
         }
-        let left = OBJECTIVE_INTEGRITY - self.raid.damage;
+        let left = OBJECTIVE_INTEGRITY - raid.damage;
         let integrity = u8::try_from((left * 100).div_ceil(OBJECTIVE_INTEGRITY)).unwrap_or(100);
         Some(RaidView {
             phase,
             integrity,
-            aid: self.raid.aftermath.clone(),
+            aid: raid.aftermath.clone(),
             signs,
-            warned: self.raid.warned,
-            braced: self.raid.braced.clone(),
-            scouted: signs && self.raid.scouted.binary_search(&viewer).is_ok(),
-            standing: self
-                .raid
+            warned: raid.warned,
+            braced: raid.braced.clone(),
+            scouted: signs && raid.scouted.binary_search(&viewer).is_ok(),
+            standing: raid
                 .active
                 .as_ref()
                 .filter(|incident| incident.defence())

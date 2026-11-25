@@ -758,6 +758,37 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
             ),
+            // The Tollys in their hollow and the granary hands at its doors (#1019).
+            (
+                "Hal Tolly",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Wenna Tolly",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Bram Tolly",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Granary Hand Oda",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Granary Hand Piet",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
+            (
+                "Granary Hand Wilm",
+                NpcRole::Resident,
+                Some(greyhaven_vale::farmland::FARMLAND_AND_HAMLETS)
+            ),
         ])
         .collect::<Vec<_>>()
     );

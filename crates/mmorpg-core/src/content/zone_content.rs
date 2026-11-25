@@ -100,8 +100,8 @@ pub struct ZoneContent {
     traps: Vec<crate::Trap>,
     climbing: crate::ClimbSurfaces,
     handoff_corridors: Vec<crate::HandoffCorridor>,
-    /// The night raid target (#530), if the zone has one.
-    raid: Option<crate::RaidSite>,
+    /// The raid sites (#530, #1019), the night raid target first; empty without one.
+    raids: Vec<crate::RaidSite>,
     /// A hunter's daily outing (#991), if the zone has one.
     hunt: Option<crate::HuntOuting>,
     /// A merchant's daily cart journey (#992), if the zone has one.
@@ -138,6 +138,8 @@ pub struct ZoneContent {
     confrontations: Vec<crate::Confrontation>,
     /// NPCs quests escort or confront (#1019), whose bodies the tick moves, in ID order.
     quest_npcs: Vec<crate::NpcId>,
+    /// Escorted NPCs' companions (#1019), in NPC order.
+    companions: Vec<crate::EscortCompanion>,
     /// Strays to drive into their pens (#1019), in NPC order.
     strays: Vec<crate::Stray>,
     /// The night watch over a flock (#1019).
@@ -284,7 +286,7 @@ impl ZoneContent {
             traps: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
-            raid: None,
+            raids: Vec::new(),
             hunt: None,
             cart: None,
             waystones: Vec::new(),
@@ -304,6 +306,7 @@ impl ZoneContent {
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
+            companions: Vec::new(),
             strays: Vec::new(),
             watch: None,
             landmarks: Vec::new(),
@@ -363,7 +366,7 @@ impl ZoneContent {
             traps: Vec::new(),
             climbing: crate::ClimbSurfaces::default(),
             handoff_corridors: Vec::new(),
-            raid: None,
+            raids: Vec::new(),
             hunt: None,
             cart: None,
             waystones: Vec::new(),
@@ -383,6 +386,7 @@ impl ZoneContent {
             attitudes: Vec::new(),
             confrontations: Vec::new(),
             quest_npcs: Vec::new(),
+            companions: Vec::new(),
             strays: Vec::new(),
             watch: None,
             landmarks: Vec::new(),
@@ -1559,11 +1563,30 @@ impl ZoneContent {
         Ok(())
     }
 
-    /// Adds the night raid target (#530). Its reserved raiders are content spawns that stand
-    /// only while an incident commits them.
+    /// Adds a raid site (#530): the first is the night raid target, each later one a quest's
+    /// defence site (#1019) that only a defence raids. Its reserved raiders are content spawns
+    /// that stand only while an incident commits them, reserved by no other site. A later site
+    /// has no braces, its steward is no other site's, and its signal reaches no other site's, so
+    /// where a player stands names the one site it sees.
     pub fn with_raid(mut self, site: crate::RaidSite) -> Result<Self, ZoneError> {
         site.validate(&self)?;
-        self.raid = Some(site);
+        let reach = 2 * i64::from(crate::raid::SIGNAL_RADIUS_UNITS);
+        let clashes = self.raids.iter().any(|other| {
+            let ([ax, az], [bx, bz]) = (other.centre(), site.centre());
+            other
+                .raiders()
+                .any(|id| site.raiders().any(|raider| raider == id))
+                || (other.steward.is_some() && other.steward == site.steward)
+                || (i64::from(ax) - i64::from(bx)).pow(2) + (i64::from(az) - i64::from(bz)).pow(2)
+                    <= reach * reach
+        });
+        if clashes || (!self.raids.is_empty() && !site.braces.is_empty()) {
+            return Err(ZoneError::new("invalid raid site"));
+        }
+        if self.raids.len() >= crate::raid::MAX_RAID_SITES {
+            return Err(ZoneError::new("too many raid sites"));
+        }
+        self.raids.push(site);
         self.fingerprint = self.compute_fingerprint();
         Ok(self)
     }
@@ -1685,19 +1708,49 @@ impl ZoneContent {
             .is_some_and(|site| site.is_site_creature(creature))
     }
 
-    /// The night raid target, if any.
+    /// The night raid target, if any: the first raid site.
     #[must_use]
-    pub const fn raid(&self) -> Option<&crate::RaidSite> {
-        self.raid.as_ref()
+    pub fn raid(&self) -> Option<&crate::RaidSite> {
+        self.raids.first()
     }
 
-    /// Whether `creature` is a raider reserved for night raids: it stands only while an
-    /// incident commits it and never respawns on its own.
+    /// Every raid site (#1019), the night raid target first.
+    #[must_use]
+    pub fn raids(&self) -> &[crate::RaidSite] {
+        &self.raids
+    }
+
+    /// The raid site whose signal reaches `at` (#1019), with its index: at most one does.
+    #[must_use]
+    pub fn raid_near(&self, at: [i32; 2]) -> Option<(usize, &crate::RaidSite)> {
+        self.raids
+            .iter()
+            .enumerate()
+            .find(|(_, site)| site.signals(at))
+    }
+
+    /// The raid site whose defence `steward` starts (#1019), with its index.
+    #[must_use]
+    pub fn raid_of_steward(&self, steward: crate::NpcId) -> Option<(usize, &crate::RaidSite)> {
+        self.raids
+            .iter()
+            .enumerate()
+            .find(|(_, site)| site.steward == Some(steward))
+    }
+
+    /// The site that reserves raider `creature` (#1019), by index.
+    #[must_use]
+    pub fn raider_site(&self, creature: CreatureId) -> Option<usize> {
+        self.raids
+            .iter()
+            .position(|site| site.raiders().any(|id| id == creature))
+    }
+
+    /// Whether `creature` is a raider reserved for raids: it stands only while an incident commits
+    /// it and never respawns on its own.
     #[must_use]
     pub fn is_raider(&self, creature: CreatureId) -> bool {
-        self.raid
-            .as_ref()
-            .is_some_and(|site| site.raiders().any(|id| id == creature))
+        self.raider_site(creature).is_some()
     }
 
     /// Network stones standing in this zone, in ID order (#145).
@@ -2298,13 +2351,27 @@ impl ZoneContent {
             .iter()
             .flat_map(|quest| &quest.objectives)
             .filter_map(|objective| match *objective {
-                crate::QuestObjective::Escort { npc, .. } => Some(npc),
+                crate::QuestObjective::Escort { npc, .. }
+                | crate::QuestObjective::EscortTo { npc, .. } => Some(npc),
                 _ => None,
             })
             .chain(confrontations.iter().map(|confrontation| confrontation.npc))
             .collect();
         quest_npcs.sort_unstable();
         quest_npcs.dedup();
+        // Each defence starts at the steward of a raid site with civilians (#1019).
+        let unguarded =
+            self.quests.iter().flat_map(|quest| &quest.objectives).any(
+                |objective| match *objective {
+                    crate::QuestObjective::Defend { npc } => self
+                        .raid_of_steward(npc)
+                        .is_none_or(|(_, site)| site.civilians.is_empty()),
+                    _ => false,
+                },
+            );
+        if unguarded {
+            return Err(ZoneError::new("a defence names no raid site's steward"));
+        }
         if quest_npcs.iter().any(|npc| self.routine(*npc).is_some()) {
             return Err(ZoneError::new(
                 "an escorted or confronted npc keeps a routine",
@@ -2360,6 +2427,86 @@ impl ZoneContent {
     #[must_use]
     pub fn quest_npcs(&self) -> &[crate::NpcId] {
         &self.quest_npcs
+    }
+
+    /// Binds escorted NPCs' companions (#1019), after the NPC quests: each a known NPC without a
+    /// routine, once, following an earlier NPC that is escorted or itself a companion, so every
+    /// line leads back to one escorted NPC. A homecoming's line is at most
+    /// [`crate::MAX_ESCORT_COMPANIONS`] long. The companions join the NPCs the tick moves.
+    pub fn with_escort_companions(
+        mut self,
+        mut companions: Vec<crate::EscortCompanion>,
+    ) -> Result<Self, ZoneError> {
+        companions.sort_by_key(|companion| companion.npc);
+        let escorted: Vec<crate::NpcId> = self
+            .quests
+            .iter()
+            .flat_map(|quest| &quest.objectives)
+            .filter_map(|objective| match *objective {
+                crate::QuestObjective::Escort { npc, .. }
+                | crate::QuestObjective::EscortTo { npc, .. } => Some(npc),
+                _ => None,
+            })
+            .collect();
+        let valid = companions.len() <= crate::MAX_ESCORT_COMPANIONS
+            && companions.iter().enumerate().all(|(index, companion)| {
+                self.npc(companion.npc).is_some()
+                    && self.routine(companion.npc).is_none()
+                    && companion.follows < companion.npc
+                    && !escorted.contains(&companion.npc)
+                    && (escorted.contains(&companion.follows)
+                        || companions[..index]
+                            .iter()
+                            .any(|earlier| earlier.npc == companion.follows))
+                    && !companions[..index]
+                        .iter()
+                        .any(|earlier| earlier.npc == companion.npc)
+            });
+        if !valid {
+            return Err(ZoneError::new("escort companions are invalid"));
+        }
+        self.quest_npcs
+            .extend(companions.iter().map(|companion| companion.npc));
+        self.quest_npcs.sort_unstable();
+        self.quest_npcs.dedup();
+        self.companions = companions;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Every escort companion (#1019), in NPC order.
+    #[must_use]
+    pub fn companions(&self) -> &[crate::EscortCompanion] {
+        &self.companions
+    }
+
+    /// The companion line behind escorted NPC `lead` (#1019): each companion after the one it
+    /// follows, in walking order.
+    #[must_use]
+    pub fn escort_line(&self, lead: crate::NpcId) -> Vec<crate::NpcId> {
+        let mut line = vec![lead];
+        let mut index = 0;
+        while index < line.len() {
+            let ahead = line[index];
+            line.extend(
+                self.companions
+                    .iter()
+                    .filter(|companion| companion.follows == ahead)
+                    .map(|companion| companion.npc),
+            );
+            index += 1;
+        }
+        line.remove(0);
+        line
+    }
+
+    /// The NPC companion `npc` follows (#1019), if it is a companion.
+    #[must_use]
+    pub fn companion_of(&self, npc: crate::NpcId) -> Option<crate::NpcId> {
+        self.companions
+            .binary_search_by_key(&npc, |companion| companion.npc)
+            .ok()
+            .map(|index| self.companions[index].follows)
     }
 
     /// Binds the livestock (#1019), after the NPC quests: each stray a known NPC without a routine,
@@ -2584,7 +2731,8 @@ impl ZoneContent {
     /// NPC attitudes and confrontations (#1019) enter the identity only where authored.
     fn compute_npc_quest_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_construction_fingerprint();
-        if self.attitudes.is_empty() && self.confrontations.is_empty() {
+        if self.attitudes.is_empty() && self.confrontations.is_empty() && self.companions.is_empty()
+        {
             return fingerprint;
         }
         let mut hash = Fnv1a::new();
@@ -2605,6 +2753,15 @@ impl ZoneContent {
             hash.u32(confrontation.npc.get());
             hash.u32(confrontation.evidence.get());
             hash.u32(confrontation.foe.get());
+        }
+        // Escort companions (#1019), where authored.
+        if !self.companions.is_empty() {
+            hash.bytes(b"companions");
+            hash.len(self.companions.len());
+            for companion in &self.companions {
+                hash.u32(companion.npc.get());
+                hash.u32(companion.follows.get());
+            }
         }
         hash.finish()
     }
@@ -2969,10 +3126,15 @@ impl ZoneContent {
     }
 
     fn compute_raid_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_water_fingerprint();
-        let Some(site) = &self.raid else {
-            return fingerprint;
-        };
+        // Each site chains onto the identity before it (#1019).
+        self.raids
+            .iter()
+            .fold(self.compute_water_fingerprint(), |fingerprint, site| {
+                Self::raid_site_fingerprint(fingerprint, site)
+            })
+    }
+
+    fn raid_site_fingerprint(fingerprint: u64, site: &crate::RaidSite) -> u64 {
         let mut hash = Fnv1a::new();
         hash.bytes(b"mmorpg.zone-content/raid-v1");
         hash.u64(fingerprint);
@@ -3018,6 +3180,11 @@ impl ZoneContent {
                 hash.i32s(&civilian.at);
                 hash.u32(civilian.health);
             }
+        }
+        // The NPC whose quest starts its defence (#1019), where authored.
+        if let Some(steward) = site.steward {
+            hash.bytes(b"steward");
+            hash.u32(steward.get());
         }
         hash.finish()
     }
@@ -3388,6 +3555,11 @@ impl ZoneContent {
                         hash.u32(spot.get());
                         hash.u32(item.get());
                     }
+                    crate::QuestObjective::EscortTo { npc, to } => {
+                        hash.u32(npc.get());
+                        hash.u32(to.get());
+                    }
+                    crate::QuestObjective::Recruit { npc } => hash.u32(npc.get()),
                 }
             }
             hash.u32(quest.rewards.experience);

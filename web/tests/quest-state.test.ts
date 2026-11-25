@@ -125,6 +125,34 @@ describe("quest state", () => {
     );
   });
 
+  test("labels the missing family's quests and lets a muster's recruits come in any order (#1019)", () => {
+    expect(objectiveViews(59, [1, 0, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the Tollys' emptied chest (done)", "Inspect a child's shoe by the field lane", "Inspect handcart ruts by the hollow",
+    ]);
+    // Hal Tolly (NPC 54) leads his family home to Goodwife Ena (NPC 36); Interact at Hal starts it.
+    const home = sheet({ entries: [{ quest: 60, progress: [0, 0, 0] }] });
+    expect(questActionAt(home, 54)).toBe("Lead Hal Tolly and his family home to Goodwife Ena");
+    expect(questActionAt(home, 55)).toBeNull();
+    // Ploughman Garr, Farmhand Jory and Watchman Dunstan, each open while the others are not won yet.
+    expect(objectiveViews(61, [0, 1, 0]).map((objective) => objective.text)).toEqual([
+      "Win Ploughman Garr to the muster", "Win Farmhand Jory to the muster (done)", "Win Watchman Dunstan to the muster",
+    ]);
+    const muster = sheet({ entries: [{ quest: 61, progress: [0, 0, 0] }] });
+    expect(questActionAt(muster, 49)).toBe("Win Watchman Dunstan to the muster");
+    expect(questActionAt(muster, 41)).toBe("Win Farmhand Jory to the muster");
+    // Ena starts the granary's defence; its status line names the site the viewer stands at.
+    expect(questActionAt(sheet({ entries: [{ quest: 62, progress: [0, 0, 0] }] }), 36)).toBe(
+      "Hold Ena's granary with 2 of its people standing",
+    );
+    const raid = { phase: 1, integrity: 100, aid: [], signs: false, warned: false, braced: [], scouted: false, standing: 3 };
+    expect(defenceStatus(raid, [-10800, 690, 35600])).toBe(
+      "Ena's granary under attack: wave 1 of 3, 3 of 3 of its people standing (2 must stand)",
+    );
+    expect(defenceStatus(raid, [8000, 1190, 4400])).toBe(
+      "Millbrook Farm under attack: wave 1 of 3, 3 of 3 of its people standing (2 must stand)",
+    );
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

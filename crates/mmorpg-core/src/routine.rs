@@ -217,11 +217,7 @@ impl ZoneSimulation {
             return Some(placement);
         }
         // A guard injured in a lost raid lies at the farm's shelter (#531).
-        if let Some(position) = self
-            .content
-            .raid()
-            .and_then(|site| site.injured_at(npc, &self.raid.aftermath))
-        {
+        if let Some(position) = self.injured_at(npc) {
             return Some(NpcPlacement {
                 position,
                 facing: definition.facing,
@@ -278,7 +274,7 @@ impl ZoneSimulation {
             .iter()
             .map(|routine| (routine.npc, routine.door))
             .collect();
-        if let Some(site) = self.content.raid() {
+        for site in self.content.raids() {
             movers.extend(site.aid_guards().map(|npc| (npc, None)));
         }
         // Escorted and confronted NPCs (#1019) move or leave the world.

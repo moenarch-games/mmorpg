@@ -813,43 +813,42 @@ pub fn reachable_pieces(x: i32, z: i32) -> Vec<u32> {
         .collect()
 }
 
-/// The night raid target's approximate disturbance circle (#530) as `[x, z, radius]` in units,
-/// or empty without a raid target.
+/// Each raid site's approximate disturbance circle (#530) as `[x, z, radius]` in units, the
+/// night raid target first and then each quest defence site (#1019); empty without one.
 #[wasm_bindgen(js_name = raidArea)]
 #[must_use]
 pub fn raid_area() -> Vec<i32> {
     host::hosted_content()
-        .raid()
-        .map(|site| {
+        .raids()
+        .iter()
+        .flat_map(|site| {
             let ([x, z], radius) = site.area();
-            vec![x, z, radius]
+            [x, z, radius]
         })
-        .unwrap_or_default()
+        .collect()
 }
 
-/// The night raid target's aftermath aid tasks (#531) as `[x, z, npc]` triples in units, in
-/// task order: `npc` is the injured guard or, after a defence (#1019), the wounded civilian to
-/// tend, or 0 for a breach to mend.
+/// Each raid site's aftermath aid tasks (#531) as `[site, x, z, npc]` in units, sites in
+/// [`raid_area`]'s order (#1019) and each site's tasks in task order: `npc` is the injured guard
+/// or, after a defence (#1019), the wounded civilian to tend, or 0 for a breach to mend.
 #[wasm_bindgen(js_name = raidAid)]
 #[must_use]
 pub fn raid_aid() -> Vec<i32> {
     host::hosted_content()
-        .raid()
-        .map(|site| {
-            site.tasks()
-                .iter()
-                .flat_map(|task| {
-                    let npc = match task.kind {
-                        mmorpg_core::AidKind::TendGuard(npc) => {
-                            i32::try_from(npc.get()).unwrap_or(0)
-                        }
-                        mmorpg_core::AidKind::MendBreach => 0,
-                    };
-                    [task.at[0], task.at[1], npc]
-                })
-                .collect()
+        .raids()
+        .iter()
+        .enumerate()
+        .flat_map(|(index, site)| {
+            let site_index = i32::try_from(index).unwrap_or(0);
+            site.tasks().into_iter().flat_map(move |task| {
+                let npc = match task.kind {
+                    mmorpg_core::AidKind::TendGuard(npc) => i32::try_from(npc.get()).unwrap_or(0),
+                    mmorpg_core::AidKind::MendBreach => 0,
+                };
+                [site_index, task.at[0], task.at[1], npc]
+            })
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// The hosted zone's ore veins (#917) as `[x, z]` centres in units, in wire order.

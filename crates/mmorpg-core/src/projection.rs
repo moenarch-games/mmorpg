@@ -756,12 +756,7 @@ impl ZoneSimulation {
                     } else if let Some(health) = self.sheep_health(npc_id) {
                         // A sheep of a watch (#1019) shows what it has left, a fallen one barely alive.
                         health.max(1)
-                    } else if self
-                        .content
-                        .raid()
-                        .and_then(|site| site.injured_at(npc_id, &self.raid.aftermath))
-                        .is_some()
-                    {
+                    } else if self.injured_at(npc_id).is_some() {
                         crate::raid::INJURED_HEALTH_PERCENT
                     } else if let Some((_, health)) = cart {
                         health

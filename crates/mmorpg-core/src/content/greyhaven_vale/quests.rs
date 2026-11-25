@@ -156,6 +156,24 @@ pub const BERTILS_LOCKET: ItemId = ItemId::new(43);
 
 /// The flock (#1019, slice 4b): Lise's missing ewe tracked and driven home, and a night watch
 /// over her fold with bait and a snare laid at its hedges ([`super::flock`]).
+/// The missing family and the granary (#1019, slice 4c): Goodwife Ena has a player follow the
+/// Tollys' trail from their empty cottage, lead them home, muster defenders across the farmland
+/// and hold her granary through a raid ([`super::granary`]).
+pub const THE_EMPTY_COTTAGE: QuestId = QuestId::new(59);
+pub const BRING_THEM_HOME: QuestId = QuestId::new(60);
+pub const THE_HARVEST_MUSTER: QuestId = QuestId::new(61);
+pub const THE_GRANARY_STAND: QuestId = QuestId::new(62);
+/// The Tollys' trail (#1019): their emptied chest by the cottage door, a child's shoe by the west
+/// fields' lane and their handcart's ruts by the hollow where they hide.
+pub const TOLLYS_CHEST: EvidenceId = EvidenceId::new(18);
+pub const CHILDS_SHOE: EvidenceId = EvidenceId::new(19);
+pub const HANDCART_RUTS: EvidenceId = EvidenceId::new(20);
+/// The muster's recruits (#1019): Ploughman Garr of the western hamlet, Farmhand Jory of the
+/// southern one and Watchman Dunstan at the tower, who distrusts Necromancers unless the watch's
+/// bread came from them or a trusted party mate speaks for them.
+pub const PLOUGHMAN_GARR: NpcId = NpcId::new(37);
+pub const WATCHMAN_DUNSTAN: NpcId = NpcId::new(49);
+
 pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
 pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
 /// Their supplies: the bait and the snare, worth nothing to a vendor.
@@ -419,6 +437,13 @@ enum ObjectiveSource {
         spot: u32,
         item: u32,
     },
+    EscortTo {
+        npc: u32,
+        to: u32,
+    },
+    Recruit {
+        npc: u32,
+    },
 }
 
 /// An aid objective's chore (#1019).
@@ -548,6 +573,14 @@ impl From<ObjectiveSource> for QuestObjective {
             ObjectiveSource::Lay { spot, item } => Self::Lay {
                 spot: EvidenceId::new(spot),
                 item: ItemId::new(item),
+            },
+            // The missing family and the muster (#1019).
+            ObjectiveSource::EscortTo { npc, to } => Self::EscortTo {
+                npc: NpcId::new(npc),
+                to: NpcId::new(to),
+            },
+            ObjectiveSource::Recruit { npc } => Self::Recruit {
+                npc: NpcId::new(npc),
             },
         }
     }

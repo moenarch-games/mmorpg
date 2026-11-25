@@ -285,7 +285,7 @@
     },
     {
       "id": "escort-step",
-      "description": "Advance the quest escorts one tick (#1019): each running escort is visited once and its NPC follows a step's worth of its player's trail (at most 64 points kept), fails on the leash or arrives; then the content's confrontations are checked for a foe out of its fight. Nothing iterates the zone's other NPCs or players. Measured by mmorpg-core's escort_step_work example and escort_step test.",
+      "description": "Advance the quest escorts one tick (#1019): each escorted NPC is visited once and follows a step's worth of the trail of the one it follows (at most 64 points kept), its player or, for a companion in a family's line, the NPC ahead of it; it fails on the leash, or the line's lead arrives once its companions have gathered; then the content's confrontations are checked for a foe out of its fight. Nothing iterates the zone's other NPCs or players. Measured by mmorpg-core's escort_step_work example and escort_step test.",
       "dimensions": {
         "escorts": { "description": "players each leading their own NPC, 20 m ahead of it so it limps after them for the whole measurement" },
         "idle": { "description": "bystander NPCs nobody escorts" }
@@ -335,7 +335,7 @@
     },
     {
       "id": "defence-step",
-      "description": "Advance a defence of Millbrook Farm one tick (#1019): the raid step visits each raider on the assault once, striking the nearest standing civilian of at most four before the barn, and the construction step visits each of the content's construction sites once (raise, stand or take down). Nothing iterates the zone's idle players. Measured by mmorpg-core's defence_step_work example and defence_step test.",
+      "description": "Advance a defence of Millbrook Farm one tick (#1019): the raid step visits each of the content's raid sites once (Millbrook and the granary), sorting the living raiders to their sites once, and each raider on the assault once, striking the nearest standing civilian of at most four before its site's objective; the construction step visits each of the content's construction sites once (raise, stand or take down). Nothing iterates the zone's idle players. Measured by mmorpg-core's defence_step_work example and defence_step test.",
       "dimensions": {
         "raiders": {
           "description": "Greyhaven's reserved raiders standing at the barn's walls beside the farmfolk in a running defence, round its approaches"
@@ -369,6 +369,17 @@
           "signal": "operation-count",
           "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades and the two hurdles of Lise's fold), every tick.",
           "budget": { "max": 4 },
+          "growth": [
+            { "dimension": "raiders", "bound": "constant" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "raid_sites_visited",
+          "unit": "sites",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::raid_sites_visited: the content's raid sites (Greyhaven's Millbrook Farm and the western hamlet's granary), every tick, whichever is raided.",
+          "budget": { "max": 2 },
           "growth": [
             { "dimension": "raiders", "bound": "constant" },
             { "dimension": "idle", "bound": "constant" }

@@ -86,7 +86,8 @@ export type AbilityRecord = {
  * the NPC who starts a defence (defend) and an aid chore, 1 mend or 2 tend (aid). The shrine and the ledger (#1019): an
  * evidence spot yielding item `source` (transcribe), a seal's structure piece (unseal) and the NPC hearing a decision
  * (decide). The flock (#1019): a stray NPC (herd), the NPC who starts a watch (watch) and an
- * evidence spot taking item `source` (lay).
+ * evidence spot taking item `source` (lay). The missing family and the muster (#1019): an NPC led home to NPC `source`
+ * (escort_to) and an NPC won to a muster (recruit).
  */
 export type QuestObjectiveRecord =
   | {
@@ -106,11 +107,12 @@ export type QuestObjectiveRecord =
         | "unseal"
         | "decide"
         | "herd"
-        | "watch";
+        | "watch"
+        | "recruit";
       target: number;
       count: number;
     }
-  | { kind: "collect" | "retrieve" | "use_item" | "escort" | "deliver" | "transcribe" | "lay"; target: number; source: number; count: number };
+  | { kind: "collect" | "retrieve" | "use_item" | "escort" | "escort_to" | "deliver" | "transcribe" | "lay"; target: number; source: number; count: number };
 
 export type QuestRecord = {
   id: number;
@@ -172,6 +174,8 @@ const OBJECTIVE_KINDS = [
   "herd",
   "watch",
   "lay",
+  "escort_to",
+  "recruit",
 ] as const;
 const CLASS_NAMES: readonly ClassName[] = ["warden", "ranger", "arcanist", "necromancer", "rogue", "cleric", "druid"];
 const RESOURCES = ["rage", "focus", "mana", "faith"] as const;
@@ -437,6 +441,14 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { kind, target, source: area, count };
       }
+      // A homecoming (#1019): an NPC led home to NPC `source`.
+      if (kind === "escort_to") {
+        const to = int(objective.source, `${label} destination`, 0, 0xffff_ffff);
+        if (!npcsById.has(target) || !npcsById.has(to)) {
+          fail(`${label} names an unknown NPC`);
+        }
+        return { kind, target, source: to, count };
+      }
       // A rubbing (#1019): an evidence spot and the item it yields; bait or a snare (#1019): an evidence spot and the item
       // laid there.
       if (kind === "transcribe" || kind === "lay") {
@@ -455,11 +467,11 @@ export function decodeCatalog(json: string): ContentCatalog {
         return { kind, target, source, count };
       }
       if (objective.source !== null) {
-        fail(`${label} has a source only when it collects, retrieves, gives an item, escorts, delivers, transcribes or lays`);
+        fail(`${label} has a source only when it collects, retrieves, gives an item, escorts, leads home, delivers, transcribes or lays`);
       }
       // Farm defence (#1019): a defence starts at a known NPC; an aid chore is 1 mend or 2 tend.
       // The flock (#1019): a stray is herded, a watch starts at a known NPC.
-      if ((kind === "defend" || kind === "decide" || kind === "herd" || kind === "watch") && !npcsById.has(target)) {
+      if ((kind === "defend" || kind === "decide" || kind === "herd" || kind === "watch" || kind === "recruit") && !npcsById.has(target)) {
         fail(`${label} names an unknown NPC`);
       }
       if (kind === "aid" && target !== 1 && target !== 2) {

@@ -115,6 +115,8 @@ pub fn millbrook_barn() -> RaidSite {
         braces: BRACES.to_vec(),
         // The farmfolk who hold the barn's doors in a defence (#1019).
         civilians: super::millbrook_defence::civilians(),
+        // Farmer Osric Mill starts its defence (#1019).
+        steward: Some(super::quests::OSRIC_MILL),
     }
 }
 

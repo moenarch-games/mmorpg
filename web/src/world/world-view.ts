@@ -42,7 +42,7 @@ import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects } from "./impact-effects";
 import { KitEffects } from "./kit-effects";
 import { RaidSmoke } from "./raid-smoke";
-import { type AidTask, reachableAidTask } from "./raid-aid";
+import { type RaidSiteSpots, raidSiteAt, reachableAidTask } from "./raid-aid";
 import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
@@ -502,10 +502,8 @@ export class WorldView {
   #reachableDoor: (x: number, z: number) => number = () => 0;
   #reachableSeat: (x: number, z: number) => number = () => 0;
   #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
-  /** The night raid target's disturbance circle in units (#530), from the scenery. */
-  #raidArea: { x: number; z: number; radius: number } | null = null;
-  /** The night raid target's aftermath aid task spots (#531), from the scenery. */
-  #raidAid: readonly AidTask[] = [];
+  /** The raid sites (#530, #1019): disturbance circles and aftermath aid task spots (#531), from the scenery. */
+  #raidSites: readonly RaidSiteSpots[] = [];
   /** The night raid target's forewarning spots (#532), from the scenery. */
   #raidPrep: RaidPrepSpots | null = null;
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
@@ -937,8 +935,7 @@ export class WorldView {
     this.#reachableDoor = world.scenery.buildings.reachableDoor;
     this.#reachableSeat = world.scenery.buildings.reachableSeat;
     this.#reachablePieces = world.scenery.reachablePieces;
-    this.#raidArea = world.scenery.raidArea;
-    this.#raidAid = world.scenery.raidAid;
+    this.#raidSites = world.scenery.raidSites;
     this.#raidPrep = world.scenery.raidPrep;
     this.#raidRoof = null;
     this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
@@ -1892,7 +1889,7 @@ export class WorldView {
       return;
     }
     // Or tend a guard or mend a breach a lost night raid left in reach (#531).
-    const task = at && !talking ? reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) : null;
+    const task = at && !talking ? reachableAidTask(projection?.raid, this.#raidSite(at)?.aid ?? [], at[0], at[2]) : null;
     if (task !== null) {
       this.queueIntent(() => ({ kind: "raid-aid", task }));
       return;
@@ -1954,7 +1951,7 @@ export class WorldView {
     return touchContext(projection, {
       isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
       doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
-      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidAid, at[0], at[2]) !== null || this.#prepStep(projection, at) !== null : false,
+      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidSite(at)?.aid ?? [], at[0], at[2]) !== null || this.#prepStep(projection, at) !== null : false,
       arena: this.#arena,
     });
   }
@@ -2293,7 +2290,7 @@ export class WorldView {
       if (unit) { this.#impacts.spawn(cue.family, intensity, [unit.feet[0], unit.centreY, unit.feet[2]], now); }
     }
     this.#impacts.update(now);
-    const roof = this.#roofOf(projection.raid ? this.#raidArea : null, scenery.scenery);
+    const roof = this.#roofOf(projection.raid ? (this.#raidSite(projection.entities[0]?.position)?.area ?? null) : null, scenery.scenery);
     this.#raidSmoke.update(projection.raid, roof?.top ?? null, roof?.span ?? [0, 0], now);
     frame.unitNodes = this.#plan ? NO_NODES : presented.nodes;
     profilePhase("units");
@@ -2471,7 +2468,7 @@ export class WorldView {
     if (this.#elements.sky.hidden === cssSky) { this.#sky.show(cssSky); }
     if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), frame.dayFraction); }
     // A night raid's approximate disturbance area while its assault runs (#530).
-    const area = this.#raidArea;
+    const area = this.#raidSite(projection.entities[0]?.position)?.area ?? null;
     const disturbance = area && (projection.raid?.phase ?? 0) > 0
       ? { x: area.x / unitsPerMetre, z: area.z / unitsPerMetre, radius: area.radius / unitsPerMetre }
       : null;
@@ -2555,6 +2552,11 @@ export class WorldView {
       const onScreen = point.z > -1 && point.z < 1 && Math.abs(point.x) <= 1.05 && Math.abs(point.y) <= 1.05;
       return [{ npc: entity.entityId, x: ((point.x + 1) / 2) * width, y: ((1 - point.y) / 2) * height, onScreen }];
     });
+  }
+
+  /** The raid site a player whose position is `at` (units) sees (#1019): the nearest; the night raid target without one. */
+  #raidSite(at: readonly number[] | null | undefined): RaidSiteSpots | null {
+    return at ? raidSiteAt(this.#raidSites, at[0]!, at[2]!) : (this.#raidSites[0] ?? null);
   }
 
   /** The roof of the barn nearest the raid target's area (units), from the scenery's props. */

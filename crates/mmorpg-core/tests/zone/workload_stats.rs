@@ -25,7 +25,8 @@ fn tick_work_counts_real_ai_and_engine_work_without_entering_recovery() {
         .count();
     // The hunt's bear (#991) waits the same way for a confrontation day, and the cart's robbers
     // (#992) for an ambush.
-    let raiders = content.raid().map_or(0, |site| site.raiders().count())
+    // Every raid site's reserved raiders (#1019).
+    let raiders = content.raids().iter().map(|site| site.raiders().count()).sum::<usize>()
         + usize::from(content.hunt().is_some())
         + content.cart().map_or(0, |cart| cart.bandits.len())
         // The courier's foe (#1019) waits until he is unmasked, and the watch's wolves for a watch.

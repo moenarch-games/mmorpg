@@ -30,6 +30,7 @@ mod marsh_adder;
 mod marsh_creatures;
 mod merchant_cart;
 mod millbrook_defence;
+mod missing_family;
 mod night_raid;
 mod quest_chain;
 mod raid_aftermath;
