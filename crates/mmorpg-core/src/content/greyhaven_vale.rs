@@ -40,6 +40,7 @@ pub mod farmland;
 pub mod fen_pack;
 pub mod flock;
 pub mod fort;
+pub mod granary;
 pub mod hamlet_creatures;
 pub mod hamlet_stories;
 pub mod highland_bandits;
@@ -2274,11 +2275,15 @@ fn content_with_spawns(
             .with_traps(traps::traps())?
             .with_climbing(climbing())?
             .with_raid(raid::millbrook_barn())?
+            // The western hamlet's granary, a quest's defence site (#1019).
+            .with_raid(granary::site())?
             .with_dens(dens::dens())?
             .with_hunt(hunt::outing())?
             .with_cart(cart::journey())?
             // The NPCs quests escort, interview or confront (#1019), after every reserved group.
             .with_npc_quests(quests::attitudes(), quests::confrontations())?
+            // The Tollys walk home in a line behind Hal (#1019).
+            .with_escort_companions(granary::companions())?
             // Lise's flock (#1019), after the NPC quests and every reserved group.
             .with_flock(flock::strays(), Some(flock::watch()))?
             // Who leaves a character's world after its decision (#1019), after the quests.

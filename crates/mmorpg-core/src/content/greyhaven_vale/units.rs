@@ -530,6 +530,8 @@ pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
         .chain(super::quests::spawns())
         // The prowlers of the watch over Lise's fold (#1019).
         .chain(super::flock::spawns())
+        // The granary's raiders (#1019).
+        .chain(super::granary::raider_spawns())
         .collect()
 }
 
@@ -550,6 +552,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::hamlet_stories::npcs())
         // Lise's stray ewe and her fold's ewes (#1019).
         .chain(super::flock::npcs())
+        // The Tollys and the granary hands (#1019).
+        .chain(super::granary::npcs())
         .collect()
 }
 

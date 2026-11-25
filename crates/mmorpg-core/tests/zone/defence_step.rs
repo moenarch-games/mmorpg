@@ -17,5 +17,7 @@ fn defence_work_follows_the_raiders_and_not_the_idle_population() {
         );
         // Greyhaven's two barricades and the fold's two hurdles (#1019), every tick.
         assert_eq!(run.constructions_visited, 4, "{raiders}/{idle}: {run:?}");
+        // Millbrook and the granary (#1019), every tick, whichever is raided.
+        assert_eq!(run.raid_sites_visited, 2, "{raiders}/{idle}: {run:?}");
     }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { smokeRate } from "../src/world/raid-smoke";
-import { aftermathOpen, reachableAidTask } from "../src/world/raid-aid";
+import { aftermathOpen, raidSiteAt, raidSites, reachableAidTask } from "../src/world/raid-aid";
 import { forewarningLine, prepSpots, raidNoticeText, reachablePrepStep } from "../src/world/raid-prep";
 import { aftermathPlea, raidWarning } from "../src/world/units/quest-panel";
 
@@ -35,6 +35,17 @@ describe("night raid aftermath aid (#531)", () => {
     expect(reachableAidTask(open, tasks, 5_700, 4_150)).toBeNull();
     expect(reachableAidTask({ ...open, aid: [0] }, tasks, 5_700, 4_500)).toBeNull();
     expect(reachableAidTask(null, tasks, 8_000, 3_450)).toBeNull();
+  });
+
+  test("each raid site keeps its own tasks, and a player aids at the site nearest it (#1019)", () => {
+    // Millbrook's two tasks and the granary's one, as `raidArea()` and `raidAid()` export them.
+    const sites = raidSites([7_400, 4_800, 3_500, -11_400, 36_000, 3_500], [0, 8_000, 3_450, 0, 0, 5_700, 4_500, 9, 1, -11_550, 35_000, 0]);
+    expect(sites.map((site) => site.aid.length)).toEqual([2, 1]);
+    expect(raidSiteAt(sites, 8_000, 3_450)).toBe(sites[0]!);
+    const granary = raidSiteAt(sites, -11_550, 35_000)!;
+    expect(granary).toBe(sites[1]!);
+    expect(reachableAidTask({ ...quiet, phase: 0, integrity: 100, aid: [0] }, granary.aid, -11_550, 35_100)).toBe(0);
+    expect(raidSiteAt([], 0, 0)).toBeNull();
   });
 
   test("residents ask for help only while aid tasks are open after the raid", () => {

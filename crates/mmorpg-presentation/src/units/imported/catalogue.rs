@@ -714,7 +714,9 @@ impl Resident {
             | "Alewife Gwen Barrow" | "Old Maud" | "Pip" | "Netter Ilsa" | "Trapper Sela"
             | "Goodwife Ena" | "Shepherd Lise" | "Miller Hanne" | "Trader Maren"
             // Millbrook's farmfolk (#1019).
-            | "Marta Mill" | "Farmhand Edda" => {
+            | "Marta Mill" | "Farmhand Edda"
+            // The Tollys and the granary hands (#1019).
+            | "Wenna Tolly" | "Granary Hand Oda" => {
                 Some(Self::VillagerWoman)
             }
             "Carpenter Owen Alder"
@@ -735,7 +737,11 @@ impl Resident {
             | "Farmhand Jory"
             | "Smith Wulfric Hale"
             | "Courier Wat Ferrow"
-            | "Farmhand Cole" => Some(Self::Villager),
+            | "Farmhand Cole"
+            | "Hal Tolly"
+            | "Bram Tolly"
+            | "Granary Hand Piet"
+            | "Granary Hand Wilm" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -1034,6 +1040,13 @@ mod tests {
                 Some("resident.tanner"),
                 // The farmland tower's Watchman Dunstan (#1019).
                 Some("resident.guard"),
+                // The Tollys: Hal, Wenna and Bram, then the granary hands Oda, Piet and Wilm (#1019).
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.tanner"),
+                Some("resident.farmer"),
+                Some("resident.farmer"),
             ])
             .collect::<Vec<_>>()
         );

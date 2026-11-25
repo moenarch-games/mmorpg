@@ -591,13 +591,54 @@
       "prerequisite": 52,
       "objectives": [{"deliver_load": {"source": 5, "npc": 49}}],
       "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 59,
+      "name": "The Empty Cottage",
+      "text": "The Tollys' door stood open at dawn, and Hal would never leave a harvest. Look over their cottage by the lane, then follow their trail west past the fields and find where it ends.",
+      "giver": 36,
+      "ender": 36,
+      "prerequisite": 52,
+      "objectives": [{"inspect": {"spot": 18}}, {"inspect": {"spot": 19}}, {"inspect": {"spot": 20}}],
+      "rewards": {"experience": 300, "copper": 20, "choices": []}
+    },
+    {
+      "id": 60,
+      "name": "Bring Them Home",
+      "text": "So they hide in the hollow by the west wall, afraid of the Redbrands. Tell Hal it is safe and lead them home to me. Bram is small and Wenna will not leave him: walk slowly and keep them all close.",
+      "giver": 36,
+      "ender": 36,
+      "prerequisite": 59,
+      "objectives": [{"escort_to": {"npc": 54, "to": 36}}],
+      "rewards": {"experience": 350, "copper": 25, "choices": [7, 9]}
+    },
+    {
+      "id": 61,
+      "name": "The Harvest Muster",
+      "text": "Hal says the Redbrands want our grain. Ask Ploughman Garr, Farmhand Jory in the south hamlet and Watchman Dunstan at the tower to stand with us. Friends can split up and ask them all at once.",
+      "giver": 36,
+      "ender": 36,
+      "prerequisite": 60,
+      "objectives": [{"recruit": {"npc": 37}}, {"recruit": {"npc": 41}}, {"recruit": {"npc": 49}}],
+      "rewards": {"experience": 300, "copper": 25, "choices": []}
+    },
+    {
+      "id": 62,
+      "name": "The Granary Stand",
+      "text": "They come for the grain. Tell me when you are ready and Oda, Piet and Wilm will hold the granary's doors; two of them must stand. When it is over, mend a breach in its walls before the rain gets in.",
+      "giver": 36,
+      "ender": 36,
+      "prerequisite": 61,
+      "objectives": [{"defend": {"npc": 36}}, {"aid": {"chore": "mend", "count": 1}}],
+      "rewards": {"experience": 500, "copper": 40, "choices": [8, 5]}
     }
   ],
   "departures": [
     {"npc": 34, "quest": 50, "outcome": 1}
   ],
   "attitudes": [
-    {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36}
+    {"npc": 13, "distrusts": ["arcanist", "necromancer"], "sponsor": true, "recommendation": 36},
+    {"npc": 49, "distrusts": ["necromancer"], "sponsor": true, "recommendation": 58}
   ],
   "confrontations": [
     {"npc": 45, "evidence": 41, "foe": 2930}
@@ -619,7 +660,10 @@
     {"id": 14, "name": "wool on the fold's hurdle", "at": [15500, 739, 45800], "reach": 250},
     {"id": 15, "name": "hoofprints below the barn", "at": [13300, 587, 39800], "reach": 250},
     {"id": 16, "name": "the north-east gap in the hedge", "at": [15700, 739, 45500], "reach": 250},
-    {"id": 17, "name": "the east gap in the hedge", "at": [15900, 739, 46700], "reach": 250}
+    {"id": 17, "name": "the east gap in the hedge", "at": [15900, 739, 46700], "reach": 250},
+    {"id": 18, "name": "the Tollys' emptied chest", "at": [-8400, 601, 32300], "reach": 250},
+    {"id": 19, "name": "a child's shoe by the field lane", "at": [-13000, 714, 34100], "reach": 250},
+    {"id": 20, "name": "handcart ruts by the hollow", "at": [-16400, 933, 39800], "reach": 250}
   ],
   "loads": [
     {"id": 1, "name": "the last sack", "kind": "sack", "at": [-6210, 1049, 1030], "reach": 300},
