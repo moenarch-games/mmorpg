@@ -196,6 +196,37 @@ describe("quest state", () => {
     ]);
   });
 
+  test("labels Fenford's stories, finds the ford's spots and lifts the crate and the jug (#1019)", () => {
+    expect(objectiveViews(71, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the frayed rope at Osk's post (done)",
+      "Find Rope Block on the ford's bed, a few paces downstream of its middle stake: 0/1",
+    ]);
+    expect(objectiveViews(72, [1, 1, 0]).map((objective) => objective.text)).toEqual([
+      "Inspect the ford's north stake (done)", "Inspect the ford's middle stake (done)", "Inspect the ford's south stake",
+    ]);
+    expect(objectiveViews(74, [0]).map((objective) => objective.text)).toEqual(["Raise the mill's brake wheel"]);
+    expect(objectiveViews(75, [0]).map((objective) => objective.text)).toEqual([
+      "Carry a jug from the alder spring to Innkeeper Hob Ferris",
+    ]);
+    expect(objectiveViews(77, [1, 1, 0]).map((objective) => objective.text)).toEqual([
+      "Find Smuggler's Token in sailcloth among the alder roots, upstream of the boatman's mooring: 1/1",
+      "Be heard by Boatman Teague (done)",
+      "Tell Watchman Corwin what becomes of the Smuggler's Token",
+    ]);
+    // Wading on the ford's bed finds the block only there; the stakes are found standing at them.
+    const rope = sheet({ entries: [{ quest: 71, progress: [1, 0, 0] }] });
+    expect(evidenceInReach(rope, [109000, 9 + 90, 28800])).toBe(27);
+    expect(evidenceInReach(rope, [108200, 9 + 90, 28750])).toBeNull();
+    const survey = sheet({ entries: [{ quest: 72, progress: [1, 0, 0] }] });
+    expect(evidenceInReach(survey, [108200, 9 + 90, 28750])).toBe(29);
+    // The crate on the cart and the jug at the spring are lifted for their quests only.
+    const wheel = sheet({ entries: [{ quest: 74, progress: [0, 0, 0] }] });
+    expect(liftInReach(wheel, [104300, 977 + 90, 19800], false, [])).toBe(6);
+    const water = sheet({ entries: [{ quest: 75, progress: [0, 0, 0] }] });
+    expect(liftInReach(water, [96100, 815 + 90, 22100], false, [])).toBe(7);
+    expect(liftInReach(wheel, [96100, 815 + 90, 22100], false, [])).toBeNull();
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

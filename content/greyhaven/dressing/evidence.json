@@ -31,6 +31,13 @@
     {"id":"quest-turned-earth","asset":"discoveries.kit.hunter-clue","position":[45300,653,59400],"yaw":45000,"scale":[1100,1100,1100]},
     {"id":"quest-dropped-spade","asset":"discoveries.kit.hunter-clue","position":[43700,664,58450],"yaw":12000,"scale":[1000,1000,1000]},
     {"id":"quest-downs-beacon","asset":"discoveries.kit.fire-ring","position":[65200,615,57300],"yaw":0,"scale":[1000,1000,1000]},
-    {"id":"quest-downs-beacon-wood","asset":"settlement.props.firewood","position":[65200,615,57300],"yaw":16384,"scale":[900,900,900]}
+    {"id":"quest-downs-beacon-wood","asset":"settlement.props.firewood","position":[65200,615,57300],"yaw":16384,"scale":[900,900,900]},
+    {"id":"quest-frayed-rope","asset":"discoveries.kit.fen-marker","position":[108700,203,28000],"yaw":16384,"scale":[1000,1000,1000]},
+    {"id":"quest-ford-stake-north","asset":"discoveries.kit.fen-marker","position":[108200,150,28150],"yaw":0,"scale":[900,900,900]},
+    {"id":"quest-ford-stake-middle","asset":"discoveries.kit.fen-marker","position":[108200,9,28750],"yaw":0,"scale":[1100,1100,1100]},
+    {"id":"quest-ford-stake-south","asset":"discoveries.kit.fen-marker","position":[108200,165,29350],"yaw":32768,"scale":[900,900,900]},
+    {"id":"quest-crated-wheel","asset":"settlement.props.crate","position":[104200,977,19700],"yaw":0,"scale":[1000,1000,1000]},
+    {"id":"quest-alder-spring","asset":"settlement.props.water-trough","position":[96000,815,22000],"yaw":16384,"scale":[900,900,900]},
+    {"id":"quest-spring-jugs","asset":"settlement.props.pottery","position":[96000,815,22150],"yaw":0,"scale":[1000,1000,1000]}
   ]
 }

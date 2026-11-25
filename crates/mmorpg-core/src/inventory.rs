@@ -41,7 +41,7 @@ pub struct ItemTemplate {
 /// Starter catalog, in stable ID order. Equippable items stack to one;
 /// consumable effects, prices and loot tables are separate rules. Quest
 /// items are plain bag items that quest content names as collect objectives.
-pub const ITEM_CATALOG: [ItemTemplate; 48] = [
+pub const ITEM_CATALOG: [ItemTemplate; 50] = [
     ItemTemplate {
         id: ItemId::new(1),
         name: "Torn Fur",
@@ -502,6 +502,24 @@ pub const ITEM_CATALOG: [ItemTemplate; 48] = [
     ItemTemplate {
         id: ItemId::new(48),
         name: "Redbrand Order Pouch",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    // The iron block of Ferryman Osk's ford rope, lost on the ford's bed (#1019), and the token
+    // from the smuggler's shipment above the ford, both worth nothing to a vendor.
+    ItemTemplate {
+        id: ItemId::new(49),
+        name: "Rope Block",
+        max_stack: 1,
+        slot: None,
+        weapon: None,
+        stats: ItemStats::NONE,
+    },
+    ItemTemplate {
+        id: ItemId::new(50),
+        name: "Smuggler's Token",
         max_stack: 1,
         slot: None,
         weapon: None,

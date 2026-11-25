@@ -3810,6 +3810,11 @@ impl ZoneContent {
                         hash.bytes(b"paid");
                         hash.u32(option.copper);
                     }
+                    // An option that pays at the turn-in (#1019), only where authored.
+                    if option.reward > 0 {
+                        hash.bytes(b"reward");
+                        hash.u32(option.reward);
+                    }
                     // An option that acts in the world (#1019), only where authored.
                     if let Some(item) = option.hands {
                         hash.bytes(b"hands");

@@ -40,6 +40,7 @@ pub mod downs;
 pub mod dressing;
 pub mod farmland;
 pub mod fen_pack;
+pub mod fenford;
 pub mod flock;
 pub mod fort;
 pub mod granary;
@@ -228,6 +229,8 @@ pub mod ids {
     /// Lise's fold, construction sites.
     pub const SLUICE_STOP: u32 = 466;
     pub const FOLD_HURDLES: RangeInclusive<u32> = 467..=468;
+    /// Wynne's windmill brake wheel at Fenford (#1019), a construction site.
+    pub const MILL_BRAKE_WHEEL: u32 = 469;
     /// The guardian's vault beyond the seal (#1019): its walls, drawn as the shrine kit, and its
     /// rock cover cells.
     pub const SHRINE_VAULT_WALLS: RangeInclusive<u32> = 470..=478;
@@ -2016,6 +2019,7 @@ pub fn structure_sites() -> Vec<crate::StructureSite> {
     ]
     .into_iter()
     .chain(hamlet_stories::sites())
+    .chain(fenford::sites())
     .collect()
 }
 
@@ -2027,6 +2031,7 @@ pub fn structure_pieces() -> Vec<crate::StructurePiece> {
         .chain(millbrook_defence::barricades())
         .chain([shrine::vault::seal_piece()])
         .chain(hamlet_stories::pieces())
+        .chain(fenford::pieces())
         .collect()
 }
 
@@ -2250,6 +2255,7 @@ fn content_with_spawns(
                 millbrook_defence::constructions()
                     .into_iter()
                     .chain(hamlet_stories::constructions())
+                    .chain(fenford::constructions())
                     .collect(),
             )?
             // The Sunken Shrine's glyphs, seal and ward (#1019), after its seal's piece and warden,

@@ -570,6 +570,8 @@ mod tests {
                 item(46, "Barrow Torc", Value::Null, stats(0, 0, 0, 0)),
                 item(47, "Signal Tinder", Value::Null, stats(0, 0, 0, 0)),
                 item(48, "Redbrand Order Pouch", Value::Null, stats(0, 0, 0, 0)),
+                item(49, "Rope Block", Value::Null, stats(0, 0, 0, 0)),
+                item(50, "Smuggler's Token", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();

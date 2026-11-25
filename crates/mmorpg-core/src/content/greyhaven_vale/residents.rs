@@ -54,10 +54,10 @@ pub(super) fn npcs() -> Vec<Npc> {
         .map(|&(id, name, level, position, facing)| Npc {
             id: NpcId::new(id),
             name: name.to_owned(),
-            // The region's quest givers (#820) and the hamlets' (#859, Old Bertil and Old Maud
-            // since #1019), then Greyfang Watch's other watchman.
+            // The region's quest givers (#820) and the hamlets' (#859, Old Bertil, Old Maud, Miller
+            // Wynne and Ferryman Osk since #1019), then Greyfang Watch's other watchman.
             role: match id {
-                22 | 24 | 27 | 31 | 32 | 34 | 36 | 38 | 39 | 40 => NpcRole::QuestGiver,
+                22 | 24 | 27 | 28 | 29 | 31 | 32 | 34 | 36 | 38 | 39 | 40 => NpcRole::QuestGiver,
                 35 => NpcRole::Guard,
                 42 => NpcRole::Vendor,
                 _ => NpcRole::Resident,

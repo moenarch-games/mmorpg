@@ -208,6 +208,34 @@ pub const ORDER_POUCH: ItemId = ItemId::new(48);
 /// The cold beacon by the lookout.
 pub const DOWNS_BEACON: EvidenceId = EvidenceId::new(25);
 
+/// The village and the river (#1019, slice 6a): Ferryman Osk's lost rope block found on the
+/// ford's bed, the ford's three stakes surveyed for him, Miller Wynne's new brake wheel carried
+/// from the cart and fitted, spring water carried from the alders to Hob Ferris, and a smuggler's
+/// shipment found, its owner questioned and its token handed to the Watch or left for Osk
+/// ([`super::fenford`]). 73, 76, 78 and 79 are the crossings under threat (slice 6b).
+pub const THE_FERRYMANS_ROPE: QuestId = QuestId::new(71);
+pub const THE_FORDS_RECKONING: QuestId = QuestId::new(72);
+pub const THE_MISSING_MILL_WHEEL: QuestId = QuestId::new(74);
+pub const WATER_FOR_THE_REST: QuestId = QuestId::new(75);
+pub const THE_SMUGGLERS_TOKEN: QuestId = QuestId::new(77);
+/// The rope's iron block from the ford's bed and the token from the hidden shipment, both worth
+/// nothing to a vendor.
+pub const ROPE_BLOCK: ItemId = ItemId::new(49);
+pub const SMUGGLERS_TOKEN: ItemId = ItemId::new(50);
+/// Their evidence: the frayed rope at Osk's post, the block's hiding place on the ford's bed, the
+/// ford's north, middle and south stakes, and the shipment's hiding place upstream.
+pub const FRAYED_ROPE: EvidenceId = EvidenceId::new(26);
+pub const FORD_BED: EvidenceId = EvidenceId::new(27);
+pub const FORD_STAKES: [EvidenceId; 3] = [
+    EvidenceId::new(28),
+    EvidenceId::new(29),
+    EvidenceId::new(30),
+];
+pub const HIDDEN_SHIPMENT: EvidenceId = EvidenceId::new(31);
+/// The ferryman and the miller of Fenford.
+pub const FERRYMAN_OSK: NpcId = NpcId::new(29);
+pub const MILLER_WYNNE: NpcId = NpcId::new(28);
+
 pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
 pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
 /// Their supplies: the bait and the snare, worth nothing to a vendor.
@@ -375,8 +403,8 @@ struct QuestSource {
     decision: Vec<OptionSource>,
 }
 
-/// A decision option (#1019): free as a plain label, or with its copper, the item the NPC hands
-/// over or a fight.
+/// A decision option (#1019): free as a plain label, or with its copper, its turn-in reward, the
+/// item the NPC hands over or a fight.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum OptionSource {
@@ -391,6 +419,8 @@ struct FullOptionSource {
     #[serde(default)]
     copper: u32,
     #[serde(default)]
+    reward: u32,
+    #[serde(default)]
     hands: Option<u32>,
     #[serde(default)]
     fight: bool,
@@ -403,6 +433,7 @@ impl From<OptionSource> for DecisionOption {
             OptionSource::Full(option) => Self {
                 label: option.label,
                 copper: option.copper,
+                reward: option.reward,
                 hands: option.hands.map(ItemId::new),
                 fight: option.fight,
             },

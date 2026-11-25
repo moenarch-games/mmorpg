@@ -350,11 +350,19 @@ pub struct Quest {
 /// the player ([`crate::Confrontation`]). While a later objective of the quest is still open, an
 /// action at the NPC carries the chosen option out again ([`Quest::unresolved_decision`]): a lost
 /// item is handed over anew, and a foe that gave up its fight is faced again.
+///
+/// An option may also pay (#1019): its `reward` is copper the turn-in adds to the quest's own
+/// reward when the quest is turned in with that option, so two outcomes can pay differently. It
+/// is paid once, with the turn-in, never on deciding, so abandoning and deciding again mints
+/// nothing.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DecisionOption {
     pub label: String,
     /// Copper the option costs, at most [`MAX_DECISION_COPPER`]; zero for most.
     pub copper: u32,
+    /// Copper the turn-in adds when the quest is turned in with this option, at most
+    /// [`MAX_DECISION_COPPER`]; zero for most.
+    pub reward: u32,
     /// A plain bag item the NPC hands over when it is chosen (#1019).
     pub hands: Option<ItemId>,
     /// Whether choosing it turns the NPC hostile (#1019).
@@ -537,6 +545,7 @@ pub(crate) fn validate_quests(
         let options_valid = quest.decision.iter().all(|option| {
             text(&option.label, MAX_DECISION_BYTES)
                 && option.copper <= MAX_DECISION_COPPER
+                && option.reward <= MAX_DECISION_COPPER
                 && option.hands.is_none_or(|item| {
                     item_template(item).is_some_and(|template| template.slot.is_none())
                 })
@@ -1339,7 +1348,20 @@ impl ZoneSimulation {
                 Err(_) => return Ok(Some((ErrorCode::InvalidInventoryMove, target))),
             }
         }
-        let Some(copper) = player.copper.checked_add(definition.rewards.copper) else {
+        // The decision (#1019): its index, and the reward of the option it was decided with.
+        let decided = definition
+            .objectives
+            .iter()
+            .position(|objective| matches!(objective, QuestObjective::Decide { .. }));
+        let bonus = decided
+            .and_then(|index| usize::from(entry.progress[index]).checked_sub(1))
+            .and_then(|option| definition.decision.get(option))
+            .map_or(0, |option| option.reward);
+        let Some(copper) = player
+            .copper
+            .checked_add(definition.rewards.copper)
+            .and_then(|copper| copper.checked_add(bonus))
+        else {
             return Ok(Some((ErrorCode::MoneyOverflow, target)));
         };
         let revision = if bag == player.inventory && hands == *player.equipment {
@@ -1364,11 +1386,7 @@ impl ZoneSimulation {
             .retain(|candidate| candidate.quest != definition.id);
         player.quests.completed.insert(definition.id);
         // The decision (#1019) stays with the character.
-        if let Some(index) = definition
-            .objectives
-            .iter()
-            .position(|objective| matches!(objective, QuestObjective::Decide { .. }))
-        {
+        if let Some(index) = decided {
             player
                 .quests
                 .outcomes

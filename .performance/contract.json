@@ -367,8 +367,8 @@
           "name": "constructions_visited",
           "unit": "sites",
           "signal": "operation-count",
-          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades and the two hurdles of Lise's fold), every tick.",
-          "budget": { "max": 4 },
+          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades, the two hurdles of Lise's fold and the brake wheel of Wynne's mill), every tick.",
+          "budget": { "max": 5 },
           "growth": [
             { "dimension": "raiders", "bound": "constant" },
             { "dimension": "idle", "bound": "constant" }

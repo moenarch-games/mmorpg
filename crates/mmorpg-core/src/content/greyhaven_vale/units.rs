@@ -571,6 +571,8 @@ pub(super) fn npcs() -> Vec<Npc> {
         .chain(super::barrowdown::npcs())
         // The Downs road's lookout (#1019).
         .chain(super::downs::npcs())
+        // Fenford's watchman at the ford and the boatman above it (#1019).
+        .chain(super::fenford::npcs())
         .collect()
 }
 
