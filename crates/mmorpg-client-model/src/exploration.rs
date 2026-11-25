@@ -275,7 +275,8 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                 // The trial's and the boulder's foes (#1019) like kills; a structure the area it
                 // stands in; an escort the area it leads to. NPC actions have their marker.
                 QuestObjective::DefeatWithLoan { template, .. }
-                | QuestObjective::Crush { template, .. } => creature_area(content, template),
+                | QuestObjective::Crush { template, .. }
+                | QuestObjective::Outflank { template, .. } => creature_area(content, template),
                 QuestObjective::Demolish { piece } => content
                     .pieces()
                     .iter()
@@ -325,11 +326,13 @@ fn quest_hints(content: &ZoneContent, sheet: &QuestSheet, areas: &[MapArea]) -> 
                     }),
                 // A homecoming (#1019) hints at the area its destination NPC stands in, a recruit
                 // at where its NPC stands: it carries no quest marker. The Downs road's patrol
-                // (#1019) is watched and called out at its lookout.
+                // (#1019) is watched and called out at its lookout, the ford's cart (#1019) at its
+                // carter.
                 QuestObjective::EscortTo { to: npc, .. }
                 | QuestObjective::Recruit { npc }
                 | QuestObjective::Sight { npc }
-                | QuestObjective::Ambush { npc } => content
+                | QuestObjective::Ambush { npc }
+                | QuestObjective::Crossing { npc } => content
                     .npc(npc)
                     .and_then(|npc| content.areas().area_at(npc.position[0], npc.position[1]))
                     .map(Area::id),

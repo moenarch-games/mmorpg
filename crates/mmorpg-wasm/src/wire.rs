@@ -301,6 +301,9 @@ mirror!(
         StaffShown,
         PatrolResting,
         PatrolArrived,
+        CartResting,
+        CartLost,
+        TooDeep,
     }
 );
 mirror!(

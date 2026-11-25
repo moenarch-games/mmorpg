@@ -184,6 +184,9 @@ pub fn refusal_text(code: ErrorCode) -> String {
         ErrorCode::StaffShown => "They will not speak with a staff held in plain sight. Put it away, or bring a party member they trust or a good word they accept.".into(),
         ErrorCode::PatrolResting => "\"The last patrol has only just passed. Give them time to form up again.\"".into(),
         ErrorCode::PatrolArrived => "\"They made the camp in the hollow. I will watch for the next patrol; ask me when you are ready.\"".into(),
+        ErrorCode::CartResting => "\"Not yet. Let me see to the cart before we try the ford again.\"".into(),
+        ErrorCode::CartLost => "\"They broke the cart in the ford! Give me time to mend it, then we try again.\"".into(),
+        ErrorCode::TooDeep => "\"Not through there, it's over my head! Take me by the shallows.\" They will not follow into deep water.".into(),
         _ => humanize(&format!("{code:?}")),
     }
 }
@@ -482,7 +485,10 @@ impl Logs {
                             | ErrorCode::EscortLost
                             | ErrorCode::NotCarrying
                             | ErrorCode::PatrolResting
-                            | ErrorCode::PatrolArrived,
+                            | ErrorCode::PatrolArrived
+                            | ErrorCode::CartResting
+                            | ErrorCode::CartLost
+                            | ErrorCode::TooDeep,
                             Some(npc @ EntityRef::Npc(_)),
                         ) => format!("{}: {}", name(npc), refusal_text(code)),
                         _ => refusal_text(code),

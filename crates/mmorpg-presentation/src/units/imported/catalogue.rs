@@ -720,7 +720,9 @@ impl Resident {
             // Millbrook's farmfolk (#1019).
             | "Marta Mill" | "Farmhand Edda"
             // The Tollys and the granary hands (#1019).
-            | "Wenna Tolly" | "Granary Hand Oda" => {
+            | "Wenna Tolly" | "Granary Hand Oda"
+            // Ilsa's sister on the Marsh Lake's island (#1019).
+            | "Reedcutter Nell" => {
                 Some(Self::VillagerWoman)
             }
             "Carpenter Owen Alder"
@@ -748,8 +750,9 @@ impl Resident {
             | "Granary Hand Wilm"
             // Barrowdown's grave robber (#1019).
             | "Cobb the Digger"
-            // Fenford's boatman above the ford (#1019).
-            | "Boatman Teague" => Some(Self::Villager),
+            // Fenford's boatman above the ford and the carter on its south bank (#1019).
+            | "Boatman Teague"
+            | "Carter Aldo" => Some(Self::Villager),
             _ => None,
         }
     }
@@ -1066,6 +1069,9 @@ mod tests {
                 // Fenford's Watchman Corwin and Boatman Teague (#1019).
                 Some("resident.guard"),
                 Some("resident.farmer"),
+                // Carter Aldo on the ford's south bank and Reedcutter Nell on the Marsh Lake (#1019).
+                Some("resident.farmer"),
+                Some("resident.tanner"),
             ])
             .collect::<Vec<_>>()
         );
