@@ -367,8 +367,8 @@
           "name": "constructions_visited",
           "unit": "sites",
           "signal": "operation-count",
-          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades, the two hurdles of Lise's fold and the brake wheel of Wynne's mill), every tick.",
-          "budget": { "max": 5 },
+          "notes": "ZoneTickWork::constructions_visited: the content's construction sites (Greyhaven's two barricades, the two hurdles of Lise's fold, the brake wheel of Wynne's mill and the barricade on Fenford's ford), every tick.",
+          "budget": { "max": 6 },
           "growth": [
             { "dimension": "raiders", "bound": "constant" },
             { "dimension": "idle", "bound": "constant" }
@@ -510,6 +510,45 @@
           "budget": { "max": 96 },
           "growth": [
             { "dimension": "patrols", "bound": "linear" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crossing-step",
+      "description": "Advance the ford crossings one tick (#1019): the crossing step visits each of the content's crossings once and, while one is under way or settling, each of its raiders once (standing it, striking the cart, holding the cart up, leaving after the crossing); the cart's placement is its progress along the authored route. A raider's run for the cart is its own creature decision. Nothing iterates the zone's idle players; a crossing's arrival queries the interest grid round the cart once and its loss notifies the players with its objective ready once. Measured by mmorpg-core's crossing_step_work example and crossing_step test.",
+      "dimensions": {
+        "crossings": { "description": "carts rolling along their own roads, three raiders each, started by their own player who then walked off" },
+        "idle": { "description": "players standing far from every road and carter" }
+      },
+      "scalePoints": [
+        { "crossings": 1, "idle": 16 },
+        { "crossings": 2, "idle": 16 },
+        { "crossings": 4, "idle": 16 },
+        { "crossings": 4, "idle": 64 },
+        { "crossings": 4, "idle": 160 }
+      ],
+      "metrics": [
+        {
+          "name": "crossings_visited",
+          "unit": "crossings",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::crossings_visited: the content's crossings (Greyhaven has one, Carter Aldo's at Fenford's ford), every tick.",
+          "budget": { "max": 4 },
+          "growth": [
+            { "dimension": "crossings", "bound": "linear" },
+            { "dimension": "idle", "bound": "constant" }
+          ]
+        },
+        {
+          "name": "crossing_raiders_visited",
+          "unit": "raiders",
+          "signal": "operation-count",
+          "notes": "ZoneTickWork::crossing_raiders_visited: each raider of a crossing under way or settling once (three a crossing here and in Greyhaven), none without one.",
+          "budget": { "max": 24 },
+          "growth": [
+            { "dimension": "crossings", "bound": "linear" },
             { "dimension": "idle", "bound": "constant" }
           ]
         }

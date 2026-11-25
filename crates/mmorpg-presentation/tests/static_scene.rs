@@ -537,8 +537,8 @@ fn the_market_square_dresses_the_outpost_without_touching_colliders_or_paths() {
     let parts = mmorpg_presentation::settlement_props::parts(&scenery);
     assert_eq!(
         parts.len(),
-        1243,
-        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891), the smith's bench (#917), the Wolfrun cart scene (#984), Millbrook's quest timber pile, the farmland stories' millrace debris, grain, timber and loaves, the Downs beacon's firewood and Fenford's crated brake wheel, spring trough and jugs (#1019) and the procedural props and fences they replace (#683)"
+        1244,
+        "market square, brook additions, the Delving Run footbridge (#828), the sixteen cottages' and six farmhouses' furniture (#843, #847, #886), the villages' clutter and stand-ins (#851), the second batch (#891), the smith's bench (#917), the Wolfrun cart scene (#984), Millbrook's quest timber pile, the farmland stories' millrace debris, grain, timber and loaves, the Downs beacon's firewood, Fenford's crated brake wheel, spring trough and jugs and the hurdles at its lane's foot (#1019) and the procedural props and fences they replace (#683)"
     );
     for family in [
         ["stall", "cart", "crate"],

@@ -55,9 +55,10 @@ pub(super) fn npcs() -> Vec<Npc> {
             id: NpcId::new(id),
             name: name.to_owned(),
             // The region's quest givers (#820) and the hamlets' (#859, Old Bertil, Old Maud, Miller
-            // Wynne and Ferryman Osk since #1019), then Greyfang Watch's other watchman.
+            // Wynne, Ferryman Osk and Netter Ilsa since #1019), then Greyfang Watch's other
+            // watchman.
             role: match id {
-                22 | 24 | 27 | 28 | 29 | 31 | 32 | 34 | 36 | 38 | 39 | 40 => NpcRole::QuestGiver,
+                22 | 24 | 27..=32 | 34 | 36 | 38 | 39 | 40 => NpcRole::QuestGiver,
                 35 => NpcRole::Guard,
                 42 => NpcRole::Vendor,
                 _ => NpcRole::Resident,

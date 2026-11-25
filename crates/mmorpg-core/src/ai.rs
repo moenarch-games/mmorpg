@@ -318,6 +318,7 @@ impl ZoneSimulation {
             || creature.raid.is_some()
             || self.prowling(id)
             || self.supply_marching(id)
+            || self.crossing_raiding(id)
             || !matches!(creature.ai, CreatureAi::Idle { .. })
             || current.velocity().y != 0
         {
@@ -368,11 +369,12 @@ impl ZoneSimulation {
         );
 
         // A withdrawing raider (#530) leaves rather than picks fights; it still defends itself.
-        // A prowler of a watch (#1019) goes for the flock and picks no fight either.
+        // A prowler of a watch (#1019) goes for the flock and picks no fight either, nor does a
+        // crossing's raider (#1019), which goes for the cart.
         let withdrawing = creature
             .raid
             .is_some_and(|member| member.leg == crate::RaidLeg::Retreat);
-        let withdrawing = withdrawing || self.prowling(id);
+        let withdrawing = withdrawing || self.prowling(id) || self.crossing_raiding(id);
         let home = self.creature_home(id, spawn);
         // A territorial neutral (#997) engages a player who comes within its territory.
         let territorial =
@@ -490,7 +492,10 @@ impl ZoneSimulation {
         let march = match self.march(id, centre, half)? {
             None => match self.prowl(id, centre, half)? {
                 None => match self.supply_step(id, centre, half)? {
-                    None => self.den_step(id, here, spawn.wander_radius, elapsed),
+                    None => match self.crossing_step(id, centre, half)? {
+                        None => self.den_step(id, here, spawn.wander_radius, elapsed),
+                        raid => raid,
+                    },
                     supply => supply,
                 },
                 prowl => prowl,
@@ -512,6 +517,8 @@ impl ZoneSimulation {
             }
             _ => None,
         };
+        // A lure lying near it (#1019) draws its facing.
+        let lured = self.lure_bearing(id, spawn.template, here);
         let Some(creature) = self.creatures.get_mut(&id) else {
             return Ok(());
         };
@@ -699,6 +706,11 @@ impl ZoneSimulation {
                 }
             }
         };
+        // A lured creature (#1019) holds its ground and turns toward the bait at the bounded rate.
+        let (velocity, facing) = match lured {
+            Some(bait) => ([0, 0], Some(bait)),
+            None => (velocity, facing),
+        };
         // Stuns freeze a creature in place; roots stop it and snares slow it; so does tar (#294).
         let surface = crate::surface::under_feet(
             self.content.surfaces(),
@@ -712,8 +724,9 @@ impl ZoneSimulation {
             // Standing its ground in a fight, it turns at a bounded rate (#949), so a player who
             // circles inside its reach can reach its flank; faster while it guards a flank just
             // struck.
-            let pivots = creature.ai == CreatureAi::Engaged && !casting && velocity == [0, 0];
-            let turn = if creature.wary_ticks > 0 {
+            let pivots = (creature.ai == CreatureAi::Engaged && !casting && velocity == [0, 0])
+                || lured.is_some();
+            let turn = if creature.wary_ticks > 0 && lured.is_none() {
                 crate::WARY_TURN_PER_TICK
             } else {
                 crate::CREATURE_TURN_PER_TICK

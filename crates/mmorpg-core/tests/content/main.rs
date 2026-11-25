@@ -17,6 +17,7 @@ mod environment_credit;
 mod evidence_quests;
 mod farmland;
 mod fenford;
+mod fenford_crossings;
 mod flock;
 mod forest_lynx;
 mod garrick;

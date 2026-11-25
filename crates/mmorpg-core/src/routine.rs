@@ -232,6 +232,10 @@ impl ZoneSimulation {
         if let Some((placement, ..)) = self.cart_placement(npc) {
             return Some(placement);
         }
+        // A carter crossing the ford with his cart (#1019).
+        if let Some(placement) = self.crossing_placement(npc) {
+            return Some(placement);
+        }
         Some(match self.content.routine(npc) {
             // A knock woke it (#158): it walks to its door and back to bed.
             Some(routine)

@@ -269,6 +269,17 @@ pub fn objective_label(objective: QuestObjective, content: &ZoneContent) -> Stri
         QuestObjective::Ambush { .. } => {
             "Stop the supply patrol before it reaches its camp".to_owned()
         }
+        // The ford (#1019): "See Carter Aldo's cart over the ford", "Bring down River Crayfish
+        // from the side or back"; Interact at the carter starts the crossing.
+        QuestObjective::Crossing { npc } => {
+            format!("See {}'s cart over the ford", objective_npc(content, npc))
+        }
+        QuestObjective::Outflank { template, .. } => format!(
+            "Bring down {} from the side or back",
+            content
+                .creature_template(template)
+                .map_or("them", |template| template.name.as_str())
+        ),
     }
 }
 
@@ -332,7 +343,8 @@ pub fn objective_view(
         | QuestObjective::Crush { .. }
         | QuestObjective::Aid { .. }
         | QuestObjective::Transcribe { .. }
-        | QuestObjective::WorkInOrder { .. } => {
+        | QuestObjective::WorkInOrder { .. }
+        | QuestObjective::Outflank { .. } => {
             format!("{label}: {}/{required}", current.min(required))
         }
         QuestObjective::Talk { .. }
@@ -355,6 +367,7 @@ pub fn objective_view(
         | QuestObjective::Recruit { .. }
         | QuestObjective::Sight { .. }
         | QuestObjective::Ambush { .. }
+        | QuestObjective::Crossing { .. }
             if done =>
         {
             format!("{label} (done)")
@@ -378,7 +391,8 @@ pub fn objective_view(
         | QuestObjective::EscortTo { .. }
         | QuestObjective::Recruit { .. }
         | QuestObjective::Sight { .. }
-        | QuestObjective::Ambush { .. } => label.clone(),
+        | QuestObjective::Ambush { .. }
+        | QuestObjective::Crossing { .. } => label.clone(),
     };
     ObjectiveView {
         label,
@@ -687,7 +701,8 @@ pub fn dialog_view(
 
 /// The quest evidence (#1019) a player whose body centre is at `centre` units (as projections place
 /// it) would inspect now: the nearest spot within its reach that an objective of an active quest in `entries` still needs, so a press of
-/// Interact there reads it. Spots no quest needs are none; the zone checks everything again.
+/// Interact there reads it, or a lure's stake where an active quest's supplied bait is cast. Spots no
+/// quest needs are none; the zone checks everything again.
 #[must_use]
 pub fn evidence_in_reach(
     content: &ZoneContent,
@@ -713,7 +728,20 @@ pub fn evidence_in_reach(
                 _ => None,
             })
     });
-    open.filter_map(|spot| content.evidence_spot(spot))
+    // A lure's stake (#1019) casts the bait an active quest supplied, as often as wanted.
+    let lures = content
+        .lures()
+        .iter()
+        .filter(|lure| {
+            entries.iter().any(|entry| {
+                content.quest(entry.quest).is_some_and(|quest| {
+                    quest.supplies.iter().any(|supply| supply.item == lure.item)
+                })
+            })
+        })
+        .map(|lure| lure.spot);
+    open.chain(lures)
+        .filter_map(|spot| content.evidence_spot(spot))
         .filter(|spot| spot.within(feet))
         .min_by_key(|spot| {
             let (dx, dz) = (
@@ -952,7 +980,8 @@ mod tests {
                     | QuestObjective::Crush { .. }
                     | QuestObjective::Aid { .. }
                     | QuestObjective::Transcribe { .. }
-                    | QuestObjective::WorkInOrder { .. } => {
+                    | QuestObjective::WorkInOrder { .. }
+                    | QuestObjective::Outflank { .. } => {
                         assert_eq!(view.text, format!("{}: {required}/{required}", view.label));
                     }
                     QuestObjective::Talk { .. }
@@ -974,7 +1003,8 @@ mod tests {
                     | QuestObjective::EscortTo { .. }
                     | QuestObjective::Recruit { .. }
                     | QuestObjective::Sight { .. }
-                    | QuestObjective::Ambush { .. } => {
+                    | QuestObjective::Ambush { .. }
+                    | QuestObjective::Crossing { .. } => {
                         assert_eq!(view.text, format!("{} (done)", view.label));
                     }
                 }

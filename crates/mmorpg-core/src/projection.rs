@@ -760,14 +760,23 @@ impl ZoneSimulation {
                         crate::raid::INJURED_HEALTH_PERCENT
                     } else if let Some((_, health)) = cart {
                         health
+                    } else if let Some(health) = self.cart_health(npc_id) {
+                        // A carter's cart crossing the ford (#1019) shows what it has left, a
+                        // fallen one barely whole.
+                        health.max(1)
                     } else if hunting == Some(crate::PostureView::Hurt) {
                         crate::hunt::INJURED_HEALTH_PERCENT
                     } else {
                         100
                     },
                     flags: EntityFlags {
+                        // A carter crossing the ford (#1019) drives his cart.
                         posture: hunting
                             .or(cart.map(|(posture, _)| posture))
+                            .or_else(|| {
+                                self.crossing_run(npc_id)
+                                    .map(|_| crate::PostureView::Hauling)
+                            })
                             .unwrap_or_else(|| self.npc_posture(npc_id)),
                         ..EntityFlags::default()
                     },

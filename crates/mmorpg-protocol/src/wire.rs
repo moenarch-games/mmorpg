@@ -222,6 +222,9 @@ pub const fn error_code(code: ErrorCode) -> u16 {
         ErrorCode::StaffShown => 69,
         ErrorCode::PatrolResting => 70,
         ErrorCode::PatrolArrived => 71,
+        ErrorCode::CartResting => 72,
+        ErrorCode::CartLost => 73,
+        ErrorCode::TooDeep => 74,
     }
 }
 
@@ -298,6 +301,9 @@ pub fn decode_error_code(code: u16) -> Result<ErrorCode, ProtocolError> {
         69 => ErrorCode::StaffShown,
         70 => ErrorCode::PatrolResting,
         71 => ErrorCode::PatrolArrived,
+        72 => ErrorCode::CartResting,
+        73 => ErrorCode::CartLost,
+        74 => ErrorCode::TooDeep,
         _ => return Err(ProtocolError::new("unknown error code")),
     })
 }
@@ -1810,11 +1816,14 @@ mod tests {
             (69, ErrorCode::StaffShown),
             (70, ErrorCode::PatrolResting),
             (71, ErrorCode::PatrolArrived),
+            (72, ErrorCode::CartResting),
+            (73, ErrorCode::CartLost),
+            (74, ErrorCode::TooDeep),
         ] {
             assert_eq!(error_code(code), wire);
             assert_eq!(decode_error_code(wire).unwrap(), code);
         }
-        for unknown in [0, 72, u16::MAX] {
+        for unknown in [0, 75, u16::MAX] {
             assert_eq!(
                 decode_error_code(unknown).unwrap_err().to_string(),
                 "unknown error code"

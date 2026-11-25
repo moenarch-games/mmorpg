@@ -215,4 +215,7 @@ const REFUSALS: Record<ErrorCode, string | null> = {
   "staff-shown": null,
   "patrol-resting": null,
   "patrol-arrived": null,
+  "cart-resting": null,
+  "cart-lost": null,
+  "too-deep": null,
 };

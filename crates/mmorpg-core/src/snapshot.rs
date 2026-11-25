@@ -437,6 +437,10 @@ pub struct CanonicalZoneSnapshot {
     pub watch: Option<crate::WatchState>,
     /// Supply patrols' runs under way or at rest (#1019), in lookout order.
     pub supply_runs: Vec<crate::SupplyRun>,
+    /// Carts crossing the ford or settling after it (#1019), in carter order.
+    pub crossing_runs: Vec<crate::CrossingRun>,
+    /// Lures lying at their spots (#1019), in spot order.
+    pub lures: Vec<crate::LureState>,
     /// Every player's one load, carried or set down (#1077), in player-ID order.
     pub loads: Vec<crate::LoadState>,
     /// Every construction site's material and raising (#1019), in content order.
@@ -738,6 +742,8 @@ impl ZoneSimulation {
             strays: self.canonical_strays(),
             watch: self.watch.clone(),
             supply_runs: self.canonical_supply_runs(),
+            crossing_runs: self.canonical_crossing_runs(),
+            lures: self.canonical_lures(),
             loads: self.canonical_loads(),
             constructions: self.canonical_constructions(),
             seals: self.canonical_seals(),
@@ -872,6 +878,8 @@ impl ZoneSimulation {
         zone.restore_escorts(&snapshot.escorts, snapshot.tick)?;
         zone.restore_flock(&snapshot.strays, snapshot.watch.as_ref(), snapshot.tick)?;
         zone.restore_supply_runs(&snapshot.supply_runs, snapshot.tick)?;
+        zone.restore_crossing_runs(&snapshot.crossing_runs, snapshot.tick)?;
+        zone.restore_lures(&snapshot.lures, snapshot.tick)?;
         zone.restore_loads(&snapshot.loads)?;
         zone.restore_constructions(&snapshot.constructions, snapshot.tick)?;
         zone.restore_mechanisms(&snapshot.seals, &snapshot.wards, snapshot.tick)?;

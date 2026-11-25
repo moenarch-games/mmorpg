@@ -148,6 +148,10 @@ pub struct ZoneContent {
     watch: Option<crate::HedgeWatch>,
     /// Supply patrols on the roads (#1019), in lookout order.
     supply_patrols: Vec<crate::SupplyPatrol>,
+    /// Carts crossing fords (#1019), in carter order.
+    crossings: Vec<crate::WagonCrossing>,
+    /// Lure spots (#1019), in spot order.
+    lures: Vec<crate::Lure>,
     /// Named places clients mark on their maps (#1063).
     landmarks: Vec<crate::Landmark>,
 }
@@ -315,6 +319,8 @@ impl ZoneContent {
             strays: Vec::new(),
             watch: None,
             supply_patrols: Vec::new(),
+            crossings: Vec::new(),
+            lures: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -397,6 +403,8 @@ impl ZoneContent {
             strays: Vec::new(),
             watch: None,
             supply_patrols: Vec::new(),
+            crossings: Vec::new(),
+            lures: Vec::new(),
             landmarks: Vec::new(),
         };
         content.simulation_fingerprint = content.compute_simulation_fingerprint();
@@ -1890,7 +1898,7 @@ impl ZoneContent {
     }
 
     fn compute_fingerprint(&self) -> u64 {
-        let fingerprint = self.compute_supply_fingerprint();
+        let fingerprint = self.compute_crossing_fingerprint();
         let Some(rewind) = self.hit_rewind else {
             return fingerprint;
         };
@@ -2832,6 +2840,186 @@ impl ZoneContent {
         hash.finish()
     }
 
+    /// Binds the ford crossings (#1019), after the supply patrols: at most
+    /// [`crate::MAX_CROSSINGS`], each driven by a distinct known carter NPC that keeps no routine
+    /// and is posted at its route's first point, with `1..=MAX_CROSSING_RAIDERS` distinct creature
+    /// spawns reserved for it alone (in no raid, depths site, hunt, cart, den, confrontation,
+    /// watch, supply patrol or other crossing), a route of `2..=MAX_CROSSING_ROUTE_POINTS` points
+    /// in bounds, and a positive health and radius. Every crossing objective names a carter.
+    pub fn with_crossings(
+        mut self,
+        mut crossings: Vec<crate::WagonCrossing>,
+    ) -> Result<Self, ZoneError> {
+        crossings.sort_by_key(|crossing| crossing.npc);
+        let reserved_elsewhere = |creature: CreatureId| {
+            self.is_raider(creature)
+                || self.is_depths_creature(creature)
+                || self.is_hunt_beast(creature)
+                || self.is_cart_bandit(creature)
+                || self.is_confrontation_foe(creature)
+                || self.is_prowler(creature)
+                || self.supply_patrol_of(creature).is_some()
+                || self
+                    .dens
+                    .iter()
+                    .any(|den| den.pack.contains(&creature) || den.prey.contains(&creature))
+        };
+        let mut raiders: Vec<CreatureId> = crossings
+            .iter()
+            .flat_map(|crossing| crossing.raiders.iter().map(|raider| raider.creature))
+            .collect();
+        raiders.sort_unstable();
+        let distinct = raiders.windows(2).all(|pair| pair[0] != pair[1]);
+        let crossing_valid = |crossing: &crate::WagonCrossing| {
+            self.npc(crossing.npc)
+                .is_some_and(|npc| crossing.route.first() == Some(&npc.position))
+                && self.routine(crossing.npc).is_none()
+                && (1..=crate::MAX_CROSSING_RAIDERS).contains(&crossing.raiders.len())
+                && crossing.raiders.iter().all(|raider| {
+                    self.creature_spawns()
+                        .iter()
+                        .any(|spawn| spawn.id == raider.creature)
+                        && !reserved_elsewhere(raider.creature)
+                })
+                && (2..=crate::MAX_CROSSING_ROUTE_POINTS).contains(&crossing.route.len())
+                && crossing.route.iter().all(|point| {
+                    point
+                        .iter()
+                        .all(|value| value.abs() <= crate::MAX_CONTENT_COORDINATE_UNITS)
+                })
+                && crossing.length() > 0
+                && crossing.health > 0
+                && crossing.radius > 0
+        };
+        if crossings.len() > crate::MAX_CROSSINGS
+            || crossings.windows(2).any(|pair| pair[0].npc == pair[1].npc)
+            || !distinct
+            || !crossings.iter().all(crossing_valid)
+        {
+            return Err(ZoneError::new("crossings are invalid"));
+        }
+        let objectives_valid = self.quests.iter().flat_map(|quest| &quest.objectives).all(
+            |objective| match *objective {
+                crate::QuestObjective::Crossing { npc } => {
+                    crossings.iter().any(|crossing| crossing.npc == npc)
+                }
+                _ => true,
+            },
+        );
+        if !objectives_valid {
+            return Err(ZoneError::new("a crossing objective names no carter"));
+        }
+        self.crossings = crossings;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// Every ford crossing (#1019), in carter order.
+    #[must_use]
+    pub fn crossings(&self) -> &[crate::WagonCrossing] {
+        &self.crossings
+    }
+
+    /// The crossing carter `npc` drives (#1019), if any.
+    #[must_use]
+    pub fn crossing(&self, npc: crate::NpcId) -> Option<&crate::WagonCrossing> {
+        self.crossings
+            .binary_search_by_key(&npc, |crossing| crossing.npc)
+            .ok()
+            .map(|index| &self.crossings[index])
+    }
+
+    /// The crossing `creature` raids (#1019), if any: it stands only while a crossing runs and
+    /// never respawns on its own.
+    #[must_use]
+    pub fn crossing_of(&self, creature: CreatureId) -> Option<&crate::WagonCrossing> {
+        self.crossings
+            .iter()
+            .find(|crossing| crossing.raider(creature).is_some())
+    }
+
+    /// Binds the lure spots (#1019), after the evidence and the quests: at most
+    /// [`crate::MAX_LURES`] distinct known evidence spots that no quest objective names, each
+    /// casting a plain bag item at a known creature template.
+    pub fn with_lures(mut self, mut lures: Vec<crate::Lure>) -> Result<Self, ZoneError> {
+        lures.sort_by_key(|lure| lure.spot);
+        let named = |spot: crate::EvidenceId| {
+            self.quests
+                .iter()
+                .flat_map(|quest| &quest.objectives)
+                .any(|objective| match *objective {
+                    crate::QuestObjective::Inspect { spot: other }
+                    | crate::QuestObjective::Transcribe { spot: other, .. }
+                    | crate::QuestObjective::Lay { spot: other, .. } => other == spot,
+                    _ => false,
+                })
+        };
+        let valid = lures.len() <= crate::MAX_LURES
+            && lures.windows(2).all(|pair| pair[0].spot < pair[1].spot)
+            && lures.iter().all(|lure| {
+                self.evidence_spot(lure.spot).is_some()
+                    && !named(lure.spot)
+                    && crate::item_template(lure.item)
+                        .is_some_and(|template| template.slot.is_none())
+                    && self.creature_template(lure.template).is_some()
+            });
+        if !valid {
+            return Err(ZoneError::new("lures are invalid"));
+        }
+        self.lures = lures;
+        self.fingerprint = self.compute_fingerprint();
+        Ok(self)
+    }
+
+    /// The lure cast at evidence spot `spot` (#1019), if it is a lure spot.
+    #[must_use]
+    pub fn lure(&self, spot: crate::EvidenceId) -> Option<crate::Lure> {
+        self.lures
+            .binary_search_by_key(&spot, |lure| lure.spot)
+            .ok()
+            .map(|index| self.lures[index])
+    }
+
+    /// Every lure spot (#1019), in spot order.
+    #[must_use]
+    pub fn lures(&self) -> &[crate::Lure] {
+        &self.lures
+    }
+
+    /// Ford crossings and lures (#1019) enter the identity only where authored.
+    fn compute_crossing_fingerprint(&self) -> u64 {
+        let fingerprint = self.compute_supply_fingerprint();
+        if self.crossings.is_empty() && self.lures.is_empty() {
+            return fingerprint;
+        }
+        let mut hash = Fnv1a::new();
+        hash.bytes(b"mmorpg.zone-content/crossing-v1");
+        hash.u64(fingerprint);
+        hash.len(self.crossings.len());
+        for crossing in &self.crossings {
+            hash.u32(crossing.npc.get());
+            hash.len(crossing.route.len());
+            for point in &crossing.route {
+                hash.i32(point[0]);
+                hash.i32(point[1]);
+            }
+            hash.u32(crossing.health);
+            hash.len(crossing.raiders.len());
+            for raider in &crossing.raiders {
+                hash.u32(raider.creature.get());
+                hash.u32(raider.after_ticks);
+            }
+            hash.i32(crossing.radius);
+        }
+        hash.len(self.lures.len());
+        for lure in &self.lures {
+            hash.u32(lure.spot.get());
+            hash.u32(lure.item.get());
+            hash.u32(lure.template.get());
+        }
+        hash.finish()
+    }
+
     /// Livestock (#1019) enters the identity only where authored.
     fn compute_flock_fingerprint(&self) -> u64 {
         let fingerprint = self.compute_mechanism_fingerprint();
@@ -3769,8 +3957,13 @@ impl ZoneContent {
                         hash.u8(count);
                     }
                     crate::QuestObjective::Sight { npc }
-                    | crate::QuestObjective::Ambush { npc } => {
+                    | crate::QuestObjective::Ambush { npc }
+                    | crate::QuestObjective::Crossing { npc } => {
                         hash.u32(npc.get());
+                    }
+                    crate::QuestObjective::Outflank { template, count } => {
+                        hash.u32(template.get());
+                        hash.u8(count);
                     }
                 }
             }

@@ -139,7 +139,90 @@ pub fn encode_canonical_snapshot(
     encode_flock(&mut payload, &snapshot.strays, snapshot.watch.as_ref())?;
     encode_site_raids(&mut payload, &snapshot.site_raids)?;
     encode_supply_runs(&mut payload, &snapshot.supply_runs)?;
+    encode_crossings(&mut payload, &snapshot.crossing_runs, &snapshot.lures)?;
     Ok(payload)
+}
+
+/// The ford crossings and the lying lures (#1019): a crossing count (`u8`, at most
+/// [`mmorpg_core::MAX_CROSSINGS`]), then per crossing in carter order its carter NPC (`u32`),
+/// start tick (`u64`), progress (`u32`), cart health (`u32`), stood raiders (`u8` bits), halted
+/// (`u8`, 0 or 1) and rest end tick (`u64`); then a lure count (`u8`, at most
+/// [`mmorpg_core::MAX_LURES`]) and per lure in spot order its evidence spot (`u32`) and end tick
+/// (`u64`).
+fn encode_crossings(
+    payload: &mut Vec<u8>,
+    runs: &[mmorpg_core::CrossingRun],
+    lures: &[mmorpg_core::LureState],
+) -> Result<(), ProtocolError> {
+    let count = u8::try_from(runs.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_CROSSINGS)
+        .ok_or_else(|| ProtocolError::new("crossings exceed their count"))?;
+    payload.push(count);
+    for run in runs {
+        payload.extend_from_slice(&run.npc.get().to_be_bytes());
+        payload.extend_from_slice(&run.started.to_be_bytes());
+        payload.extend_from_slice(&run.progress.to_be_bytes());
+        payload.extend_from_slice(&run.health.to_be_bytes());
+        payload.push(run.stood);
+        payload.push(u8::from(run.halted));
+        payload.extend_from_slice(&run.rests_until.to_be_bytes());
+    }
+    let count = u8::try_from(lures.len())
+        .ok()
+        .filter(|count| usize::from(*count) <= mmorpg_core::MAX_LURES)
+        .ok_or_else(|| ProtocolError::new("lures exceed their count"))?;
+    payload.push(count);
+    for lure in lures {
+        payload.extend_from_slice(&lure.spot.get().to_be_bytes());
+        payload.extend_from_slice(&lure.until.to_be_bytes());
+    }
+    Ok(())
+}
+
+type Crossings = (Vec<mmorpg_core::CrossingRun>, Vec<mmorpg_core::LureState>);
+
+fn decode_crossings(payload: &[u8], offset: &mut usize) -> Result<Crossings, ProtocolError> {
+    let [count] = take(payload, offset)?;
+    if usize::from(count) > mmorpg_core::MAX_CROSSINGS {
+        return Err(ProtocolError::new("crossings exceed their count"));
+    }
+    let runs = (0..count)
+        .map(|_| {
+            let npc = mmorpg_core::NpcId::new(u32::from_be_bytes(take(payload, offset)?));
+            let started = u64::from_be_bytes(take(payload, offset)?);
+            let progress = u32::from_be_bytes(take(payload, offset)?);
+            let health = u32::from_be_bytes(take(payload, offset)?);
+            let [stood, halted] = take(payload, offset)?;
+            let halted = match halted {
+                0 => false,
+                1 => true,
+                _ => return Err(ProtocolError::new("a crossing's halt is invalid")),
+            };
+            Ok(mmorpg_core::CrossingRun {
+                npc,
+                started,
+                progress,
+                health,
+                stood,
+                halted,
+                rests_until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    let [count] = take(payload, offset)?;
+    if usize::from(count) > mmorpg_core::MAX_LURES {
+        return Err(ProtocolError::new("lures exceed their count"));
+    }
+    let lures = (0..count)
+        .map(|_| {
+            Ok(mmorpg_core::LureState {
+                spot: mmorpg_core::EvidenceId::new(u32::from_be_bytes(take(payload, offset)?)),
+                until: u64::from_be_bytes(take(payload, offset)?),
+            })
+        })
+        .collect::<Result<_, ProtocolError>>()?;
+    Ok((runs, lures))
 }
 
 /// The supply patrols' runs (#1019): a count (`u8`, at most
@@ -1539,6 +1622,7 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
     let (strays, watch) = decode_flock(payload, &mut offset)?;
     let site_raids = decode_site_raids(payload, &mut offset)?;
     let supply_runs = decode_supply_runs(payload, &mut offset)?;
+    let (crossing_runs, lures) = decode_crossings(payload, &mut offset)?;
     ensure_fully_consumed(payload, offset)?;
     Ok(CanonicalZoneSnapshot {
         rewards,
@@ -1571,6 +1655,8 @@ pub fn decode_canonical_snapshot(payload: &[u8]) -> Result<CanonicalZoneSnapshot
         strays,
         watch,
         supply_runs,
+        crossing_runs,
+        lures,
         loads,
         constructions,
         seals,
@@ -3518,6 +3604,19 @@ pub(crate) mod tests {
                     },
                 ],
                 rests_until: 0,
+            }],
+            crossing_runs: vec![mmorpg_core::CrossingRun {
+                npc: mmorpg_core::NpcId::new(64),
+                started: 2,
+                progress: 1_200,
+                health: 150,
+                stood: 0b011,
+                halted: true,
+                rests_until: 0,
+            }],
+            lures: vec![mmorpg_core::LureState {
+                spot: mmorpg_core::EvidenceId::new(32),
+                until: 900,
             }],
             loads: vec![
                 mmorpg_core::LoadState {

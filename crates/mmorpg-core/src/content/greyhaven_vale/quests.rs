@@ -212,7 +212,7 @@ pub const DOWNS_BEACON: EvidenceId = EvidenceId::new(25);
 /// ford's bed, the ford's three stakes surveyed for him, Miller Wynne's new brake wheel carried
 /// from the cart and fitted, spring water carried from the alders to Hob Ferris, and a smuggler's
 /// shipment found, its owner questioned and its token handed to the Watch or left for Osk
-/// ([`super::fenford`]). 73, 76, 78 and 79 are the crossings under threat (slice 6b).
+/// ([`super::fenford`]). 73, 76, 78 and 79 are the crossings under threat (slice 6b), below.
 pub const THE_FERRYMANS_ROPE: QuestId = QuestId::new(71);
 pub const THE_FORDS_RECKONING: QuestId = QuestId::new(72);
 pub const THE_MISSING_MILL_WHEEL: QuestId = QuestId::new(74);
@@ -235,6 +235,25 @@ pub const HIDDEN_SHIPMENT: EvidenceId = EvidenceId::new(31);
 /// The ferryman and the miller of Fenford.
 pub const FERRYMAN_OSK: NpcId = NpcId::new(29);
 pub const MILLER_WYNNE: NpcId = NpcId::new(28);
+
+/// Crossings under threat (#1019, slice 6b): Carter Aldo's cart seen over the ford while
+/// Redbrands go for it, river crayfish cut down from their open sides with Osk's lure or good
+/// footwork, Netter Ilsa's sister led off the Marsh Lake's island by the wading line, and the ford
+/// barricaded and held while Aldo brings his next load over ([`super::fenford`]).
+pub const A_CROSSING_UNDER_FIRE: QuestId = QuestId::new(73);
+pub const THE_RIVERS_TEETH: QuestId = QuestId::new(76);
+pub const ACROSS_THE_REEDS: QuestId = QuestId::new(78);
+pub const THE_FORD_WATCH: QuestId = QuestId::new(79);
+/// Osk's gut-baited line, a supply worth nothing to a vendor.
+pub const CRAYFISH_LURE: ItemId = ItemId::new(51);
+/// The margin stones beside the three crayfish where the lure is cast.
+pub const LURE_STONES: [EvidenceId; 3] = [
+    EvidenceId::new(32),
+    EvidenceId::new(33),
+    EvidenceId::new(34),
+];
+/// Fenford's netter, whose sister is stranded on the lake's island.
+pub const NETTER_ILSA: NpcId = NpcId::new(30);
 
 pub const THE_MISSING_EWE: QuestId = QuestId::new(53);
 pub const THE_HEDGES_AT_DUSK: QuestId = QuestId::new(55);
@@ -542,6 +561,13 @@ enum ObjectiveSource {
     Ambush {
         npc: u32,
     },
+    Crossing {
+        npc: u32,
+    },
+    Outflank {
+        template: u32,
+        count: u8,
+    },
 }
 
 /// An aid objective's chore (#1019).
@@ -691,6 +717,14 @@ impl From<ObjectiveSource> for QuestObjective {
             },
             ObjectiveSource::Ambush { npc } => Self::Ambush {
                 npc: NpcId::new(npc),
+            },
+            // The ford's crossings under threat (#1019).
+            ObjectiveSource::Crossing { npc } => Self::Crossing {
+                npc: NpcId::new(npc),
+            },
+            ObjectiveSource::Outflank { template, count } => Self::Outflank {
+                template: CreatureTemplateId::new(template),
+                count,
             },
         }
     }

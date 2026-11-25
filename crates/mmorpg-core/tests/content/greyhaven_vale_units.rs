@@ -457,6 +457,8 @@ fn spawns_populate_their_subzones() {
             || content.is_prowler(spawn.id)
             // The Downs road's supply patrol (#1019) only while the lookout's run marches.
             || content.supply_patrol_of(spawn.id).is_some()
+            // Fenford's crossing raiders (#1019) only while Carter Aldo crosses.
+            || content.crossing_of(spawn.id).is_some()
         {
             continue;
         }
@@ -841,6 +843,18 @@ fn npcs_stand_at_their_posts() {
                 NpcRole::Resident,
                 Some(greyhaven_vale::wilds::FENWATER_CROSSING)
             ),
+            // Fenford's carter on the ford's south bank and the reed-cutter on the Marsh Lake's
+            // island (#1019).
+            (
+                "Carter Aldo",
+                NpcRole::Resident,
+                Some(greyhaven_vale::wilds::FENWATER_CROSSING)
+            ),
+            (
+                "Reedcutter Nell",
+                NpcRole::Resident,
+                Some(greyhaven_vale::marsh::MARSH_LAKE_WETLANDS)
+            ),
         ])
         .collect::<Vec<_>>()
     );
@@ -877,6 +891,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             || content.is_prowler(spawn.id)
             // The Downs road's supply patrol (#1019) only while the lookout's run marches.
             || content.supply_patrol_of(spawn.id).is_some()
+            // Fenford's crossing raiders (#1019) only while Carter Aldo crosses.
+            || content.crossing_of(spawn.id).is_some()
         {
             assert!(matches!(
                 creature.life,
@@ -996,6 +1012,8 @@ fn the_hosted_zone_spawns_every_creature_and_rests_deterministically() {
             || content.is_prowler(spawn.id)
             // The Downs road's supply patrol (#1019) only while the lookout's run marches.
             || content.supply_patrol_of(spawn.id).is_some()
+            // Fenford's crossing raiders (#1019) only while Carter Aldo crosses.
+            || content.crossing_of(spawn.id).is_some()
             || content
                 .dens()
                 .iter()
@@ -1035,7 +1053,8 @@ fn region_residents() -> Vec<(&'static str, NpcRole, Option<mmorpg_core::AreaId>
         // Miller Wynne and Ferryman Osk give Fenford's stories (#1019).
         giver("Miller Wynne", settlements::FENFORD),
         giver("Ferryman Osk", wilds::FENWATER_CROSSING),
-        resident("Netter Ilsa", settlements::FENFORD),
+        // Netter Ilsa gives the river's and the marsh's stories (#1019).
+        giver("Netter Ilsa", settlements::FENFORD),
         giver("Fisher Brann", settlements::WESTMERE_LODGE),
         giver("Huntsman Edric Vale", settlements::HUNTERS_CAMP),
         resident("Trapper Sela", settlements::HUNTERS_CAMP),

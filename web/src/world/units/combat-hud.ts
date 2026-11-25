@@ -94,6 +94,10 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   // The Downs road's supply patrol (#1019).
   "patrol-resting": "Lookout Brenna: \"The last patrol has only just passed. Give them time to form up again.\"",
   "patrol-arrived": "Lookout Brenna: \"They made the camp in the hollow. I will watch for the next patrol; ask me when you are ready.\"",
+  // Fenford's crossings (#1019): Carter Aldo's cart and Wenna on the Marsh Lake.
+  "cart-resting": "Carter Aldo: \"Not yet. Let me see to the cart before we try the ford again.\"",
+  "cart-lost": "Carter Aldo: \"They broke the cart in the ford! Give me time to mend it, then we try again.\"",
+  "too-deep": "\"Not through there, it's over my head! Take me by the shallows.\" They will not follow into deep water.",
 };
 
 const RESOURCE_NAMES = { rage: "Rage", focus: "Focus", mana: "Mana", faith: "Faith" } as const;

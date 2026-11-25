@@ -192,6 +192,19 @@ pub enum QuestObjective {
     /// for each player near the carrier when it falls on the way. A patrol that arrives fails it
     /// ([`crate::ErrorCode::PatrolArrived`]) and is called again. The log stores it.
     Ambush { npc: NpcId },
+    /// See the carter `npc`'s cart over the ford alive (#1019, [`crate::WagonCrossing`]):
+    /// [`crate::ZoneCommand::QuestAction`] at the carter starts the crossing once the quest's
+    /// earlier objectives are done, and the objective is done for each player near the cart when
+    /// it reaches the far bank with health left. A cart that falls fails it
+    /// ([`crate::ErrorCode::CartLost`]) and is tried again. The log stores it.
+    Crossing { npc: NpcId },
+    /// Kill `count` creatures of `template` as their tapper with the final blow landing outside
+    /// the creature's front arc (#1019, [`crate::flanks`]): a crayfish turned aside by a lure or
+    /// by the player's own footwork. A kill from its front does not count.
+    Outflank {
+        template: CreatureTemplateId,
+        count: u8,
+    },
 }
 
 impl QuestObjective {
@@ -204,7 +217,8 @@ impl QuestObjective {
             | Self::DefeatWithLoan { count, .. }
             | Self::Crush { count, .. }
             | Self::Aid { count, .. }
-            | Self::WorkInOrder { count, .. } => count,
+            | Self::WorkInOrder { count, .. }
+            | Self::Outflank { count, .. } => count,
             Self::Talk { .. }
             | Self::Explore { .. }
             | Self::Retrieve { .. }
@@ -226,7 +240,8 @@ impl QuestObjective {
             | Self::EscortTo { .. }
             | Self::Recruit { .. }
             | Self::Sight { .. }
-            | Self::Ambush { .. } => 1,
+            | Self::Ambush { .. }
+            | Self::Crossing { .. } => 1,
         }
     }
 
@@ -234,7 +249,7 @@ impl QuestObjective {
     /// 7 inspect, 8 use item, 9 escort, 10 interview, 11 defeat with a loan, 12 crush,
     /// 13 demolish, 14 deliver a load, 15 build, 16 defend, 17 aid, 18 transcribe, 19 unseal,
     /// 20 decide, 21 herd, 22 watch, 23 lay, 24 escort home, 25 recruit, 26 work in order,
-    /// 27 sight, 28 ambush.
+    /// 27 sight, 28 ambush, 29 crossing, 30 outflank.
     #[must_use]
     pub const fn code(self) -> u8 {
         match self {
@@ -266,6 +281,8 @@ impl QuestObjective {
             Self::WorkInOrder { .. } => 26,
             Self::Sight { .. } => 27,
             Self::Ambush { .. } => 28,
+            Self::Crossing { .. } => 29,
+            Self::Outflank { .. } => 30,
         }
     }
 
@@ -284,7 +301,8 @@ impl QuestObjective {
             | Self::EscortTo { npc, .. }
             | Self::Recruit { npc }
             | Self::Sight { npc }
-            | Self::Ambush { npc } => Some(npc),
+            | Self::Ambush { npc }
+            | Self::Crossing { npc } => Some(npc),
             _ => None,
         }
     }
@@ -646,7 +664,8 @@ pub(crate) fn validate_quests(
                             })
                         })
                 }
-                QuestObjective::Crush { template, count } => {
+                QuestObjective::Crush { template, count }
+                | QuestObjective::Outflank { template, count } => {
                     count > 0 && content.creature_template(template).is_some()
                 }
                 QuestObjective::Demolish { piece } => {
@@ -698,7 +717,10 @@ pub(crate) fn validate_quests(
                 }
                 // The road's supply patrol (#1019): each once per quest at a known NPC (the patrol
                 // binding checks it is a patrol's lookout).
-                QuestObjective::Sight { npc } | QuestObjective::Ambush { npc } => {
+                // The ford's crossing (#1019) likewise: the crossing binding checks it is a carter.
+                QuestObjective::Sight { npc }
+                | QuestObjective::Ambush { npc }
+                | QuestObjective::Crossing { npc } => {
                     content.npc(npc).is_some() && !quest.objectives[..index].contains(objective)
                 }
                 QuestObjective::Lay { spot, item } => {
@@ -1404,13 +1426,15 @@ impl ZoneSimulation {
     }
 
     /// The tapper's kill credit: every active kill objective of the
-    /// template that is not yet complete advances by one.
+    /// template that is not yet complete advances by one, and an outflank objective (#1019) when
+    /// the final blow was `flanked`.
     pub(crate) fn credit_kill(
         &mut self,
         player_id: PlayerId,
         template: CreatureTemplateId,
         creature: crate::CreatureId,
         life: u64,
+        flanked: bool,
     ) -> Result<(), ZoneError> {
         let content = std::sync::Arc::clone(&self.content);
         let Some(player) = self.players.get(&player_id) else {
@@ -1433,6 +1457,9 @@ impl ZoneSimulation {
                 let wanted = match *objective {
                     QuestObjective::Kill { template, count } => Some((template, count)),
                     QuestObjective::DefeatWithLoan { template, count } if loaned => {
+                        Some((template, count))
+                    }
+                    QuestObjective::Outflank { template, count } if flanked => {
                         Some((template, count))
                     }
                     _ => None,
@@ -1493,11 +1520,14 @@ impl ZoneSimulation {
     ) -> bool {
         let content = std::sync::Arc::clone(&self.content);
         let index = usize::from(objective);
-        // Kill credits pay kills and trial kills (#1019) alike.
-        let Some(QuestObjective::Kill { count, .. } | QuestObjective::DefeatWithLoan { count, .. }) =
-            content
-                .quest(quest)
-                .and_then(|definition| definition.objectives.get(index).copied())
+        // Kill credits pay kills, trial kills and flank kills (#1019) alike.
+        let Some(
+            QuestObjective::Kill { count, .. }
+            | QuestObjective::DefeatWithLoan { count, .. }
+            | QuestObjective::Outflank { count, .. },
+        ) = content
+            .quest(quest)
+            .and_then(|definition| definition.objectives.get(index).copied())
         else {
             return false;
         };
@@ -1660,7 +1690,9 @@ impl ZoneSimulation {
                         | QuestObjective::Recruit { .. }
                         | QuestObjective::WorkInOrder { .. }
                         | QuestObjective::Sight { .. }
-                        | QuestObjective::Ambush { .. } => false,
+                        | QuestObjective::Ambush { .. }
+                        | QuestObjective::Crossing { .. }
+                        | QuestObjective::Outflank { .. } => false,
                     };
                     if done {
                         reached.push((slot, quest.id, index));

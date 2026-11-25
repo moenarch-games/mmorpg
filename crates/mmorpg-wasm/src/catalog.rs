@@ -82,7 +82,9 @@ pub struct QuestExport {
 /// family and the muster (#1019) `escort_to` (`target` is an NPC led home to NPC `source`) or
 /// `recruit` (`target` is an NPC won to the muster), or for the ring's measure (#1019)
 /// `work_in_order` (`target` is a mechanism sequence worked in its order), or for the Downs road
-/// (#1019) `sight` or `ambush` (`target` is the lookout who calls the supply patrol out).
+/// (#1019) `sight` or `ambush` (`target` is the lookout who calls the supply patrol out), or for
+/// the ford (#1019) `crossing` (`target` is the carter whose cart is seen over) or `outflank`
+/// (`target` is a creature template killed from outside its front arc).
 /// `questActionAt` picks the action Interact performs at an NPC.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ObjectiveExport {
@@ -137,6 +139,9 @@ fn objective(objective: mmorpg_core::QuestObjective) -> ObjectiveExport {
         // The Downs road (#1019).
         QuestObjective::Sight { npc } => ("sight", npc.get(), None),
         QuestObjective::Ambush { npc } => ("ambush", npc.get(), None),
+        // The ford's crossings under threat (#1019).
+        QuestObjective::Crossing { npc } => ("crossing", npc.get(), None),
+        QuestObjective::Outflank { template, .. } => ("outflank", template.get(), None),
     };
     ObjectiveExport {
         kind,
@@ -572,6 +577,7 @@ mod tests {
                 item(48, "Redbrand Order Pouch", Value::Null, stats(0, 0, 0, 0)),
                 item(49, "Rope Block", Value::Null, stats(0, 0, 0, 0)),
                 item(50, "Smuggler's Token", Value::Null, stats(0, 0, 0, 0)),
+                item(51, "Crayfish Lure", Value::Null, stats(0, 0, 0, 0)),
             ])
         );
         let quests = value["quests"].as_array().unwrap();
@@ -615,6 +621,19 @@ mod tests {
             ])
         );
         assert_eq!(quests[69]["requires"], json!([65]));
+        // The ford (#1019): Carter Aldo's cart seen over, crayfish cut down from their open side.
+        assert_eq!(
+            quests[72]["objectives"],
+            json!([{"kind": "crossing", "target": 64, "source": null, "count": 1}])
+        );
+        assert_eq!(
+            quests[75]["objectives"],
+            json!([{"kind": "outflank", "target": 25, "source": null, "count": 2}])
+        );
+        assert_eq!(
+            quests[78]["objectives"][1],
+            json!({"kind": "crossing", "target": 64, "source": null, "count": 1})
+        );
         assert_eq!(
             quests[46]["objectives"],
             json!([{"kind": "transcribe", "target": 9, "source": 42, "count": 1}])

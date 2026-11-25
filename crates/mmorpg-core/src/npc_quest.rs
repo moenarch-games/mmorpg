@@ -23,7 +23,10 @@
 //!   open within quest reach, and the NPC rests there for [`ESCORT_REST_TICKS`] before it is back
 //!   at its post. A player more than [`ESCORT_LEASH_UNITS`] ahead for [`ESCORT_LEASH_TICKS`], a
 //!   dead, absent or quitting player fails it ([`crate::ErrorCode::EscortLost`]): the NPC is back
-//!   at its post at once and the player asks again. One player escorts an NPC at a time.
+//!   at its post at once and the player asks again. An escorted NPC wades but never swims: one led
+//!   where the water is deeper than [`crate::water::SWIM_DEPTH_UNITS`] balks and fails it with
+//!   [`crate::ErrorCode::TooDeep`] (#1019), so a marsh's wading line is the safe way through. One
+//!   player escorts an NPC at a time.
 //! - **Homecoming** (#1019, [`crate::QuestObjective::EscortTo`]): an escort that ends within quest
 //!   reach of another NPC instead of an area. The escorted NPC's [`EscortCompanion`]s, a family,
 //!   start with it and walk in a line, each following the trail of the one ahead of it as the
@@ -45,6 +48,9 @@
 //! - **Sight and ambush**: calls the road's supply patrol out at its lookout ([`crate::supply`]),
 //!   or joins the run under way; while the last run rests, [`crate::ErrorCode::PatrolResting`]. It
 //!   completes nothing itself.
+//! - **Crossing**: starts the carter's crossing of the ford ([`crate::crossing`]), or joins the one
+//!   under way; while the last one settles, [`crate::ErrorCode::CartResting`]. It completes
+//!   nothing itself.
 //! - **Decision** ([`crate::ZoneCommand::Decide`]): stores the chosen option. A paid option
 //!   ([`crate::DecisionOption::copper`]) takes its copper at once, or is refused with
 //!   [`crate::ErrorCode::NotEnoughMoney`]. An option that hands over an item puts it in the bag
@@ -493,6 +499,13 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::PatrolResting, target)));
                 }
             }
+            // The carter's crossing (#1019) starts at the carter, or is joined while it runs; it
+            // completes when the cart reaches the far bank alive.
+            QuestObjective::Crossing { .. } => {
+                if !self.begin_crossing(npc) {
+                    return Ok(Some((ErrorCode::CartResting, target)));
+                }
+            }
             _ => return Ok(Some((ErrorCode::InvalidQuest, target))),
         }
         Ok(None)
@@ -669,19 +682,22 @@ impl ZoneSimulation {
         lead
     }
 
-    /// Ends the escort of `lead` and its line's companions (#1019); a failed one tells its player.
-    fn end_escort(&mut self, lead: NpcId, failed: bool) {
+    /// Ends the escort of `lead` and its line's companions (#1019); a failed one tells its player
+    /// why (`failure`).
+    fn end_escort(&mut self, lead: NpcId, failure: Option<ErrorCode>) {
         for companion in self.content.escort_line(lead) {
             self.escorts.remove(&companion);
         }
         let Some(escort) = self.escorts.remove(&lead) else {
             return;
         };
-        if failed && let Some(player) = self.players.get_mut(&escort.player) {
+        if let Some(code) = failure
+            && let Some(player) = self.players.get_mut(&escort.player)
+        {
             push_event(
                 &mut player.events,
                 ZoneEvent::Error {
-                    code: ErrorCode::EscortLost,
+                    code,
                     target: Some(EntityRef::Npc(lead)),
                 },
             );
@@ -702,7 +718,7 @@ impl ZoneSimulation {
             let lead = self.line_lead(npc);
             if escort.rests_until > 0 {
                 if now >= escort.rests_until {
-                    self.end_escort(lead, false);
+                    self.end_escort(lead, None);
                 }
                 continue;
             }
@@ -721,7 +737,7 @@ impl ZoneSimulation {
             let (Some(feet), Some((quest, index, destination))) =
                 (ahead, self.open_escort(escort.player, lead))
             else {
-                self.end_escort(lead, true);
+                self.end_escort(lead, Some(ErrorCode::EscortLost));
                 continue;
             };
             // The trail: where the one ahead walked, so the NPC goes where a body could.
@@ -769,7 +785,15 @@ impl ZoneSimulation {
                 escort.behind = 0;
             }
             if escort.behind > ESCORT_LEASH_TICKS {
-                self.end_escort(lead, true);
+                self.end_escort(lead, Some(ErrorCode::EscortLost));
+                continue;
+            }
+            // An escorted NPC wades but never swims (#1019): led into deeper water, it balks.
+            if self
+                .water_depth_at(position[0], position[1])
+                .is_some_and(|depth| depth > crate::water::SWIM_DEPTH_UNITS)
+            {
+                self.end_escort(lead, Some(ErrorCode::TooDeep));
                 continue;
             }
             // A companion only follows; its lead decides the arrival.

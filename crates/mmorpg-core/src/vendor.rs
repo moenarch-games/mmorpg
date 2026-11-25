@@ -100,9 +100,9 @@ impl Error for VendorStockError {}
 
 /// Copper any vendor pays for one unit of a catalog item; zero for unknown items. Every catalog
 /// item is sellable except the quest supplies, lent trial arms, the rubbing, the locket, the bait,
-/// the snare, the barrow's torc, the signal tinder, the order pouch, the rope block and the
-/// smuggler's token (#1019, items 36 to 50): a vendor refuses those, so accepting, selling and
-/// abandoning a quest never mints copper.
+/// the snare, the barrow's torc, the signal tinder, the order pouch, the rope block, the
+/// smuggler's token and the crayfish lure (#1019, items 36 to 51): a vendor refuses those, so
+/// accepting, selling and abandoning a quest never mints copper.
 #[must_use]
 pub const fn sell_price(item: ItemId) -> u32 {
     match item.get() {
@@ -388,9 +388,9 @@ mod tests {
     fn every_catalog_item_but_the_quest_supplies_is_sellable_and_every_offer_costs_more() {
         for item in ITEM_CATALOG {
             // The quest supplies, lent trial arms, the rubbing, the locket, the bait, the snare,
-            // the barrow's torc, the signal tinder, the order pouch, the rope block and the
-            // smuggler's token (#1019) are worth nothing to a vendor.
-            let supply = (36..=50).contains(&item.id.get());
+            // the barrow's torc, the signal tinder, the order pouch, the rope block, the
+            // smuggler's token and the crayfish lure (#1019) are worth nothing to a vendor.
+            let supply = (36..=51).contains(&item.id.get());
             assert_eq!(sell_price(item.id) == 0, supply, "{}", item.name);
         }
         assert_eq!(sell_price(ItemId::new(0)), 0);

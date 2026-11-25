@@ -179,6 +179,14 @@ pub enum ErrorCode {
     /// The supply patrol reached its camp before it was stopped (#1019): the lookout calls the
     /// next one once it has rested.
     PatrolArrived,
+    /// The carter cannot set out yet (#1019): his last crossing is still settling.
+    CartResting,
+    /// The carter's cart fell before it crossed the ford (#1019): ask the carter again once he
+    /// has mended it.
+    CartLost,
+    /// The escorted NPC will not go into water deeper than wading (#1019): the escort fails and
+    /// is asked for again.
+    TooDeep,
 }
 
 /// One feedback event addressed to a player.

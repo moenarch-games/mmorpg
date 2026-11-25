@@ -35,6 +35,7 @@ mod corridor;
 mod creature;
 mod creature_attack;
 mod creature_store;
+pub mod crossing;
 mod den;
 mod depths;
 mod depths_boss;
@@ -58,6 +59,7 @@ mod interest;
 mod inventory;
 mod landmark;
 mod loot;
+pub mod lure;
 mod mastery;
 mod mechanism;
 mod melee;
@@ -166,6 +168,10 @@ pub use creature_attack::{
     STAG_CHARGE_SPEED_SUBUNITS_PER_TICK, STAG_CHARGE_TICKS, STAG_CHARGE_UNITS, STAG_RECOVER_TICKS,
     contact_ticks, lunge,
 };
+pub use crossing::{
+    CrossingRaider, CrossingRun, MAX_CROSSING_RAIDERS, MAX_CROSSING_ROUTE_POINTS, MAX_CROSSINGS,
+    WagonCrossing,
+};
 pub use den::{DEN_LEG_TICKS, FLEE_RADIUS_UNITS, HUNT_RADIUS_UNITS, WildlifeDen};
 pub use depths::{
     DepthsChamber, DepthsRun, DepthsRunStart, DepthsSite, DepthsSpawn, DepthsThreshold,
@@ -231,6 +237,7 @@ pub use loot::{
     LootOutcome, LootRewards, LootRolls, LootSettlementError, LootTable, LootTableError,
     MAX_LOOT_OUTCOMES, loot_table, settle_loot,
 };
+pub use lure::{LURE_RADIUS_UNITS, LURE_TICKS, Lure, LureState, MAX_LURES};
 pub use mastery::{
     BLOW_PRACTICE, LEAPING_SLASH_LEVEL, MAX_MASTERY_LEVEL, MAX_PRACTICE, Mastery, PRACTICE_PER_FOE,
     Practice, TECHNIQUE_PRACTICE, TRIVIAL_LEVELS_BELOW, WeaponMastery, practice_to_next_level,

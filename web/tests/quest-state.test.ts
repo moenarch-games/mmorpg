@@ -227,6 +227,33 @@ describe("quest state", () => {
     expect(liftInReach(wheel, [96100, 815 + 90, 22100], false, [])).toBeNull();
   });
 
+  test("labels the ford's crossings, starts the cart at its carter and casts the lure at its stake (#1019)", () => {
+    // *A Crossing Under Fire* (quest 73): Interact at Carter Aldo (NPC 64) starts his cart over.
+    expect(objectiveViews(73, [0]).map((objective) => objective.text)).toEqual(["See Carter Aldo's cart over the ford"]);
+    expect(questActionAt(sheet({ entries: [{ quest: 73, progress: [0, 0, 0] }] }), 64)).toBe(
+      "See Carter Aldo's cart over the ford",
+    );
+    // *The Ford Watch* (quest 79): the barricade first, then the next cart.
+    expect(questActionAt(sheet({ entries: [{ quest: 79, progress: [0, 0, 0] }] }), 64)).toBeNull();
+    expect(objectiveViews(79, [1, 0]).map((objective) => objective.text)).toEqual([
+      "Raise the ford barricade (done)",
+      "See Carter Aldo's cart over the ford",
+    ]);
+    // *The River's Teeth* (quest 76): flank kills count up; the lure is cast at a stake by a crayfish
+    // while the quest that supplied it is active.
+    expect(objectiveViews(76, [1]).map((objective) => objective.text)).toEqual([
+      "Bring down River Crayfish from the side or back: 1/2",
+    ]);
+    const stake = [93351, 487 + 90, 24371];
+    expect(evidenceInReach(sheet({ entries: [{ quest: 76, progress: [0, 0, 0] }] }), stake)).toBe(32);
+    expect(evidenceInReach(sheet({ entries: [{ quest: 76, progress: [2, 0, 0] }] }), stake)).toBe(32);
+    expect(evidenceInReach(sheet({ entries: [{ quest: 75, progress: [0, 0, 0] }] }), stake)).toBeNull();
+    // *Across the Reeds* (quest 78): Interact at Reedcutter Nell (NPC 65) asks her to follow.
+    expect(questActionAt(sheet({ entries: [{ quest: 78, progress: [0, 0, 0] }] }), 65)).toBe(
+      "Escort Reedcutter Nell to Fenwater Crossing",
+    );
+  });
+
   test("labels the delivery and finds the load Interact lifts through the shared rule (#1077)", () => {
     // Hilda's *The Last Sack* (quest 43): the sack on the Wolfrun cart, carried to Osric.
     expect(objectiveViews(43, [0]).map((objective) => objective.text)).toEqual([

@@ -337,6 +337,11 @@ pub struct ZoneTickWork {
     /// Patrol members the supply step visited (#1019): each member of a run under way or at rest
     /// once.
     pub supply_members_visited: usize,
+    /// Crossings the crossing step visited (#1019): each content crossing once, every tick.
+    pub crossings_visited: usize,
+    /// Crossing raiders the crossing step visited (#1019): each raider of a crossing under way or
+    /// settling once.
+    pub crossing_raiders_visited: usize,
     /// The engine's own report, present only after a successful physics step.
     pub physics: Option<crate::physics::StepStats>,
 }
@@ -415,6 +420,10 @@ pub struct ZoneSimulation {
     pub(crate) watch: Option<crate::WatchState>,
     /// Supply patrols' runs under way or at rest (#1019), by lookout, canonical.
     pub(crate) supply_runs: BTreeMap<crate::NpcId, crate::SupplyRun>,
+    /// Carts crossing the ford or settling after it (#1019), by carter, canonical.
+    pub(crate) crossing_runs: BTreeMap<crate::NpcId, crate::CrossingRun>,
+    /// Lures lying at their spots (#1019), canonical.
+    pub(crate) lures: BTreeMap<crate::EvidenceId, crate::LureState>,
     /// Every player's one load, carried or set down (#1077), canonical.
     pub(crate) loads: BTreeMap<PlayerId, crate::LoadState>,
     /// Every construction site's material and raising (#1019), canonical.
@@ -478,6 +487,7 @@ impl ZoneSimulation {
                 || zone.content.is_confrontation_foe(id)
                 || zone.content.is_prowler(id)
                 || zone.content.supply_patrol_of(id).is_some()
+                || zone.content.crossing_of(id).is_some()
             {
                 zone.reserve_raider(id)?;
             } else {
@@ -631,6 +641,8 @@ impl ZoneSimulation {
             strays: BTreeMap::new(),
             watch: None,
             supply_runs: BTreeMap::new(),
+            crossing_runs: BTreeMap::new(),
+            lures: BTreeMap::new(),
             loads: BTreeMap::new(),
             constructions,
             seals,
@@ -1124,6 +1136,9 @@ impl ZoneSimulation {
         self.advance_flock(now)?;
         // Supply patrols are sighted, stopped, arrive or rest (#1019).
         self.advance_supply(now)?;
+        // Carts cross the ford, arrive, are lost or settle, and spent lures leave (#1019).
+        self.advance_crossings(now)?;
+        self.advance_lures(now);
         // Set-down loads run out, and fallen or drowned carriers lose theirs (#1077).
         self.advance_loads(now)?;
         self.advance_depths(now)?;

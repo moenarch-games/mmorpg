@@ -8,7 +8,8 @@
 //! an active quest that still needs it. Then every such objective in the player's log is done,
 //! once; the log stores that progress, so snapshots, replay, recovery and saved characters
 //! carry it like a talk objective's. A spot no quest needs is refused, not credited, so an
-//! inspection made before a quest was accepted never counts and can simply be repeated.
+//! inspection made before a quest was accepted never counts and can simply be repeated. A lure's
+//! stake no objective names casts a quest's supplied bait there instead ([`crate::lure`]).
 
 use crate::events::push_event;
 use crate::{EntityRef, ErrorCode, PlayerId, QuestObjective, ZoneError, ZoneEvent, ZoneSimulation};
@@ -202,6 +203,13 @@ impl ZoneSimulation {
                 }
             }
         }
-        Ok((!credited).then_some((ErrorCode::InvalidQuest, None)))
+        if credited {
+            return Ok(None);
+        }
+        // A lure spot (#1019) no objective needs casts the supplied bait there.
+        if let Some(lure) = content.lure(spot) {
+            return Ok(self.cast_lure(player_id, lure));
+        }
+        Ok(Some((ErrorCode::InvalidQuest, None)))
     }
 }
