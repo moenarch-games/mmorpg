@@ -9,12 +9,15 @@ Read this entire file, `README.md` and `.conventions/index.md` for every task. A
 
 Decision Atlas: `docs/decisions/atlas.md` is the canonical product-intent map. Its semantic leaf entries are only Decisions and Questions. Retrieve relevant entries before making consequential product choices; follow Decisions, and ask the owner one unanswered Question at a time only when it materially affects the task. Preserve answered/superseded entries through linked append-only Decisions rather than rewriting history. New entries take an issue-derived ID (parent ID + `i` + issue number, e.g. `5.9.i415`; `-2`, `-3` for further entries of the same issue under that parent) instead of the next sequential number, so parallel PRs never collide; existing numeric IDs never change.
 
+Use [CONTEXT.md](CONTEXT.md) to locate the existing gameplay capability when starting from a feature name. Before proposing or adding behavior, retrieve its current authoritative implementation, state/data, consumers and relevant tests. Distinguish production paths from experiments, fallbacks and incomplete integration; a failed text search is not evidence that a capability is absent. If discovery is partial, state what was inspected and what remains unknown. When ownership moves, update the applicable task relationships and domain pointers in the same change (AGENT-006, DESIGN-006, REPO-019).
+
 Use the existing `coding-tooling inspect` task lookup (coding-tooling #272) to select declared links and focused commands from `.coding-tooling.json`:
 
 ```sh
 coding-tooling inspect --target web/src/world/world-view.ts --task-kind presentation --json
 coding-tooling inspect --target crates/mmorpg-control-plane/src/lib.rs --json
 coding-tooling inspect --target web/src/command-wire.ts --json
+coding-tooling inspect --target crates/mmorpg-core/src/melee.rs --target web/src/world/action-lab.ts --json
 ```
 
 Presentation lookup retains the browser's local-host authority decision and relevant avatar/character documentation; protocol adapters also retain wire compatibility and producer checks. Native gameplay and control-plane scopes retain their architecture/workload/scenario links. Related owners are declared references, not evidence that their validation ran.
