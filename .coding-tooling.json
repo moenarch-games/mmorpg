@@ -70,77 +70,28 @@
           "web/tests/combat-presentation.test.ts",
           "web/tests/unit-presenter.test.ts"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/decisions/atlas.md",
-          "docs/SCENARIOS.md",
-          "docs/COMBAT_WORKLOADS.md",
-          "docs/AVATAR_ASSETS.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg"
-        ],
+        "instructions": ["docs/decisions/atlas.md", "docs/SCENARIOS.md", "docs/COMBAT_WORKLOADS.md", "docs/AVATAR_ASSETS.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
-          {
-            "path": "crates/mmorpg-core/src/action.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/action/baseline.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/melee.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/combat.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/swing.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/zone.rs"
-          },
-          {
-            "path": "crates/sim-combat/src/melee.rs"
-          },
-          {
-            "path": "crates/sim-combat/src/swing.rs"
-          },
-          {
-            "path": "crates/mmorpg-presentation/src/units/imported/playback.rs"
-          },
-          {
-            "path": "crates/mmorpg-presentation/src/units/effects.rs"
-          },
-          {
-            "path": "crates/mmorpg-local-host/src/action_lab.rs"
-          },
-          {
-            "path": "web/src/world/action-lab.ts"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/action_graph.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/action_windows.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/movement_strikes.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/timed_swing.rs"
-          },
-          {
-            "path": "web/tests/lab-experiment.test.ts"
-          }
+          { "path": "crates/mmorpg-core/src/action.rs" },
+          { "path": "crates/mmorpg-core/src/action/baseline.rs" },
+          { "path": "crates/mmorpg-core/src/melee.rs" },
+          { "path": "crates/mmorpg-core/src/combat.rs" },
+          { "path": "crates/mmorpg-core/src/swing.rs" },
+          { "path": "crates/mmorpg-core/src/zone.rs" },
+          { "path": "crates/sim-combat/src/melee.rs" },
+          { "path": "crates/sim-combat/src/swing.rs" },
+          { "path": "crates/mmorpg-presentation/src/units/imported/playback.rs" },
+          { "path": "crates/mmorpg-presentation/src/units/effects.rs" },
+          { "path": "crates/mmorpg-local-host/src/action_lab.rs" },
+          { "path": "web/src/world/action-lab.ts" },
+          { "path": "crates/mmorpg-core/tests/combat/action_graph.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/action_windows.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/movement_strikes.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/timed_swing.rs" },
+          { "path": "web/tests/lab-experiment.test.ts" }
         ]
       },
       {
@@ -176,60 +127,22 @@
           "web/src/world/orbit-camera.ts",
           "crates/mmorpg-presentation/src/units/traversal.rs"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/decisions/atlas.md",
-          "docs/CONTROLS.md",
-          "docs/PHYSICS_AB.md",
-          "docs/SCENARIOS.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg",
-          "moritzbrantner/physics-engine"
-        ],
+        "instructions": ["docs/decisions/atlas.md", "docs/CONTROLS.md", "docs/PHYSICS_AB.md", "docs/SCENARIOS.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg", "moritzbrantner/physics-engine"],
         "examples": [
-          {
-            "path": "crates/mmorpg-core/src/zone.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/action.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/action/baseline.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/stance.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/melee.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/prediction.rs"
-          },
-          {
-            "path": "crates/sim-movement/src/walk.rs"
-          },
-          {
-            "path": "crates/sim-foundation/src/physics.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/world/movement.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/action_traversal.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/tests/prediction.rs"
-          }
+          { "path": "crates/mmorpg-core/src/zone.rs" },
+          { "path": "crates/mmorpg-core/src/action.rs" },
+          { "path": "crates/mmorpg-core/src/action/baseline.rs" },
+          { "path": "crates/mmorpg-core/src/stance.rs" },
+          { "path": "crates/mmorpg-core/src/melee.rs" },
+          { "path": "crates/mmorpg-core/src/prediction.rs" },
+          { "path": "crates/sim-movement/src/walk.rs" },
+          { "path": "crates/sim-foundation/src/physics.rs" },
+          { "path": "crates/mmorpg-core/tests/world/movement.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/action_traversal.rs" },
+          { "path": "crates/mmorpg-client-model/tests/prediction.rs" }
         ]
       },
       {
@@ -260,56 +173,21 @@
           "crates/mmorpg-client/src/ui/ability_art.rs",
           "crates/mmorpg-client/src/hud.rs"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/decisions/atlas.md",
-          "docs/PROGRESSION.md",
-          "docs/INVENTORY.md",
-          "docs/SAVE_LOAD.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg"
-        ],
+        "instructions": ["docs/decisions/atlas.md", "docs/PROGRESSION.md", "docs/INVENTORY.md", "docs/SAVE_LOAD.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
-          {
-            "path": "crates/mmorpg-core/src/ability.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/casting.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/progression.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/mastery.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/equipment.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/character.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/abilities.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/combat/weapon_mastery.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/zone/progression_rules.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/hud.rs"
-          }
+          { "path": "crates/mmorpg-core/src/ability.rs" },
+          { "path": "crates/mmorpg-core/src/casting.rs" },
+          { "path": "crates/mmorpg-core/src/progression.rs" },
+          { "path": "crates/mmorpg-core/src/mastery.rs" },
+          { "path": "crates/mmorpg-core/src/equipment.rs" },
+          { "path": "crates/mmorpg-core/src/character.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/abilities.rs" },
+          { "path": "crates/mmorpg-core/tests/combat/weapon_mastery.rs" },
+          { "path": "crates/mmorpg-core/tests/zone/progression_rules.rs" },
+          { "path": "crates/mmorpg-client-model/src/hud.rs" }
         ]
       },
       {
@@ -344,58 +222,22 @@
           "crates/mmorpg-protocol/src/quest.rs",
           "crates/mmorpg-protocol/tests/quest_recovery.rs"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/decisions/atlas.md",
-          "docs/STARTER_ZONE.md",
-          "docs/PROTOCOL.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg"
-        ],
+        "instructions": ["docs/decisions/atlas.md", "docs/STARTER_ZONE.md", "docs/PROTOCOL.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
-          {
-            "path": "crates/mmorpg-core/src/quest.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/npc_quest.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/content/greyhaven_vale/quests.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/crossing.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/rewards.rs"
-          },
-          {
-            "path": "content/greyhaven/quests.json"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/quest.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/zone/quests.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/content/incident_receipts.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/content/reward_capacity.rs"
-          },
-          {
-            "path": "web/tests/quest-state.test.ts"
-          }
+          { "path": "crates/mmorpg-core/src/quest.rs" },
+          { "path": "crates/mmorpg-core/src/npc_quest.rs" },
+          { "path": "crates/mmorpg-core/src/content/greyhaven_vale/quests.rs" },
+          { "path": "crates/mmorpg-core/src/crossing.rs" },
+          { "path": "crates/mmorpg-core/src/rewards.rs" },
+          { "path": "content/greyhaven/quests.json" },
+          { "path": "crates/mmorpg-client-model/src/quest.rs" },
+          { "path": "crates/mmorpg-core/tests/zone/quests.rs" },
+          { "path": "crates/mmorpg-core/tests/content/incident_receipts.rs" },
+          { "path": "crates/mmorpg-core/tests/content/reward_capacity.rs" },
+          { "path": "web/tests/quest-state.test.ts" }
         ]
       },
       {
@@ -428,55 +270,21 @@
           "crates/mmorpg-game-server/src/lifecycle.rs",
           "crates/mmorpg-game-server/src/persistence/zone_lifecycle.rs"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/decisions/atlas.md",
-          "docs/ZONE_LIFECYCLE.md",
-          "docs/STARTER_ZONE.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg"
-        ],
+        "instructions": ["docs/decisions/atlas.md", "docs/ZONE_LIFECYCLE.md", "docs/STARTER_ZONE.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
-          {
-            "path": "crates/mmorpg-core/src/routine.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/cart.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/crossing.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/supply.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/raid.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/src/quest.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/content/merchant_cart.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/world/crossings.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/zone/routines.rs"
-          },
-          {
-            "path": "crates/mmorpg-core/tests/content/incident_receipts.rs"
-          }
+          { "path": "crates/mmorpg-core/src/routine.rs" },
+          { "path": "crates/mmorpg-core/src/cart.rs" },
+          { "path": "crates/mmorpg-core/src/crossing.rs" },
+          { "path": "crates/mmorpg-core/src/supply.rs" },
+          { "path": "crates/mmorpg-core/src/raid.rs" },
+          { "path": "crates/mmorpg-core/src/quest.rs" },
+          { "path": "crates/mmorpg-core/tests/content/merchant_cart.rs" },
+          { "path": "crates/mmorpg-core/tests/world/crossings.rs" },
+          { "path": "crates/mmorpg-core/tests/zone/routines.rs" },
+          { "path": "crates/mmorpg-core/tests/content/incident_receipts.rs" }
         ]
       },
       {
@@ -507,72 +315,26 @@
           "web/tests/unit-presenter.test.ts",
           "crates/mmorpg-client-model/tests/**"
         ],
-        "instructions": [
-          "CONTEXT.md",
-          "docs/NATIVE_CLIENT.md",
-          "docs/BROWSER_CLIENT.md",
-          "docs/CONTROLS.md",
-          "docs/CHARACTER_CREATION.md",
-          "docs/CHARACTER_SELECTION.md"
-        ],
-        "conventionRefs": [
-          "AGENT-006",
-          "DESIGN-006",
-          "REPO-019",
-          "TEST-001"
-        ],
-        "capabilities": [
-          "test:unit"
-        ],
-        "owners": [
-          "moenarch-games/mmorpg"
-        ],
+        "instructions": ["docs/NATIVE_CLIENT.md", "docs/BROWSER_CLIENT.md", "docs/CONTROLS.md", "docs/CHARACTER_CREATION.md", "docs/CHARACTER_SELECTION.md"],
+        "conventionRefs": ["AGENT-006", "DESIGN-006", "REPO-019", "TEST-001"],
+        "capabilities": ["test:unit"],
+        "owners": ["moenarch-games/mmorpg"],
         "examples": [
-          {
-            "path": "crates/mmorpg-client-model/src/camera.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/mouse_owner.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/front_end.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/hud.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/quest.rs"
-          },
-          {
-            "path": "crates/mmorpg-client-model/src/impact.rs"
-          },
-          {
-            "path": "crates/mmorpg-client/src/camera.rs"
-          },
-          {
-            "path": "crates/mmorpg-client/src/roster.rs"
-          },
-          {
-            "path": "crates/mmorpg-wasm/src/camera.rs"
-          },
-          {
-            "path": "web/src/world/orbit-camera.ts"
-          },
-          {
-            "path": "web/src/character-roster.ts"
-          },
-          {
-            "path": "web/src/character-selection.ts"
-          },
-          {
-            "path": "crates/mmorpg-client/tests/native_presentation_parity.rs"
-          },
-          {
-            "path": "web/tests/camera-boom.test.ts"
-          },
-          {
-            "path": "web/tests/quest-state.test.ts"
-          }
+          { "path": "crates/mmorpg-client-model/src/camera.rs" },
+          { "path": "crates/mmorpg-client-model/src/mouse_owner.rs" },
+          { "path": "crates/mmorpg-client-model/src/front_end.rs" },
+          { "path": "crates/mmorpg-client-model/src/hud.rs" },
+          { "path": "crates/mmorpg-client-model/src/quest.rs" },
+          { "path": "crates/mmorpg-client-model/src/impact.rs" },
+          { "path": "crates/mmorpg-client/src/camera.rs" },
+          { "path": "crates/mmorpg-client/src/roster.rs" },
+          { "path": "crates/mmorpg-wasm/src/camera.rs" },
+          { "path": "web/src/world/orbit-camera.ts" },
+          { "path": "web/src/character-roster.ts" },
+          { "path": "web/src/character-selection.ts" },
+          { "path": "crates/mmorpg-client/tests/native_presentation_parity.rs" },
+          { "path": "web/tests/camera-boom.test.ts" },
+          { "path": "web/tests/quest-state.test.ts" }
         ]
       },
       {
