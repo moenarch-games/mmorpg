@@ -1040,6 +1040,30 @@
       ]
     },
     {
+      "id": "static-batch-views",
+      "description": "Browser static batches (#1113): kit modules and walk-in buildings (StaticBatches) cull by 64 m ground cell. A drawn batch (one per material) hides the instances of the cells outside the main view, rebuilding its draw list only when a cell enters or leaves it; shadow batches split per cell with the sphere around their casters, so a sun cascade skips the cells outside it. Before, every view drew every placed module of the region. Measured by web/tests/support/work/static-batch-views.ts (one 100 m view over modules placed every 8 m): asserted by web/tests/static-batches.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": { "region_metres": { "description": "side of the square region the modules are placed over" } },
+      "scalePoints": [{ "region_metres": 256 }, { "region_metres": 512 }, { "region_metres": 1024 }],
+      "metrics": [
+        {
+          "name": "view_sub_draws",
+          "unit": "draws",
+          "signal": "operation-count",
+          "notes": "Instances the view draws, drawn and shadow; before, twice every placed module (32,768 at 1,024 m).",
+          "budget": { "max": 1536 },
+          "growth": [{ "dimension": "region_metres", "bound": "constant" }]
+        },
+        {
+          "name": "view_calls",
+          "unit": "calls",
+          "signal": "operation-count",
+          "notes": "Batches and plain meshes the view keeps: the drawn batch per material and one shadow batch per cell seen.",
+          "budget": { "max": 13 },
+          "growth": [{ "dimension": "region_metres", "bound": "constant" }]
+        }
+      ]
+    },
+    {
       "id": "ambient-clips",
       "description": "Browser ambient creatures and settlement prop node clips (#1095, Atlas 6.6.26): a clip samples only in the view frustum and within 150 m, every frame within 40 m and every 3rd frame (staggered) beyond; off-screen and far clips never sample. Measured over ClipDetail, which AmbientAnimals and KitModules share, by web/tests/support/work/ambient-clips.ts: asserted by web/tests/clip-detail.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": {

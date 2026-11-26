@@ -1,6 +1,6 @@
 /**
  * Work evidence for the browser operations of `.performance/contract.json` (#1120): `world-frame`, `scenery-frame`,
- * `ambient-clips`, `sun-shadow-casters` and `entry-prebuild`. Each is measured by the same helper in `tests/support/work/` that its bun test
+ * `static-batch-views`, `ambient-clips`, `sun-shadow-casters` and `entry-prebuild`. Each is measured by the same helper in `tests/support/work/` that its bun test
  * asserts through, at every scale point the contract declares, and written as `{ "operations": [...] }` to the path
  * given as the first argument; `scripts/operation-work.py` merges it with the Rust examples' samples. Counters only;
  * nothing is timed.
@@ -20,6 +20,7 @@ const { shadowLodReady } = await import("../src/world/shadow-lod");
 const { largestClipsSampledPerFrame } = await import("../tests/support/work/ambient-clips");
 const { prebuildThenEnter } = await import("../tests/support/work/entry-prebuild");
 const { greyhavenScenery, warmSceneryFrames } = await import("../tests/support/work/scenery-frame");
+const { staticBatchView } = await import("../tests/support/work/static-batch-views");
 const { largestFrameCascadeRedraws, largestFrameKitShadowCasterExtraPercent, unitShadowTrianglePercent } = await import("../tests/support/work/sun-shadow-casters");
 const { warmActionBar, warmWorldFrames } = await import("../tests/support/work/world-frame");
 
@@ -52,6 +53,10 @@ const MEASUREMENTS: Record<string, Measure> = {
     const { built, reused } = warmSceneryFrames(scene, at(point, "frames"));
     if (!reused) { throw new Error("scenery-frame: a warm frame handed out a batch the first frame did not"); }
     return { instance_batch_views_built: built };
+  },
+  "static-batch-views": (point) => {
+    const { subDraws, calls } = staticBatchView(at(point, "region_metres"));
+    return { view_sub_draws: subDraws, view_calls: calls };
   },
   "ambient-clips": (point) => ({
     largest_clips_sampled_per_frame: largestClipsSampledPerFrame(at(point, "placed"), at(point, "visible_near"), at(point, "visible_middle")),
