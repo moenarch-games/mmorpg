@@ -9,9 +9,128 @@ import { freeHandle } from "./zone-lifecycle";
  * One batched mesh: the `BatchedMesh` that draws it and its instance there, or the plain mesh drawing it alone; and
  * its instance in its part's shadow batch ([`StaticBatches`]), -1 when it casts by itself.
  */
-export type BatchedDraw = { mesh: THREE.BatchedMesh | THREE.Mesh | null; instance: number; shadow: number; caster: THREE.BatchedMesh | null };
+export type BatchedDraw = {
+  mesh: THREE.BatchedMesh | THREE.Mesh | null;
+  instance: number;
+  shadow: number;
+  caster: THREE.BatchedMesh | null;
+  /** Its geometry's own bounding sphere, placed on a move ([`StaticBatches.setMatrix`]) to keep its cells' spheres around it. */
+  bounds: THREE.Sphere;
+};
 
-type Pending = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; color: THREE.Color | THREE.Vector4 | null; draw: BatchedDraw };
+type Pending = {
+  geometry: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+  color: THREE.Color | THREE.Vector4 | null;
+  draw: BatchedDraw;
+  /** Its geometry's sphere where `matrix` places it. */
+  placed: THREE.Sphere;
+  /** The ground cell ([`BATCH_CELL`]) holding its centre. */
+  cell: string;
+};
+
+/**
+ * The side, in metres, of the square ground cells (x and z) [`StaticBatches`] culls by (#1113). Unculled, every placed
+ * kit module of the region was a sub-draw of every view, about 22k a frame in Greyhaven. Shadow batches split by cell,
+ * each with the sphere around its casters, so a sun cascade skips the cells it cannot see as a whole: a shadow batch
+ * holds every material's casters, so a cell costs one call per cascade. A drawn batch stays one per material (a cell
+ * each would add a main-pass call per material and cell, about 200 at Greyhaven's hub) and hides the instances of the
+ * cells outside the main view instead ([`CellCulledBatch`]).
+ */
+export const BATCH_CELL = 64;
+
+/** The ground cell holding `point`. */
+function cellOf(point: THREE.Vector3): string {
+  return `${Math.floor(point.x / BATCH_CELL)},${Math.floor(point.z / BATCH_CELL)}`;
+}
+
+type Cell = { sphere: THREE.Sphere; instances: number[]; seen: boolean };
+
+const CLIP_FROM_WORLD = new THREE.Matrix4();
+/** The main view's frustum, shared by every [`CellCulledBatch`] and set again only when the view changes. */
+const FRUSTUM = new THREE.Frustum();
+const FRUSTUM_FOR = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+let FRUSTUM_REVERSED = false;
+
+/**
+ * A drawn batch of [`StaticBatches`] that culls its instances by ground cell ([`BATCH_CELL`]) in the main view. Only the
+ * main pass draws it (the shadow views give it an invisible material, so three never prepares it there), so before each
+ * draw it tests each cell's sphere against that view and shows or hides the instances of the cells that came into or
+ * left it. Unlike culling per instance in every view ([`drawWhole`]), the draw list is then rebuilt and re-uploaded
+ * only in a frame a cell's view changes, at most once a frame.
+ */
+export class CellCulledBatch extends THREE.BatchedMesh {
+  readonly #cells: Cell[] = [];
+  readonly #cellIndex = new Map<string, number>();
+  /** Per instance its cell's index. */
+  readonly #cellOf: number[] = [];
+  /** Per instance whether the caller shows it ([`show`]), whatever its cell. */
+  readonly #shown: boolean[] = [];
+  /** The clip-from-world matrix of the view it last culled for; zero until its first. */
+  readonly #culledFor = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+  /** Puts `instance`, placed within `placed`, in `cell`; it starts shown and in view. */
+  place(instance: number, cell: string, placed: THREE.Sphere): void {
+    let index = this.#cellIndex.get(cell);
+    if (index === undefined) {
+      index = this.#cells.length;
+      this.#cellIndex.set(cell, index);
+      this.#cells.push({ sphere: new THREE.Sphere(), instances: [], seen: true });
+    }
+    const state = this.#cells[index]!;
+    state.sphere.union(placed);
+    state.instances.push(instance);
+    this.#cellOf[instance] = index;
+    this.#shown[instance] = true;
+  }
+
+  /** Whether the caller shows `instance`. */
+  shown(instance: number): boolean {
+    return this.#shown[instance] ?? false;
+  }
+
+  /** Shows or hides `instance`; a shown one draws while its cell is in view. */
+  show(instance: number, visible: boolean): void {
+    this.#shown[instance] = visible;
+    this.setVisibleAt(instance, visible && this.#cells[this.#cellOf[instance]!]!.seen);
+  }
+
+  /** Grows `instance`'s cell's sphere to hold `placed` (world), where it moved; a grown cell is tested at the next draw. */
+  moved(instance: number, placed: THREE.Sphere): void {
+    if (enclose(this.#cells[this.#cellOf[instance]!]!.sphere, placed)) { this.#culledFor.elements.fill(0); }
+  }
+
+  /** How many cells it culls by. */
+  get cellCount(): number {
+    return this.#cells.length;
+  }
+
+  /**
+   * Brings each cell's instances in line with whether `camera` sees the cell. A view unchanged since this batch's last
+   * cull (a standing camera's) tests nothing, unless a move grew a cell since.
+   */
+  cull(camera: THREE.Camera): void {
+    CLIP_FROM_WORLD.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (this.#culledFor.equals(CLIP_FROM_WORLD)) { return; }
+    this.#culledFor.copy(CLIP_FROM_WORLD);
+    if (!FRUSTUM_FOR.equals(CLIP_FROM_WORLD) || FRUSTUM_REVERSED !== camera.reversedDepth) {
+      FRUSTUM.setFromProjectionMatrix(CLIP_FROM_WORLD, THREE.WebGLCoordinateSystem, camera.reversedDepth);
+      FRUSTUM_FOR.copy(CLIP_FROM_WORLD);
+      FRUSTUM_REVERSED = camera.reversedDepth;
+    }
+    for (const cell of this.#cells) {
+      const seen = FRUSTUM.intersectsSphere(cell.sphere);
+      if (seen === cell.seen) { continue; }
+      cell.seen = seen;
+      for (const instance of cell.instances) { this.setVisibleAt(instance, seen && this.#shown[instance]!); }
+    }
+  }
+
+  override onBeforeRender(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group): void {
+    this.cull(camera);
+    super.onBeforeRender(renderer, scene, camera, geometry, material, group);
+  }
+}
 
 /**
  * Whether a mesh drawn with `material` can join a `BatchedMesh` of lit scenery: one opaque or masked `LitMaterial`
@@ -36,14 +155,16 @@ function layout(geometry: THREE.BufferGeometry): string {
  * the GPU still reads stalls it: in Greyhaven that cost about 2.5 ms of GPU time a frame, more than the instances it
  * culls. The list (and the upload) then changes only when an instance is shown or hidden.
  *
- * Its own sphere is fixed empty: nothing culls the whole batch, and three only reads the sphere's centre to order
- * draws, but computing it walks every vertex of every geometry on the batch's first draw, a 100–500 ms frame each
- * time a streamed batch is built mid-walk (#869).
+ * three never computes the batch's own sphere, which walks every vertex of every geometry on its first draw, a 100–500
+ * ms frame each time a streamed batch is built mid-walk (#869). With `bounds` (the caller's sphere around every
+ * instance, a shadow batch's cell's) a view culls the whole batch as it culls any mesh; without, the sphere is fixed
+ * empty and nothing culls the batch.
  */
-export function drawWhole(mesh: THREE.BatchedMesh): void {
+export function drawWhole(mesh: Pick<THREE.BatchedMesh, "perObjectFrustumCulled" | "sortObjects" | "boundingSphere" | "frustumCulled">, bounds: THREE.Sphere | null = null): void {
   mesh.perObjectFrustumCulled = false;
   mesh.sortObjects = false;
-  mesh.boundingSphere = new THREE.Sphere();
+  mesh.boundingSphere = bounds ?? new THREE.Sphere();
+  mesh.frustumCulled = bounds !== null;
 }
 
 /** One instance in a [`GrowingBatch`]. */
@@ -72,8 +193,7 @@ export class GrowingBatch {
     this.mesh = new THREE.BatchedMesh(instances, vertices, indices, material);
     this.mesh.name = name;
     this.mesh.matrixAutoUpdate = false;
-    // Instances stream in and out, so the batch's own sphere would go stale.
-    this.mesh.frustumCulled = false;
+    // Instances stream in and out, so the batch's own sphere would go stale: nothing culls it.
     drawWhole(this.mesh);
   }
 
@@ -125,9 +245,10 @@ function roomFor(count: number): number {
 /**
  * Static lit scenery drawn as one three `BatchedMesh` per material and vertex layout (#615): Greyhaven's frame is bound
  * by draw calls, each paid in the main pass and again in every sun cascade, and a batch is one multi-draw call per
- * pass however many meshes it holds. Each batch draws all its shown instances in every view ([`drawWhole`]); the
- * static scene hides far groups. [`add`] collects meshes, [`build`] creates the batches once; afterwards each draw can
- * be moved ([`setMatrix`]) or shown and hidden ([`setVisible`]).
+ * pass however many meshes it holds. Each culls by ground cell ([`BATCH_CELL`]): a drawn batch hides the cells outside
+ * the main view ([`CellCulledBatch`]), and shadow batches split by cell, so a sun cascade skips the cells outside it.
+ * [`add`] collects meshes, [`build`] creates the batches once; afterwards each draw can be moved ([`setMatrix`]) or
+ * shown and hidden ([`setVisible`]).
  */
 export class StaticBatches {
   readonly root = new THREE.Group();
@@ -143,9 +264,13 @@ export class StaticBatches {
    * Adds `geometry` drawn with `material` (see [`batchable`]) at `matrix`, times `color` (linear) when given. A `Vector4`
    * colour also sets the instance colour's alpha, which three ignores and the Outpost kit's wear shader reads as the draw's
    * wear ([`applyOutpostWear`]). Draws of another `part` go to other batches: moving one re-uploads only its own batch's
-   * matrices.
+   * matrices. Its ground cell is where `matrix` places the geometry's centre.
    */
   add(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4, color: THREE.Color | THREE.Vector4 | null = null, part = ""): BatchedDraw {
+    // Computed once per geometry: kit modules' clones share theirs.
+    if (!geometry.boundingSphere) { geometry.computeBoundingSphere(); }
+    const bounds = geometry.boundingSphere!;
+    const placed = bounds.clone().applyMatrix4(matrix);
     const key = `${part}|${material.uuid}|${layout(geometry)}`;
     let group = this.#groups.get(key);
     if (!group) {
@@ -153,15 +278,15 @@ export class StaticBatches {
       this.#groups.set(key, group);
     }
     group.colored ||= color !== null;
-    const draw: BatchedDraw = { mesh: null, instance: -1, shadow: -1, caster: null };
-    group.pending.push({ geometry, matrix: matrix.clone(), color, draw });
+    const draw: BatchedDraw = { mesh: null, instance: -1, shadow: -1, caster: null, bounds };
+    group.pending.push({ geometry, matrix: matrix.clone(), color, draw, placed, cell: cellOf(placed.center) });
     return draw;
   }
 
   /**
    * Creates the batches of everything added so far. Every opaque single-sided draw also joins its part's shadow batch
    * and its own batch casts no shadow: the shadow views draw all such casters with one shared material, so a part
-   * casts in one multi-draw per view instead of one per material.
+   * casts in one multi-draw per cell and view instead of one per material.
    */
   build(): void {
     const white = new THREE.Color(1, 1, 1);
@@ -170,9 +295,12 @@ export class StaticBatches {
       const casts = castsWithSharedShadow(material);
       if (casts) {
         const doubleSided = casts === "double";
-        const caster = casters.get(`${part}|${doubleSided}`) ?? { part, doubleSided, pending: [] };
-        caster.pending.push(...pending);
-        casters.set(`${part}|${doubleSided}`, caster);
+        for (const entry of pending) {
+          const key = `${part}|${entry.cell}|${doubleSided}`;
+          const caster = casters.get(key) ?? { part, doubleSided, pending: [] };
+          caster.pending.push(entry);
+          casters.set(key, caster);
+        }
       }
       if (pending.length === 1 && !colored) {
         // A batch of one would cull and re-upload its draw list in every pass for nothing: three culls a mesh itself.
@@ -190,17 +318,17 @@ export class StaticBatches {
       const geometries = [...new Set(pending.map((entry) => entry.geometry))];
       const vertices = geometries.reduce((sum, geometry) => sum + geometry.attributes.position!.count, 0);
       const indices = geometries.reduce((sum, geometry) => sum + (geometry.index?.count ?? 0), 0);
-      const mesh = new THREE.BatchedMesh(pending.length, vertices, indices, material);
+      const mesh = new CellCulledBatch(pending.length, vertices, indices, material);
       mesh.name = `${this.root.name}:${material.name || material.uuid}`;
-      // The batch's own sphere would go stale as draws move.
-      mesh.frustumCulled = false;
+      // Its cells cull its instances; the batch as a whole stays.
       drawWhole(mesh);
       mesh.matrixAutoUpdate = false;
       if (casts) { mesh.userData.notShadowCaster = true; }
       const ids = new Map(geometries.map((geometry) => [geometry, mesh.addGeometry(geometry)]));
-      for (const { geometry, matrix, color, draw } of pending) {
+      for (const { geometry, matrix, color, draw, placed, cell } of pending) {
         draw.mesh = mesh;
         draw.instance = mesh.addInstance(ids.get(geometry)!);
+        mesh.place(draw.instance, cell, placed);
         mesh.setMatrixAt(draw.instance, matrix);
         if (colored) { mesh.setColorAt(draw.instance, color ?? white); }
       }
@@ -210,7 +338,7 @@ export class StaticBatches {
     this.#groups.clear();
   }
 
-  /** `pending`'s shadow batch: their positions only, drawn by nothing but the shadow views. */
+  /** `pending`'s shadow batch (one cell's): their positions only, drawn by nothing but the shadow views. */
   #buildCaster(part: string, doubleSided: boolean, pending: readonly Pending[]): void {
     const shapes = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
     for (const { geometry } of pending) {
@@ -220,8 +348,8 @@ export class StaticBatches {
     const indices = [...shapes.values()].reduce((sum, shape) => sum + shape.index!.count, 0);
     const caster = new THREE.BatchedMesh(pending.length, vertices, indices, doubleSided ? SHADOW_ONLY.double : SHADOW_ONLY.single);
     caster.name = `${this.root.name}:shadow${part ? `:${part}` : ""}${doubleSided ? ":double" : ""}`;
-    caster.frustumCulled = false;
-    drawWhole(caster);
+    // Its sphere grows as draws move ([`setMatrix`]).
+    drawWhole(caster, enclosing(pending));
     caster.matrixAutoUpdate = false;
     const ids = new Map([...shapes].map(([geometry, shape]) => [geometry, caster.addGeometry(shape)]));
     for (const { geometry, matrix, draw } of pending) {
@@ -232,16 +360,22 @@ export class StaticBatches {
     this.root.add(caster);
   }
 
-  /** Moves `draw` to `matrix` (world). */
+  /** Moves `draw` to `matrix` (world), growing its cells' spheres to keep it inside. */
   setMatrix(draw: BatchedDraw, matrix: THREE.Matrix4): void {
     const mesh = draw.mesh;
-    if (mesh instanceof THREE.BatchedMesh) {
+    const batched = mesh instanceof CellCulledBatch;
+    const placed = batched || draw.caster ? MOVED.copy(draw.bounds).applyMatrix4(matrix) : null;
+    if (batched) {
       mesh.setMatrixAt(draw.instance, matrix);
+      mesh.moved(draw.instance, placed!);
     } else if (mesh) {
       mesh.matrix.copy(matrix);
       mesh.matrixWorldNeedsUpdate = true;
     }
-    draw.caster?.setMatrixAt(draw.shadow, matrix);
+    if (draw.caster) {
+      draw.caster.setMatrixAt(draw.shadow, matrix);
+      enclose(draw.caster.boundingSphere!, placed!);
+    }
   }
 
   /**
@@ -259,14 +393,30 @@ export class StaticBatches {
   /** Shows or hides `draw`. */
   setVisible(draw: BatchedDraw, visible: boolean): void {
     const mesh = draw.mesh;
-    if (mesh instanceof THREE.BatchedMesh) {
-      if (mesh.getVisibleAt(draw.instance) !== visible) { mesh.setVisibleAt(draw.instance, visible); }
+    if (mesh instanceof CellCulledBatch) {
+      if (mesh.shown(draw.instance) !== visible) { mesh.show(draw.instance, visible); }
     } else if (mesh) {
       mesh.visible = visible;
     }
     const caster = draw.caster;
     if (caster && caster.getVisibleAt(draw.shadow) !== visible) { caster.setVisibleAt(draw.shadow, visible); }
   }
+}
+
+const MOVED = new THREE.Sphere();
+
+/** The sphere around every placed draw of `pending` (world). */
+function enclosing(pending: readonly Pending[]): THREE.Sphere {
+  const sphere = new THREE.Sphere();
+  for (const { placed } of pending) { sphere.union(placed); }
+  return sphere;
+}
+
+/** Grows `sphere` to hold `placed` when it does not yet; whether it grew. */
+function enclose(sphere: THREE.Sphere, placed: THREE.Sphere): boolean {
+  if (sphere.center.distanceTo(placed.center) + placed.radius <= sphere.radius) { return false; }
+  sphere.union(placed);
+  return true;
 }
 
 /**

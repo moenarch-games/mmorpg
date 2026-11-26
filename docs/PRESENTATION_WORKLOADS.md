@@ -131,3 +131,15 @@ Two runs were made of each build, and the table shows their mean. For rAF p95, i
 "Before" held 16.8 ms p95 everywhere.
 
 **Where the draws come from:** three.js-level calls about halved, mostly because the shadow passes fell from about 990 to 150 calls at `idle`. The rise in WebGL draws is all `WEBGL_multi_draw` sub-draws of the static-scenery `BatchedMesh`es (`web/src/world/static-batches.ts`), which draw every instance in every view. They went from about 6.6k to 21.9k per frame, and the count is the same at every location. The two largest batches have about 2.9k and 2.75k sub-draws, each drawn twice a frame. Over the same span, the main-thread `render` phase at `idle` went from 5.4 to 15.3 ms p50. Its top self time is three's `updateMatrixWorld`, `multiplyMatrices` and `traverse` (about 16 %). The range has 220 commits, 10 of them #683's, and this measurement doesn't attribute the change to individual commits.
+
+**Cell culling (#1113, 2026-11-26):** `StaticBatches` (kit modules, walk-in buildings) now culls by 64 m ground cell. A drawn batch stays one per material and hides the instances of the cells outside the main view, rebuilding its draw list only in a frame a cell enters or leaves it and testing nothing while the view stands still (`CellCulledBatch`); shadow batches split per cell, so a sun cascade skips the cells outside it. Splitting the drawn batches per cell as well was tried and rejected: it cut the same draws but added 120–250 main-pass calls at `idle`, about 2 ms more issue time. `static-batch-views` in `.performance/contract.json` bounds a view's work. Measured with `scripts/profile-browser.py`'s scenarios on Vulkan ANGLE (RTX 3060 Ti, 1440×900, load average 2–3), baseline and change interleaved, two runs each (p50s):
+
+| Location | WebGL draws / frame | FPS | Main-thread frame (ms) | GPU (ms) | main-opaque calls |
+| --- | --- | --- | --- | --- | --- |
+| `idle` | 29.6–30.8k → 16.9k | 27.5–27.8 → 28.7–28.8 | 23.6–24.4 → 20.4–21.3 | 16.0–17.0 → 15.5–15.7 | 442 → 442–445 |
+| `dense-woods` | 22.5–22.7k → 7.2k | 35.3–36.3 → 39.0–40.0 | 17.8–18.1 → 17.7–18.2 | 18.9–20.1 → 17.1–17.6 | 179 → 151 |
+| `dense-hub` | 24.1–24.3k → 9.3–9.4k | 35.8–36.3 → 39.5–39.8 | 18.9–19.0 → 18.2–18.3 | 17.6–17.9 → 16.0 | 341 → 333 |
+| `western-lake` | 22.2k → 5.7k | 36.0–36.7 → 37.0–38.7 | 15.5–15.7 → 16.1–17.0 | 17.5–17.8 → 15.5–15.9 | 125 → 81 |
+| `overview` | 24.2–25.3k → 7.7k | 35.2–36.7 → 36.2–37.8 | 19.4–20.4 → 20.5–21.6 | 17.5–18.7 → 17.0–17.7 | 506 → 506 |
+
+The sub-draws were cheaper than their count suggested: removing two thirds of them saves 1–2.5 ms of GPU time and a few FPS, not a whole vsync. The frame stays bound by the main thread issuing three.js calls and three-lighting's per-frame setup between passes (about 4 ms at `idle`, render-engine's `#renderPasses` scene walk).
