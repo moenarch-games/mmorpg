@@ -586,25 +586,25 @@ impl ZoneSimulation {
     }
 
     /// Completes every open objective of the player's active quests that `matches` (#1019),
-    /// once each.
+    /// once each. Returns whether any objective advanced.
     pub(crate) fn complete_objectives(
         &mut self,
         player_id: PlayerId,
         matches: impl Fn(QuestObjective) -> bool,
-    ) {
-        self.complete_quest_objectives(player_id, |_, objective| matches(objective));
+    ) -> bool {
+        self.complete_quest_objectives(player_id, |_, objective| matches(objective))
     }
 
     /// Completes every open objective of the player's active quests that `matches` with its
-    /// quest (#1019), once each.
+    /// quest (#1019), once each. Returns whether any objective advanced.
     pub(crate) fn complete_quest_objectives(
         &mut self,
         player_id: PlayerId,
         matches: impl Fn(&crate::Quest, QuestObjective) -> bool,
-    ) {
+    ) -> bool {
         let content = Arc::clone(&self.content);
         let Some(player) = self.players.get(&player_id) else {
-            return;
+            return false;
         };
         let open: Vec<_> = player
             .quests
@@ -623,9 +623,11 @@ impl ZoneSimulation {
                     .collect::<Vec<_>>()
             })
             .collect();
+        let mut advanced = false;
         for (quest, index) in open {
-            self.complete_objective(player_id, quest, index);
+            advanced |= self.complete_objective(player_id, quest, index);
         }
+        advanced
     }
 
     /// The NPC turns on the player who showed it the evidence: its foe stands and attacks.

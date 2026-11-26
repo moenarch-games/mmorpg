@@ -10,6 +10,8 @@
 //!   time is an opener and completes their open [`crate::QuestObjective::Unseal`] of it, once.
 //!   Working a set mechanism again makes the player an opener too, so a whole party can share
 //!   the opening. A mechanism left alone past its window drops back, so a lone diver retries.
+//!   A late arrival can work either mechanism while the seal is open to complete an unfinished
+//!   Unseal objective without changing the seal or extending its opening.
 //!   An open seal stands open [`SEAL_OPEN_TICKS`]; then, once no living player is inside its
 //!   chamber and nothing stands in the piece's box, the piece rises again and every mechanism is
 //!   unset: the chamber reseals the same way on every host. Blasts and shots never break a seal.
@@ -212,7 +214,8 @@ impl ZoneSimulation {
 
     /// The `Operate` intent (#1019): works mechanism `id` for the player. An unknown one is an
     /// invalid target, one out of reach is out of range, and one of a seal that already stands
-    /// open is refused with [`ErrorCode::SealOpen`]; refusals change nothing.
+    /// open completes an unfinished Unseal objective or is refused with [`ErrorCode::SealOpen`].
+    /// Refusals change nothing.
     pub(crate) fn operate(
         &mut self,
         player_id: PlayerId,
@@ -258,10 +261,15 @@ impl ZoneSimulation {
         let Some((index, slot, seal)) = found else {
             return Ok(None);
         };
-        let state = &mut self.seals[index];
-        if state.opened.is_some() {
+        if self.seals[index].opened.is_some() {
+            if self.complete_objectives(player_id, |objective| {
+                objective == QuestObjective::Unseal { piece: seal.piece }
+            }) {
+                return Ok(None);
+            }
             return Ok(Some((ErrorCode::SealOpen, None)));
         }
+        let state = &mut self.seals[index];
         if state.set[slot].is_none() {
             state.set[slot] = Some(now);
         }

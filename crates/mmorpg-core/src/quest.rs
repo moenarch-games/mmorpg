@@ -142,7 +142,7 @@ pub enum QuestObjective {
         item: ItemId,
     },
     /// Help open seal `piece` (#1019): work one of its mechanisms ([`crate::ZoneCommand::Operate`])
-    /// toward the opening ([`crate::Seal`]). The log stores it.
+    /// toward the opening or while it stands open ([`crate::Seal`]). The log stores it.
     Unseal { piece: crate::PieceId },
     /// Decide the quest's [`Quest::decision`] at `npc` (#1019) with [`crate::ZoneCommand::Decide`].
     /// The log stores the chosen option (1-based) until the turn-in keeps it with the character
