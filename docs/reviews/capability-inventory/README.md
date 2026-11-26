@@ -2,6 +2,8 @@
 
 **Baseline:** [main at 2921a84](https://github.com/moenarch-games/mmorpg/commit/2921a84cdb3461529eafa8135630ef4b1c19b0d1), 2026-11-26. Tracking: #1217. This is a dated source audit and navigation aid, not a new canonical rules specification. Product choices remain in the [Decision Atlas](../../decisions/atlas.md); architecture remains in [ARCHITECTURE.md](../../ARCHITECTURE.md). The [workspace manifest](../../../Cargo.toml), source modules and test code are authoritative about implementation. The existing [task lookup](../../../.coding-tooling.json) is the basis for later navigation changes.
 
+[Proposed refactoring sequence](refactoring-plan.md): module boundaries, dependency order and migration/verification criteria.
+
 ## Method and confidence
 
 - Enumerated the root, workspace crates, relevant source/test trees and content paths from Git trees at the explicit baseline; all 17 workspace crates appear in the map. Read the repository instructions and installed AGENT-006, DESIGN-006, REPO-009/019 and GIT rules. Read the relevant combat source, Decision Atlas, scenario guide and architecture entries before classifying combat.
