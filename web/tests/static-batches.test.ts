@@ -3,7 +3,12 @@ import * as THREE from "three";
 import { LitMaterial } from "@moritzbrantner/three-lighting";
 import type { RendererSceneNode } from "@moritzbrantner/three-d-renderer";
 import type { GroupBuffers, GroupStreamSource, StaticBatch } from "../src/world/scenery-nodes";
-import { BatchedRoots, BatchedScenery, SHADOW_ONLY } from "../src/world/static-batches";
+import { BATCH_CELL, BatchedRoots, BatchedScenery, CellCulledBatch, SHADOW_ONLY } from "../src/world/static-batches";
+import { staticBatchView } from "./support/work/static-batch-views";
+
+/** `.performance/contract.json`'s `static-batch-views` budgets. */
+const STATIC_BATCH_VIEW_SUB_DRAWS = 1536;
+const STATIC_BATCH_VIEW_CALLS = 13;
 
 // Walk-in buildings and kit modules draw through BatchedMeshes (#615): the batches follow their source roots.
 describe("BatchedRoots", () => {
@@ -66,6 +71,66 @@ describe("BatchedRoots", () => {
     expect(own.visible).toBe(false);
     expect(caster.getVisibleAt(0)).toBe(false);
     expect(copy.visible).toBe(true);
+  });
+
+  test("a drawn batch hides the cells outside the main view; shadow batches split by cell and grow as draws move", () => {
+    const near = root("near", new THREE.Mesh(box, opaque), new THREE.Mesh(box, opaque));
+    const far = root("far", new THREE.Mesh(box, opaque), new THREE.Mesh(box, opaque));
+    far.matrix.makeTranslation(BATCH_CELL * 3, 0, 0);
+    const batched = new BatchedRoots("kit", [near, far]);
+    const batches = batched.root.children.filter((child) => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh[];
+    // One drawn batch for the material, culling two cells; one caster batch per cell, culled whole.
+    const drawn = batches.filter((batch) => batch instanceof CellCulledBatch) as CellCulledBatch[];
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.cellCount).toBe(2);
+    expect(drawn[0]!.frustumCulled).toBe(false);
+    const casters = batches.filter((batch) => batch.material === SHADOW_ONLY.single);
+    expect(casters).toHaveLength(2);
+    for (const caster of casters) {
+      expect(caster.frustumCulled).toBe(true);
+      expect(caster.instanceCount).toBe(2);
+    }
+
+    // A camera at the origin looking along -z sees the near cell only.
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 50);
+    camera.position.set(0, 1, 5);
+    camera.updateMatrixWorld(true);
+    const shownCount = () => [0, 1, 2, 3].filter((instance) => drawn[0]!.getVisibleAt(instance)).length;
+    drawn[0]!.cull(camera);
+    expect(shownCount()).toBe(2);
+    // A hidden draw stays hidden when its cell comes back into view, and a shown one in a cell out of view shows on return.
+    far.visible = false;
+    batched.sync(1);
+    camera.position.set(BATCH_CELL * 3, 1, 5);
+    camera.updateMatrixWorld(true);
+    drawn[0]!.cull(camera);
+    expect(shownCount()).toBe(0);
+    far.visible = true;
+    batched.sync(1);
+    expect(shownCount()).toBe(2);
+
+    const nearCaster = casters.find((caster) => caster.boundingSphere!.center.x < BATCH_CELL)!;
+    expect(nearCaster.boundingSphere!.containsPoint(new THREE.Vector3(BATCH_CELL * 3, 0, 0))).toBe(false);
+    near.matrix.makeTranslation(BATCH_CELL * 3, 0, 0);
+    batched.sync(0);
+    expect(nearCaster.boundingSphere!.containsPoint(new THREE.Vector3(BATCH_CELL * 3, 0, 0))).toBe(true);
+    // The moved draws' cell grew with them: the drawn batch shows them from there.
+    drawn[0]!.cull(camera);
+    expect(shownCount()).toBe(4);
+  });
+});
+
+// The `static-batch-views` budget (#1113, `.performance/contract.json`): a fixed view of placed kit modules issues the
+// sub-draws of the ground cells it sees, however far the placements reach. `support/work/static-batch-views.ts` measures
+// it; `web/scripts/work-evidence.ts` emits it.
+describe("static-batch-views", () => {
+  test("a view's sub-draws stay bounded as the placed region grows", () => {
+    const small = staticBatchView(256);
+    const large = staticBatchView(1024);
+    expect(large.placed).toBe(small.placed * 16);
+    expect(large.subDraws).toBe(small.subDraws);
+    expect(large.subDraws).toBeLessThanOrEqual(STATIC_BATCH_VIEW_SUB_DRAWS);
+    expect(large.calls).toBeLessThanOrEqual(STATIC_BATCH_VIEW_CALLS);
   });
 });
 
