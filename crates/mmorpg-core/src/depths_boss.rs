@@ -401,11 +401,7 @@ impl ZoneSimulation {
         let (_, template) = Self::creature_content(&content, boss.creature)?;
         let max_health = creature.max_health(&content, template).max(1);
         let percent = u64::from(creature.health) * 100 / u64::from(max_health);
-        let top_threat = creature
-            .threat
-            .iter()
-            .max_by_key(|entry| entry.threat)
-            .map(|entry| entry.entity);
+        let top_threat = creature.top_threat();
         let mut changed = attempt.clone();
         if percent <= u64::from(BOSS_ADDS_PERCENT) && !attempt.adds_called {
             changed.adds_called = true;

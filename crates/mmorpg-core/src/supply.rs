@@ -271,7 +271,7 @@ impl ZoneSimulation {
                         continue;
                     }
                     // A member out of its fight leaves for the camp.
-                    if matches!(state.ai, CreatureAi::Idle { .. }) {
+                    if state.out_of_fight() {
                         self.retire_raider(member, now)?;
                     } else {
                         standing = true;

@@ -278,7 +278,7 @@ impl ZoneSimulation {
                         && state.is_alive()
                     {
                         // A raider still fighting when the crossing ended leaves once it is over.
-                        if matches!(state.ai, CreatureAi::Idle { .. }) {
+                        if state.out_of_fight() {
                             self.retire_raider(raider.creature, now)?;
                         } else {
                             standing = true;

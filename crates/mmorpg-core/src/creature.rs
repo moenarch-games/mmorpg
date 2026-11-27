@@ -154,11 +154,6 @@ impl CreatureState {
         }
     }
 
-    /// Removes a unit from the threat table (death, leaving the zone).
-    pub(crate) fn forget(&mut self, entity: EntityRef) {
-        self.threat.retain(|entry| entry.entity != entity);
-    }
-
     /// Back to rest: no cast, pending attack (#889), auras or pending ability timer. Death,
     /// the start of an evade and its end all reset this way.
     pub(crate) fn reset_abilities(&mut self) {
@@ -166,6 +161,84 @@ impl CreatureState {
         self.cast = None;
         self.auras.clear();
         self.ability_timer = 0;
+    }
+
+    /// A creature at rest for a new life or a reserved slot (#1261): nothing on its threat
+    /// table, no timers, tap, loot, abilities, boss attempt or raid.
+    pub(crate) const fn new(
+        generation: u64,
+        rng: ZoneRng,
+        (level, health, facing): (u8, u32, u16),
+        life: Life,
+        ai: CreatureAi,
+    ) -> Self {
+        Self {
+            generation,
+            rng,
+            level,
+            health,
+            facing,
+            life,
+            ai,
+            threat: Vec::new(),
+            swing_timer: 0,
+            attack: None,
+            combat_timer: 0,
+            wary_ticks: 0,
+            tapped_by: None,
+            loot: None,
+            loot_party: Vec::new(),
+            ability_timer: 0,
+            cast: None,
+            auras: Vec::new(),
+            encounter: None,
+            raid: None,
+        }
+    }
+
+    /// Out of the fight (#1261): an empty threat table, no swing, combat or wariness timer, and
+    /// no cast, pending attack, auras or ability timer. Its tapper stays; death keeps it for the
+    /// corpse's loot.
+    pub(crate) fn calm(&mut self) {
+        self.threat.clear();
+        self.swing_timer = 0;
+        self.combat_timer = 0;
+        self.wary_ticks = 0;
+        self.reset_abilities();
+    }
+
+    /// [`Self::calm`], and the tap is gone too: evading, being sent home and leaving the world
+    /// start over this way.
+    pub(crate) fn reset(&mut self) {
+        self.calm();
+        self.tapped_by = None;
+    }
+
+    /// Leaves the world without a corpse at tick `died_at` until a respawn or an incident
+    /// stands it up again (#1261): no health, loot, boss attempt or raid.
+    pub(crate) fn retire(&mut self, died_at: u64) {
+        self.reset();
+        self.life = Life::Despawned { died_at };
+        self.health = 0;
+        self.ai = CreatureAi::Idle {
+            timer: 0,
+            destination: None,
+        };
+        self.loot = None;
+        self.loot_party.clear();
+        self.encounter = None;
+        self.raid = None;
+    }
+
+    /// Resting and out of combat (#1261): a raider, beast or foe whose fight is over may leave.
+    pub(crate) const fn out_of_fight(&self) -> bool {
+        matches!(self.ai, CreatureAi::Idle { .. }) && self.combat_timer == 0
+    }
+
+    /// Whether a departing `entity` concerns it: on its threat table or the target of its cast.
+    pub(crate) fn concerns(&self, entity: EntityRef) -> bool {
+        self.threat.iter().any(|entry| entry.entity == entity)
+            || self.cast.is_some_and(|cast| cast.target == Some(entity))
     }
 }
 
@@ -338,31 +411,16 @@ impl ZoneSimulation {
         self.gathering.skinned.remove(&id);
         self.creatures.insert(
             id,
-            CreatureState {
+            CreatureState::new(
                 generation,
                 rng,
-                level,
-                health: template.max_health(level),
-                facing: spawn.facing,
-                life: Life::Alive,
-                ai: CreatureAi::Idle {
+                (level, template.max_health(level), spawn.facing),
+                Life::Alive,
+                CreatureAi::Idle {
                     timer: u16::try_from(wait).unwrap_or(WANDER_WAIT_TICKS[1]),
                     destination: None,
                 },
-                threat: Vec::new(),
-                swing_timer: 0,
-                attack: None,
-                combat_timer: 0,
-                wary_ticks: 0,
-                tapped_by: None,
-                loot: None,
-                loot_party: Vec::new(),
-                ability_timer: 0,
-                cast: None,
-                auras: Vec::new(),
-                encounter: None,
-                raid: None,
-            },
+            ),
         );
         Ok(())
     }
@@ -375,31 +433,16 @@ impl ZoneSimulation {
         let rng = self.creature_stream(id, 1);
         self.creatures.insert(
             id,
-            CreatureState {
-                generation: 1,
+            CreatureState::new(
+                1,
                 rng,
-                level: template.min_level,
-                health: 0,
-                facing: 0,
-                life: Life::Despawned { died_at: 0 },
-                ai: CreatureAi::Idle {
+                (template.min_level, 0, 0),
+                Life::Despawned { died_at: 0 },
+                CreatureAi::Idle {
                     timer: 0,
                     destination: None,
                 },
-                threat: Vec::new(),
-                swing_timer: 0,
-                attack: None,
-                combat_timer: 0,
-                wary_ticks: 0,
-                tapped_by: None,
-                loot: None,
-                loot_party: Vec::new(),
-                ability_timer: 0,
-                cast: None,
-                auras: Vec::new(),
-                encounter: None,
-                raid: None,
-            },
+            ),
         );
         Ok(())
     }

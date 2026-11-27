@@ -25,7 +25,6 @@ use std::sync::Arc;
 
 use crate::creature::Life;
 use crate::routine::{DAWN, DUSK, HOUR_TICKS, NpcPlacement, along, legs, time_of_day, walk_ticks};
-use crate::snapshot::CreatureAi;
 use crate::{CreatureId, NpcId, PostureView, ZoneError, ZoneSimulation};
 
 /// One of two days the game turns on the hunter.
@@ -237,11 +236,7 @@ impl ZoneSimulation {
             && confrontation_day(self.rng_seed(), now)
         {
             self.spawn_creature(hunt.beast)?;
-        } else if state.is_alive()
-            && !stalking
-            && state.ai != CreatureAi::Engaged
-            && state.combat_timer == 0
-        {
+        } else if state.is_alive() && !stalking && state.out_of_fight() {
             self.retire_raider(hunt.beast, now)?;
         }
         Ok(())

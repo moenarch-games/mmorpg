@@ -1479,13 +1479,9 @@ impl ZoneSimulation {
             timer: 0,
             destination: None,
         };
-        creature.threat.clear();
-        creature.swing_timer = 0;
-        creature.combat_timer = 0;
-        creature.wary_ticks = 0;
+        creature.calm();
         // A fallen raider (#530) stays gone: its slot stands again only for a later incident.
         creature.raid = None;
-        creature.reset_abilities();
         creature.loot = creature.tapped_by.and(loot);
         creature.loot_party.clone_from(&party_shares);
         let contributors = creature
@@ -1654,21 +1650,10 @@ impl ZoneSimulation {
             .map_err(physics_error)?;
         // Only the creatures it concerns change (#1086).
         self.creatures.update_where(
+            |creature| creature.concerns(entity),
+            // A cast at the fallen player fizzles; a released spirit is safe.
             |creature| {
-                creature.threat.iter().any(|entry| entry.entity == entity)
-                    || creature
-                        .cast
-                        .is_some_and(|cast| cast.target == Some(entity))
-            },
-            |creature| {
-                creature.forget(entity);
-                // A cast at the fallen player fizzles; a released spirit is safe.
-                if creature
-                    .cast
-                    .is_some_and(|cast| cast.target == Some(entity))
-                {
-                    creature.cast = None;
-                }
+                crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
             },
         );
         self.forget_caster(entity);
@@ -1768,14 +1753,7 @@ impl ZoneSimulation {
             {
                 creature.life = Life::Despawned { died_at };
                 creature.loot = None;
-                if self.interest.remove(entity) {
-                    self.interest_work.bucket_removes += 1;
-                }
-                for player in self.players.values_mut() {
-                    if player.target == Some(entity) {
-                        player.target = None;
-                    }
-                }
+                self.withdraw(entity);
             }
             let Some(creature) = self.creatures.get(&creature_id) else {
                 continue;

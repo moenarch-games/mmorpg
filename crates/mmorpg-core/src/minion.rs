@@ -812,27 +812,15 @@ impl ZoneSimulation {
         let minion = self.minions.remove(&id)?;
         let entity = EntityRef::Minion(id);
         self.world.remove_body(body_id(entity));
-        if self.interest.remove(entity) {
-            self.interest_work.bucket_removes += 1;
-        }
+        self.withdraw(entity);
         self.forget_forced_unit(entity);
         // Only the creatures it concerns change (#1086).
         self.creatures.update_where(
-            |creature| {
-                creature.threat.iter().any(|entry| entry.entity == entity)
-                    || creature
-                        .cast
-                        .is_some_and(|cast| cast.target == Some(entity))
-            },
+            |creature| creature.concerns(entity),
             |creature| {
                 crate::creature::forget_departed(&mut creature.threat, &mut creature.cast, entity);
             },
         );
-        for player in self.players.values_mut() {
-            if player.target == Some(entity) {
-                player.target = None;
-            }
-        }
         Some(minion)
     }
 
