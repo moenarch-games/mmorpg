@@ -148,19 +148,25 @@ export function starterEquipmentForClass(classId: CharacterClassId): EquipmentIt
   return characterClass(classId).starterEquipment.map((item) => ({ ...item }));
 }
 
+/**
+ * The local character-name policy (#1245), the same as `mmorpg-client-model`'s `character_name.rs`:
+ * the roster loads before the wasm module, so the rule is kept here too and both check
+ * `fixtures/character-names.json` (`tests/character-names.test.ts`).
+ */
 export function normalizeCharacterName(value: string): string {
   const normalized = value.trim().replace(/\s+/g, " ");
   const length = Array.from(normalized).length;
   if (length < 2 || length > 24) {
     throw new Error("Character name must be between 2 and 24 characters.");
   }
-  if (!/^[\p{L}][\p{L}\p{M} '\u2019-]*$/u.test(normalized)) {
+  if (!/^\p{Alphabetic}[\p{Alphabetic}\p{M} '\u2019-]*$/u.test(normalized)) {
     throw new Error("Character name may contain letters, spaces, apostrophes, and hyphens.");
   }
   return normalized;
 }
 
-function comparableName(value: string): string {
+/** The form two names are compared in: NFKC, then lowercase. */
+export function comparableName(value: string): string {
   return value.normalize("NFKC").toLowerCase();
 }
 

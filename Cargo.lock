@@ -3155,6 +3155,8 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
+ "unicode-general-category",
+ "unicode-normalization",
 ]
 
 [[package]]

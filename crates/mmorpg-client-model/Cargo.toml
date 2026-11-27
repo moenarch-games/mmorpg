@@ -15,6 +15,9 @@ strum.workspace = true
 mmorpg-core.workspace = true
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
+# The character-name policy: NFKC duplicates and combining marks (#1245).
+unicode-general-category = "=1.1.0"
+unicode-normalization = "=0.1.26"
 
 [dev-dependencies]
 # The HUD acceptance test reads fixtures through the real wire codec.

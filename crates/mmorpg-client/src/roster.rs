@@ -1,12 +1,14 @@
 //! The native local character roster (#183): names, class, sex and headwear of
 //! characters created on this machine, with the browser's local-roster rules
-//! (`web/src/character-roster.ts`, `character-customization.ts`).
+//! (`web/src/character-roster.ts`, `character-customization.ts`) and the shared
+//! name policy (`mmorpg_client_model::character_name`, #1245).
 //!
 //! This is presentation choice only. The zone owns the class choice once a
 //! character enters the world; nothing here stores position, quests, items or
 //! any other world progress. Character hosts receive a persisted online alias
 //! for the local slot and its class/sex choice; anonymous hosts retain the
 //! existing `ChooseClass` path. Names and headwear remain presentation choices.
+use mmorpg_client_model::character_name::{comparable_character_name, normalize_character_name};
 use mmorpg_core::{PlayerClass, Sex};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -76,25 +78,13 @@ pub struct LocalCharacter {
     pub headwear: Headwear,
 }
 
-/// Trim, collapse inner whitespace and check the browser's name rule: 2–24
-/// characters, a letter first, then letters, spaces, apostrophes and hyphens.
-pub fn normalize_name(raw: &str) -> Result<String, String> {
-    let name = raw.split_whitespace().collect::<Vec<_>>().join(" ");
-    let length = name.chars().count();
-    if !(2..=24).contains(&length) {
-        return Err("Character name must be between 2 and 24 characters.".into());
-    }
-    let mut chars = name.chars();
-    let first_is_letter = chars.next().is_some_and(char::is_alphabetic);
-    if !first_is_letter || !chars.all(|c| c.is_alphabetic() || matches!(c, ' ' | '\'' | '’' | '-'))
-    {
-        return Err("Character name may contain letters, spaces, apostrophes, and hyphens.".into());
-    }
-    Ok(name)
+/// The shared name rule (#1245), with its message as the error.
+fn normalize_name(raw: &str) -> Result<String, String> {
+    normalize_character_name(raw).map_err(|error| error.message().to_owned())
 }
 
 fn comparable(name: &str) -> String {
-    name.to_lowercase()
+    comparable_character_name(name)
 }
 
 fn class_id(class: PlayerClass) -> &'static str {

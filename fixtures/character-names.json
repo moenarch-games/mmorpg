@@ -1,0 +1,46 @@
+{
+  "_": "Local character-name policy both clients check (#1245): `stored` is the kept name or null when refused; `same`/`different` pairs compare as one character (NFKC, lowercase) or not. Rust: mmorpg-client-model character_name.rs; browser: web/tests/character-names.test.ts.",
+  "names": [
+    { "raw": "  Mira   Vale ", "stored": "Mira Vale" },
+    { "raw": "Mira\tVale", "stored": "Mira Vale" },
+    { "raw": "Mira Vale", "stored": "Mira Vale" },
+    { "raw": "Bram", "stored": "Bram" },
+    { "raw": "Ilsa O'Neil", "stored": "Ilsa O'Neil" },
+    { "raw": "Ilsa O’Neil", "stored": "Ilsa O’Neil" },
+    { "raw": "Anne-Marie", "stored": "Anne-Marie" },
+    { "raw": "Zoë", "stored": "Zoë" },
+    { "raw": "Zoë", "stored": "Zoë" },
+    { "raw": "Æthelflæd", "stored": "Æthelflæd" },
+    { "raw": "Ἀλέξανδρος", "stored": "Ἀλέξανδρος" },
+    { "raw": "Владимир", "stored": "Владимир" },
+    { "raw": "李小龍", "stored": "李小龍" },
+    { "raw": "김민", "stored": "김민" },
+    { "raw": "देव", "stored": "देव" },
+    { "raw": "Ⅻven", "stored": "Ⅻven" },
+    { "raw": "Abcdefghijklmnopqrstuvwx", "stored": "Abcdefghijklmnopqrstuvwx" },
+    { "raw": "Abcdefghijklmnopqrstuvwxy", "stored": null },
+    { "raw": "A", "stored": null },
+    { "raw": "   ", "stored": null },
+    { "raw": "", "stored": null },
+    { "raw": "1x", "stored": null },
+    { "raw": "-Ab", "stored": null },
+    { "raw": "'Ab", "stored": null },
+    { "raw": "́Ab", "stored": null },
+    { "raw": "Ab1", "stored": null },
+    { "raw": "Ab_c", "stored": null },
+    { "raw": "Ab!", "stored": null },
+    { "raw": "Ab😀", "stored": null }
+  ],
+  "same": [
+    ["Mira Vale", "mira vale"],
+    ["ﬁona", "Fiona"],
+    ["Zoë", "zoë"],
+    ["ＢＲＡＭ", "bram"],
+    ["Straße", "straße"]
+  ],
+  "different": [
+    ["Mira", "Mara"],
+    ["Zoe", "Zoë"],
+    ["Straße", "Strasse"]
+  ]
+}
