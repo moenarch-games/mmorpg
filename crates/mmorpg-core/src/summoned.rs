@@ -477,8 +477,6 @@ impl ZoneSimulation {
         facing: u16,
     ) -> Result<(), ZoneError> {
         let origin = self.player_position(player_id)?;
-        let (dir_x, dir_z) = crate::trig::direction(facing);
-        let min_cos = i64::from(crate::trig::cos(crate::unit::SWING_ARC_HALF_WIDTH));
         let reach_squared = i64::from(crate::unit::PLAYER_REACH_UNITS).pow(2);
         let mut best: Option<(i64, u32)> = None;
         for obstacle in self.summoned_terrain.values() {
@@ -486,14 +484,11 @@ impl ZoneSimulation {
             if squared > reach_squared || best.is_some_and(|(found, _)| found <= squared) {
                 continue;
             }
-            let (dx, dz) = (
+            let offset = [
                 i32::try_from(nearest[0] - i64::from(origin.x)).unwrap_or(0),
                 i32::try_from(nearest[1] - i64::from(origin.z)).unwrap_or(0),
-            );
-            let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
-            let length = i64::try_from(crate::trig::xz_length(dx, dz))
-                .map_err(|_| ZoneError::new("swing distance overflow"))?;
-            if length == 0 || along >= length * min_cos {
+            ];
+            if sim_combat::swing::within_arc(offset, facing, crate::unit::SWING_ARC_HALF_WIDTH) {
                 best = Some((squared, obstacle.id));
             }
         }

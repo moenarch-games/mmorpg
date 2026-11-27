@@ -27,7 +27,7 @@
 use crate::ability::{AbilityEffect, AbilityId, ids};
 use crate::ai::distance_squared;
 use crate::physics::Vec3i;
-use crate::trig::{self, YAW_QUARTER_TURN};
+use crate::trig::YAW_QUARTER_TURN;
 use crate::unit::PLAYER_REACH_UNITS;
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation};
 
@@ -348,11 +348,7 @@ impl ZoneSimulation {
         rewind: u16,
     ) -> Result<Option<i64>, ZoneError> {
         let origin = self.player_position(player_id)?;
-        let feet = origin.y - PLAYER_HALF_EXTENTS_UNITS[1];
-        let [band_low, band_high] = sweep.height.band();
-        let (dir_x, dir_z) = trig::direction(sweep.centre);
-        let min_cos = i64::from(trig::cos(sweep.half_width));
-        let reach = i64::from(PLAYER_REACH_UNITS).pow(2);
+        let feet = Vec3i::new(origin.x, origin.y - PLAYER_HALF_EXTENTS_UNITS[1], origin.z);
         let body = self
             .world
             .body(crate::entity::body_id(entity))
@@ -362,23 +358,20 @@ impl ZoneSimulation {
             rewound.map_or_else(|| body.position(), |[x, y, z]| Vec3i::new(x, y, z)),
             body.half_extents(),
         );
+        // The shared swing geometry: reach, arc (a body centred on the striker is always in
+        // it) and the height band above the striker's feet.
+        if !sim_combat::swing::swing_covers(
+            feet,
+            sweep.centre,
+            centre,
+            half,
+            PLAYER_REACH_UNITS,
+            sweep.half_width,
+            sweep.height.band(),
+        ) {
+            return Ok(None);
+        }
         let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
-        if distance > reach {
-            return Ok(None);
-        }
-        // |v| cos(angle to the arc centre) >= |v| cos(half width), both
-        // Q16; a creature centred on the striker is always in the arc.
-        let (dx, dz) = (centre.x - origin.x, centre.z - origin.z);
-        let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
-        let length = i64::try_from(trig::xz_length(dx, dz))
-            .map_err(|_| ZoneError::new("strike distance overflow"))?;
-        if along < length * min_cos {
-            return Ok(None);
-        }
-        let (bottom, top) = (centre.y - half.y - feet, centre.y + half.y - feet);
-        if top < band_low || bottom > band_high {
-            return Ok(None);
-        }
         let sighted = if rewound.is_some() {
             // Present cover between the swinger and the rewound body.
             !self.world.segment_blocked(

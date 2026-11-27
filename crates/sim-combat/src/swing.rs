@@ -25,9 +25,17 @@ pub fn facing_covers(
         return false;
     }
     // Within reach, so the offset fits `i32` again.
-    let (dx, dz) = (dx as i32, dz as i32);
-    let (dir_x, dir_z) = trig::direction(facing);
-    // |v| cos(angle to the facing) >= |v| cos(half width), both Q16.
+    within_arc([dx as i32, dz as i32], facing, half_width)
+}
+
+/// Whether the XZ `offset` from an origin bears within `half_width` either side of `centre`
+/// (yaw units), at any distance: the one bearing test every facing arc uses (a swing, a
+/// directed strike's sweep, a guard). A zero offset is always inside.
+#[must_use]
+pub fn within_arc(offset: [i32; 2], centre: u16, half_width: u16) -> bool {
+    let [dx, dz] = offset;
+    let (dir_x, dir_z) = trig::direction(centre);
+    // |v| cos(angle to the centre) >= |v| cos(half width), both Q16.
     let along = i64::from(dx) * i64::from(dir_x) + i64::from(dz) * i64::from(dir_z);
     let length = trig::xz_length(dx, dz) as i64;
     along >= length * i64::from(trig::cos(half_width))
@@ -102,6 +110,24 @@ mod tests {
         );
         assert!(!covers(Vec3i::new(0, -191, 100)), "below the band");
         assert!(covers(Vec3i::new(0, 90, 0)), "centred on the swinger");
+    }
+
+    #[test]
+    fn the_arc_is_inclusive_at_its_edges_and_holds_at_any_distance() {
+        // 8192 yaw units are 45°: a diagonal offset lies exactly on a 45° arc's edge.
+        assert!(within_arc([0, 0], 0, 0), "a zero offset is inside");
+        assert!(
+            within_arc([0, 1_000_000], 0, 0),
+            "straight ahead, a zero-width arc"
+        );
+        assert!(within_arc([1_000, 1_000], 0, 8_192), "on the edge");
+        assert!(!within_arc([1_001, 999], 0, 8_192), "just outside");
+        assert!(!within_arc([0, -5], 0, 16_000), "behind");
+        assert!(within_arc([0, -5], 32_768, 1), "the centre turns the arc");
+        assert!(
+            within_arc([i32::MAX, i32::MAX], 8_192, 1),
+            "far, never overflowing"
+        );
     }
 
     #[test]
