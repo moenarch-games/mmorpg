@@ -114,7 +114,7 @@ pub const RULES: [CompatibilityRule; 5] = [
 ];
 
 /// The baseline interruptions.
-pub const INTERRUPTIONS: [InterruptionRule; 9] = [
+pub const INTERRUPTIONS: [InterruptionRule; 11] = [
     InterruptionRule {
         reaction: ActionId::Stun,
         interrupted: Interrupted::Action(ActionId::Guard),
@@ -166,6 +166,18 @@ pub const INTERRUPTIONS: [InterruptionRule; 9] = [
     InterruptionRule {
         reaction: ActionId::Death,
         interrupted: Interrupted::Action(ActionId::Cast),
+        phase: None,
+        consequence: Consequence::Cancel,
+    },
+    InterruptionRule {
+        reaction: ActionId::Stun,
+        interrupted: Interrupted::Action(ActionId::BasicMelee),
+        phase: Some(Phase::Startup),
+        consequence: Consequence::Cancel,
+    },
+    InterruptionRule {
+        reaction: ActionId::Death,
+        interrupted: Interrupted::Action(ActionId::BasicMelee),
         phase: None,
         consequence: Consequence::Cancel,
     },

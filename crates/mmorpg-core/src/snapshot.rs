@@ -998,8 +998,12 @@ impl ZoneSimulation {
         if combat.health == 0 && combat.swing_queued {
             return Err(ZoneError::new("a dead player cannot hold a queued swing"));
         }
-        // A pending strike (#885) belongs to the living, and stays within its own wind-up.
-        if !combat.melee.is_valid() || (combat.health == 0 && combat.melee.pending.is_some()) {
+        // A pending strike (#885) belongs to the living, and stays within its own wind-up; the
+        // strike that struck last is named only while its recovery or chain window runs (#1221).
+        if !combat.melee.is_valid()
+            || (combat.health == 0 && combat.melee.pending.is_some())
+            || (combat.melee.last.is_some() && combat.swing_timer == 0 && combat.melee.window == 0)
+        {
             return Err(ZoneError::new("player strike state is out of range"));
         }
         // Dead players hold no movement. Earlier builds kept it at death, so a

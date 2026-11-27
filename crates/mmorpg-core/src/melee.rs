@@ -25,8 +25,14 @@
 //!   of the recovery; a press already waiting at the contact keeps the ordinary chain. The
 //!   striker sees [`ZoneEvent::StrikeRewarded`] for either.
 //!
-//! The chain, its windows and a pending strike are canonical player state, so replay and
-//! recovery continue mid-chain exactly. Outcomes stay health only: no knockback or hitstun.
+//! The chain, its windows, a pending strike and the strike that last made contact are
+//! canonical player state, so replay and recovery continue mid-chain exactly. Outcomes stay
+//! health only: no knockback or hitstun.
+//!
+//! This module *executes* the strike: its variant, profile, contact and lunge. Whether a
+//! pressed strike may begin, which chain strike it continues, what a stun does to its wind-up
+//! and which phase it is in belong to the action graph ([`crate::action`], #1221), which
+//! reads the same canonical state as [`crate::action::ActionId::BasicMelee`].
 
 use crate::physics::RigidBody;
 use crate::zone::PlayerState;
@@ -112,16 +118,22 @@ pub struct MeleeState {
     /// Ticks left in which a fresh press follows up a standing hit at once (#928).
     pub follow_up: u16,
     pub pending: Option<PendingStrike>,
+    /// The strike that made contact last, while its recovery (the swing timer) or its chain
+    /// window runs (#1221): the action graph's recovery and follow-up identity. Never set
+    /// while another strike is pending.
+    pub last: Option<StrikeVariant>,
 }
 
 impl MeleeState {
     /// Within range: a known chain strike, a window no longer than the longest interval and
-    /// its window, a follow-up window only within a running chain and between strikes, and a
-    /// pending strike no further from its contact than its own wind-up.
+    /// its window, a follow-up window only within a running chain and between strikes, a
+    /// pending strike no further from its contact than its own wind-up, and a struck strike
+    /// only between strikes.
     #[must_use]
     pub const fn is_valid(self) -> bool {
         if self.follow_up > FOLLOW_UP_WINDOW_TICKS
             || (self.follow_up > 0 && (self.chain == 0 || self.pending.is_some()))
+            || (self.last.is_some() && self.pending.is_some())
         {
             return false;
         }
@@ -197,11 +209,7 @@ impl ZoneSimulation {
         };
         let airborne = state.landing.airborne && !state.swimming;
         let running = !airborne && self.runs_forward(player_id, state)?;
-        let chain = if state.melee.window > 0 {
-            state.melee.chain
-        } else {
-            0
-        };
+        let chain = crate::action::basic_chain_step(state);
         let variant = StrikeVariant::select(airborne, running, chain);
         let family = weapon_family(state);
         let profile = strike_profile(state, family, variant);
@@ -236,6 +244,7 @@ impl ZoneSimulation {
                     stance,
                     grounded: 0,
                 }),
+                last: None,
             };
         });
         let source = EntityRef::Player(player_id);
@@ -253,19 +262,21 @@ impl ZoneSimulation {
     }
 
     /// Advances the player's chain window and pending strike by one tick; `true` while a
-    /// strike is still winding up, so no other may begin. Death drops it, as a stun
-    /// interrupts it.
+    /// strike is still winding up, so no other may begin. Death drops it; a reaction does what
+    /// the action graph's interruption rules say (the baseline's stun cancels the wind-up).
     pub(crate) fn advance_strike(
         &mut self,
         player_id: PlayerId,
         now: u64,
     ) -> Result<bool, ZoneError> {
+        let graph = self.action_graph;
         let Some(state) = self.players.get_mut(&player_id) else {
             return Ok(false);
         };
-        let interrupted =
-            !state.is_alive() || crate::aura::has_kind(&state.auras, crate::AuraKind::Stun);
+        let reaction = crate::action::basic_melee_interruption(graph, state);
+        let interrupted = !state.is_alive() || reaction == crate::action::Consequence::Cancel;
         let airborne = state.landing.airborne;
+        let swinging = state.swing_timer > 0;
         let melee = &mut state.melee;
         melee.window = melee.window.saturating_sub(1);
         melee.follow_up = melee.follow_up.saturating_sub(1);
@@ -273,12 +284,19 @@ impl ZoneSimulation {
             melee.chain = 0;
             melee.follow_up = 0;
         }
+        if !swinging && melee.window == 0 {
+            melee.last = None;
+        }
         let Some(mut pending) = melee.pending else {
             return Ok(false);
         };
         if interrupted {
             melee.pending = None;
             return Ok(false);
+        }
+        // A suspended wind-up keeps its place, and no other strike begins meanwhile.
+        if reaction == crate::action::Consequence::Suspend {
+            return Ok(true);
         }
         pending.contact = pending.contact.saturating_sub(1);
         pending.grounded = if airborne {
@@ -302,6 +320,10 @@ impl ZoneSimulation {
             }
             state.swing_timer = crate::aura::hasted_swing(recovery, &state.auras);
             landing_strike = pending.timed_landing().then_some(state.swing_timer);
+        }
+        // The struck strike names its recovery and chain window while either runs.
+        if state.swing_timer > 0 || state.melee.window > 0 {
+            state.melee.last = Some(pending.variant);
         }
         self.strike_contact(player_id, pending, now)?;
         if let Some(ticks) = landing_strike {

@@ -481,3 +481,243 @@ fn a_whiff_or_a_press_already_waiting_opens_no_follow_up() {
         0
     );
 }
+
+/// The basic strike as the action graph reports it (#1221).
+mod graph {
+    use super::*;
+    use mmorpg_core::action::{
+        self, ActionGraph, ActionId, Consequence, Interrupted, InterruptionRule, Phase, Region,
+        RegionReport,
+    };
+    use mmorpg_core::{Aura, ability::ids};
+
+    impl Striker {
+        fn offense(&self) -> RegionReport {
+            self.zone.action_inspection(1).unwrap().regions[Region::Offense as usize]
+        }
+
+        fn combat(&self) -> mmorpg_core::CanonicalPlayerCombat {
+            self.zone.snapshot().unwrap().players[0].combat.clone()
+        }
+
+        /// Restores the zone with a stun of `ticks` from the hostile Warden on the striker,
+        /// then runs `graph`.
+        fn stun(&mut self, ticks: u16, graph: &'static ActionGraph) {
+            self.restore(|players| {
+                players[0].combat.abilities.auras.push(Aura {
+                    ability: ids::SHIELD_BASH,
+                    caster: EntityRef::Player(2),
+                    remaining: ticks,
+                    amount: 0,
+                });
+            });
+            self.zone.set_action_graph(graph).unwrap();
+        }
+
+        fn restore(&mut self, edit: impl FnOnce(&mut [mmorpg_core::CanonicalPlayerSnapshot])) {
+            let mut state = self.zone.snapshot().unwrap();
+            edit(&mut state.players);
+            let content = Arc::clone(self.zone.content());
+            self.zone = ZoneSimulation::from_snapshot(state, content).unwrap();
+        }
+    }
+
+    /// A Warden facing the creature, and a hostile level-2 Warden (Shield Bash learned) 15 m
+    /// behind it that can stun it.
+    fn duel() -> Striker {
+        let content = Arc::new(
+            ZoneContent::new(
+                arena::ground(),
+                ZoneAreas::default(),
+                vec![CreatureTemplate {
+                    behaviour: CreatureBehaviour::Neutral,
+                    ..arena::wolf(50_000, [1, 1])
+                }],
+                vec![arena::spawn(1, WOLF, [0, -150])],
+                Vec::new(),
+                GRAVEYARD,
+            )
+            .unwrap()
+            .with_creature_abilities(Default::default())
+            .unwrap()
+            .with_player_combat(mmorpg_core::PlayerCombatPolicy::FreeForAll),
+        );
+        let mut zone = ZoneSimulation::with_content(ZoneId::new(9), content).unwrap();
+        zone.add_player(1).unwrap();
+        zone.add_player(2).unwrap();
+        zone.apply_command(2, 1, ZoneCommand::ChooseClass { class: 0, sex: 0 })
+            .unwrap();
+        let mut striker = Striker {
+            zone,
+            sequence: 0,
+            ticks: 0,
+        };
+        striker.send(ZoneCommand::ChooseClass { class: 0, sex: 0 });
+        striker.send(arena::stand(SOUTH));
+        striker.tick();
+        striker.restore(|players| {
+            for player in players.iter_mut() {
+                player.combat.level = 2;
+                player.combat.health = mmorpg_core::unit::player_max_health(2);
+            }
+            let [x, y, z] = players[0].position;
+            players[1].position = [x, y, z + 1_500.0];
+        });
+        striker
+    }
+
+    /// The baseline with its stun interruption of a basic wind-up replaced by `consequence`.
+    fn stun_graph(consequence: Consequence) -> &'static ActionGraph {
+        let interruptions: Vec<InterruptionRule> = action::BASELINE
+            .interruptions
+            .iter()
+            .map(|rule| {
+                let basic = rule.reaction == ActionId::Stun
+                    && rule.interrupted == Interrupted::Action(ActionId::BasicMelee);
+                InterruptionRule {
+                    consequence: if basic { consequence } else { rule.consequence },
+                    ..*rule
+                }
+            })
+            .collect();
+        Box::leak(Box::new(ActionGraph {
+            interruptions: Box::leak(interruptions.into_boxed_slice()),
+            ..action::BASELINE
+        }))
+    }
+
+    #[test]
+    fn a_standing_strike_runs_through_its_wind_up_recovery_and_chain_window() {
+        let mut warden = Striker::new(0, SOUTH);
+        assert_eq!(warden.offense().action, None);
+        warden.send(ZoneCommand::Swing { facing: SOUTH });
+        warden.run(10, began);
+        let offense = warden.offense();
+        assert_eq!(
+            (offense.action, offense.phase, offense.strike),
+            (
+                Some(ActionId::BasicMelee),
+                Some(Phase::Startup),
+                Some(StrikeVariant::First)
+            )
+        );
+        assert_eq!(
+            (offense.recovery_left, offense.follow_up_left),
+            (None, None)
+        );
+        // The hit on the creature ahead recovers on the swing timer, its follow-up open.
+        warden.run(120, contact);
+        let (offense, combat) = (warden.offense(), warden.combat());
+        assert_eq!(offense.phase, Some(Phase::Recovery));
+        assert_eq!(offense.strike, Some(StrikeVariant::First));
+        assert_eq!(offense.recovery_left, Some(combat.swing_timer));
+        assert_eq!(offense.follow_up_left, Some(FOLLOW_UP_WINDOW_TICKS));
+        assert_eq!(combat.melee.last, Some(StrikeVariant::First));
+        // After the recovery the chain's window still names the strike it continues.
+        while warden.combat().swing_timer > 0 {
+            warden.tick();
+        }
+        let (offense, combat) = (warden.offense(), warden.combat());
+        assert_eq!(offense.phase, Some(Phase::FollowUp));
+        assert_eq!(offense.strike, Some(StrikeVariant::First));
+        assert_eq!(offense.follow_up_left, Some(combat.melee.window));
+        assert_eq!(combat.melee.window, CHAIN_WINDOW_TICKS);
+        for _ in 0..CHAIN_WINDOW_TICKS {
+            warden.tick();
+        }
+        assert_eq!(warden.offense().action, None);
+        assert_eq!(warden.combat().melee, mmorpg_core::MeleeState::default());
+    }
+
+    #[test]
+    fn a_jumping_strike_keeps_its_identity_into_its_landing_recovery() {
+        let mut warden = Striker::new(0, SOUTH);
+        warden.send(ZoneCommand::Jump);
+        warden.tick();
+        warden.send(ZoneCommand::Swing { facing: SOUTH });
+        warden.run(10, began);
+        // In the air the swing timer is still idle: the wind-up alone runs.
+        let offense = warden.offense();
+        assert_eq!(offense.phase, Some(Phase::Startup));
+        assert_eq!(offense.strike, Some(StrikeVariant::Jumping));
+        assert_eq!(warden.combat().swing_timer, 0);
+        warden.run(120, contact);
+        let offense = warden.offense();
+        assert_eq!(offense.phase, Some(Phase::Recovery));
+        assert_eq!(offense.strike, Some(StrikeVariant::Jumping));
+        assert_eq!(offense.recovery_left, Some(SWORD.jumping.interval_ticks));
+        // A jumping strike ends the chain, so its identity ends with its recovery.
+        for _ in 0..SWORD.jumping.interval_ticks {
+            warden.tick();
+        }
+        assert_eq!(warden.offense().action, None);
+        assert_eq!(warden.combat().melee.last, None);
+    }
+
+    #[test]
+    fn the_graph_decides_what_a_stun_does_to_a_wind_up() {
+        let contact_ticks = SWORD.chain[0].contact_ticks;
+        let mut outcomes = Vec::new();
+        for consequence in [
+            Consequence::Cancel,
+            Consequence::Preserve,
+            Consequence::Suspend,
+        ] {
+            let mut warden = duel();
+            warden.send(ZoneCommand::Swing { facing: SOUTH });
+            let (strikes, _) = warden.run(10, began);
+            warden.stun(10, stun_graph(consequence));
+            let inspection = warden.zone.action_inspection(1).unwrap();
+            assert!(inspection.interruptions.iter().any(|report| {
+                report.interrupted == Interrupted::Action(ActionId::BasicMelee)
+                    && report.consequence == consequence
+            }));
+            let mut landed = None;
+            for _ in 0..u32::from(contact_ticks) + 40 {
+                if contact(&warden.tick()) {
+                    landed = Some(warden.ticks - strikes[0].tick);
+                    break;
+                }
+            }
+            outcomes.push(landed);
+        }
+        // The baseline cancels it; preserved it lands on time; suspended, after the stun.
+        let on_time = u32::from(contact_ticks);
+        assert_eq!(outcomes[0], None);
+        assert_eq!(outcomes[1], Some(on_time));
+        assert!(
+            outcomes[2].is_some_and(|late| late > on_time),
+            "{outcomes:?}"
+        );
+        assert_eq!(
+            action::BASELINE
+                .interruptions
+                .iter()
+                .find(
+                    |rule| rule.interrupted == Interrupted::Action(ActionId::BasicMelee)
+                        && rule.reaction == ActionId::Stun
+                )
+                .map(|rule| (rule.phase, rule.consequence)),
+            Some((Some(Phase::Startup), Consequence::Cancel))
+        );
+    }
+
+    #[test]
+    fn a_zone_restored_mid_recovery_reports_the_same_strike() {
+        let mut original = Striker::new(0, SOUTH);
+        original.send(ZoneCommand::Swing { facing: SOUTH });
+        original.run(120, contact);
+        original.tick();
+        let snapshot = original.zone.snapshot().unwrap();
+        assert_eq!(
+            snapshot.players[0].combat.melee.last,
+            Some(StrikeVariant::First)
+        );
+        let content = Arc::clone(original.zone.content());
+        let restored = ZoneSimulation::from_snapshot(snapshot, content).unwrap();
+        assert_eq!(
+            restored.action_inspection(1).unwrap().regions,
+            original.zone.action_inspection(1).unwrap().regions
+        );
+    }
+}

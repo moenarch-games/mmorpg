@@ -2530,20 +2530,23 @@ fn decode_swing(
 /// The basic strike's state (#885): the chain (`u8`), its window (`u16`), the follow-up window
 /// (`u16`, #928), then a pending strike's family code plus one (`0` for none), its variant code,
 /// its `u16` contact countdown, the Warden's stance code (`0` for none) and its ticks on the
-/// ground (`u8`, #928).
+/// ground (`u8`, #928), then the variant code plus one of the strike that struck last (`0` for
+/// none, #1221).
 fn encode_melee(payload: &mut Vec<u8>, melee: mmorpg_core::MeleeState) {
     payload.push(melee.chain);
     payload.extend_from_slice(&melee.window.to_be_bytes());
     payload.extend_from_slice(&melee.follow_up.to_be_bytes());
-    let Some(pending) = melee.pending else {
-        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-        return;
-    };
-    payload.push(pending.family.code() + 1);
-    payload.push(pending.variant.code());
-    payload.extend_from_slice(&pending.contact.to_be_bytes());
-    payload.push(pending.stance.map_or(0, mmorpg_core::MeleeStance::code));
-    payload.push(pending.grounded);
+    match melee.pending {
+        None => payload.extend_from_slice(&[0, 0, 0, 0, 0, 0]),
+        Some(pending) => {
+            payload.push(pending.family.code() + 1);
+            payload.push(pending.variant.code());
+            payload.extend_from_slice(&pending.contact.to_be_bytes());
+            payload.push(pending.stance.map_or(0, mmorpg_core::MeleeStance::code));
+            payload.push(pending.grounded);
+        }
+    }
+    payload.push(melee.last.map_or(0, |variant| variant.code() + 1));
 }
 
 fn decode_melee(
@@ -2576,11 +2579,16 @@ fn decode_melee(
             grounded,
         })
     };
+    let last = match read_u8(payload, offset)? {
+        0 => None,
+        code => Some(mmorpg_core::StrikeVariant::from_code(code - 1).ok_or_else(invalid)?),
+    };
     let melee = mmorpg_core::MeleeState {
         chain,
         window,
         follow_up,
         pending,
+        last,
     };
     if !melee.is_valid() {
         return Err(invalid());
@@ -3335,6 +3343,7 @@ pub(crate) mod tests {
                                 stance: Some(mmorpg_core::MeleeStance::Planted),
                                 grounded: 0,
                             }),
+                            last: None,
                         },
                         repairing: Some(mmorpg_core::PieceId::new(3)),
                     },
