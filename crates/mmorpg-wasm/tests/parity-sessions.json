@@ -25,11 +25,11 @@
     },
     {
       "name": "wolf-pack",
-      "about": "A level 8 Arcanist climbs the Wolfrun Climb's cutting from the Action Lab's landing into the woods, breathes frost on Timber Wolf 121 and fights it to the death with the staff.",
+      "about": "A level 8 Arcanist climbs the Wolfrun Climb's cutting from the Action Lab's landing into the woods, breathes frost on Timber Wolf 121 and, stepping in to the staff's reach (#1249), fights it to the death.",
       "world": "action-lab",
       "lab": { "class": "arcanist", "level": 8 },
       "characters": [],
-      "ticks": 1000,
+      "ticks": 1100,
       "steps": [
         { "tick": 0, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 49152 } },
         { "tick": 45, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 0 } },
@@ -38,9 +38,12 @@
         { "tick": 805, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 36130 } },
         { "tick": 806, "player": 0, "command": { "kind": "select-target", "target": { "kind": "creature", "id": 121 } } },
         { "tick": 810, "player": 0, "command": { "kind": "use-ability", "ability": 21, "target": null, "facing": 36130 } },
-        { "tick": 860, "player": 0, "command": { "kind": "swing", "facing": 36130 } },
-        { "tick": 900, "player": 0, "command": { "kind": "swing", "facing": 36130 } },
-        { "tick": 940, "player": 0, "command": { "kind": "swing", "facing": 36130 } }
+        { "tick": 890, "player": 0, "command": { "kind": "move", "forward": 1, "strafe": 0, "facing": 38047 } },
+        { "tick": 898, "player": 0, "command": { "kind": "move", "forward": 0, "strafe": 0, "facing": 38047 } },
+        { "tick": 900, "player": 0, "command": { "kind": "swing", "facing": 38047 } },
+        { "tick": 940, "player": 0, "command": { "kind": "swing", "facing": 38047 } },
+        { "tick": 980, "player": 0, "command": { "kind": "swing", "facing": 38047 } },
+        { "tick": 1020, "player": 0, "command": { "kind": "swing", "facing": 38047 } }
       ]
     },
     {

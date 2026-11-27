@@ -387,7 +387,7 @@ fn creatures_evade_attacks_from_a_corridor_and_never_follow_into_it() {
 
     // A player inside the corridor neither draws it nor hurts it: a Heroic Strike reaches the
     // 2.5 m to it, past any basic strike's blade (#1249).
-    let mut zone = placed(&zone, 1, 5_000.0, 0.0);
+    let zone = placed(&zone, 1, 5_000.0, 0.0);
     let mut state = zone.snapshot().unwrap();
     state.players[0].combat.abilities.resource = 100;
     let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
