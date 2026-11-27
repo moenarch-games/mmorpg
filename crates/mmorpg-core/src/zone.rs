@@ -1283,9 +1283,7 @@ impl ZoneSimulation {
             if let Some(yaw) = rolling
                 && step.velocity.is_none()
             {
-                let percent = crate::aura::speed_percent(&state.auras)
-                    * crate::surface::speed_percent(surface)
-                    / 100;
+                let percent = crate::aura::movement_percent(&state.auras, surface);
                 let [x, z] = crate::Roll::velocity(yaw, percent);
                 self.world
                     .set_velocity(body_id, Vec3i::new(x, body.velocity().y, z))
@@ -1332,9 +1330,7 @@ impl ZoneSimulation {
                     Some(lunge) => lunge,
                     None => {
                         let free = movement_velocity(state)?;
-                        let mut percent = crate::aura::speed_percent(&state.auras)
-                            * crate::surface::speed_percent(surface)
-                            / 100;
+                        let mut percent = crate::aura::movement_percent(&state.auras, surface);
                         // A load slows nobody, but no boost carries it past the run speed
                         // (#1077).
                         if carrying {
