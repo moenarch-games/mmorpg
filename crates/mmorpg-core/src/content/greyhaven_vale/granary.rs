@@ -31,9 +31,7 @@ pub const RAIDER_IDS: std::ops::RangeInclusive<u32> = 1_420..=1_431;
 /// What a granary hand can take, as Millbrook's farmfolk.
 pub const HAND_HEALTH: u32 = 240;
 
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, SOUTH, WEST};
 
 /// `(id, name, level, feet XZ, facing)` of the Tollys in the hollow and the granary hands at the
 /// barn's doors: one by the west door, two by the south doors.

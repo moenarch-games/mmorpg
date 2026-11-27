@@ -85,10 +85,7 @@ impl Layout {
                     dressing::Kind::Lamp => lamps.next(),
                     _ => signposts.next(),
                 }?;
-                let eighth = u32::from(crate::trig::YAW_EIGHTH_TURN);
-                let quarter = u32::from(crate::trig::YAW_QUARTER_TURN);
-                let quarters =
-                    u8::try_from((u32::from(decoration.yaw) + eighth) / quarter % 4).unwrap_or(0);
+                let quarters = crate::trig::nearest_quarter(decoration.yaw);
                 Some((
                     decoration,
                     Piece {

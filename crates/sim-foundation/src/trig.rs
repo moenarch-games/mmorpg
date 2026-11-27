@@ -13,6 +13,44 @@ pub const YAW_EIGHTH_TURN: u16 = 8_192;
 /// Q16 fixed-point representation of 1.0 for trigonometric results.
 pub const TRIG_ONE: i32 = 1 << 16;
 
+/// The four compass yaws content faces things by: south keeps local +Z on +Z, and each
+/// quarter turn on turns +Z toward +X (#1271).
+pub mod facing {
+    use super::YAW_QUARTER_TURN;
+
+    pub const SOUTH: u16 = 0;
+    pub const EAST: u16 = YAW_QUARTER_TURN;
+    pub const NORTH: u16 = 2 * YAW_QUARTER_TURN;
+    pub const WEST: u16 = 3 * YAW_QUARTER_TURN;
+}
+
+/// `[x, z]` turned by `quarters` quarter turns about +Y (+Z toward +X).
+#[must_use]
+pub const fn turn_quarters([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
+    match quarters % 4 {
+        0 => [x, z],
+        1 => [z, -x],
+        2 => [-x, -z],
+        _ => [-z, x],
+    }
+}
+
+/// Box half extents `[x, y, z]` after `quarters` quarter turns: an odd turn swaps X and Z.
+#[must_use]
+pub const fn turn_extents([x, y, z]: [i32; 3], quarters: u8) -> [i32; 3] {
+    if quarters % 2 == 1 {
+        [z, y, x]
+    } else {
+        [x, y, z]
+    }
+}
+
+/// The number of quarter turns, 0 to 3, nearest `yaw`; an exact eighth rounds up.
+#[must_use]
+pub const fn nearest_quarter(yaw: u16) -> u8 {
+    ((yaw as u32 + YAW_EIGHTH_TURN as u32) / YAW_QUARTER_TURN as u32 % 4) as u8
+}
+
 const QUARTER_STEPS: usize = YAW_QUARTER_TURN as usize;
 const TABLE_FRACTION_BITS: u32 = 60;
 const TABLE_ONE: i128 = 1 << TABLE_FRACTION_BITS;

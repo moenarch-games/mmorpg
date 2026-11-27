@@ -24,11 +24,7 @@ const SEASONED: [u8; 2] = [5, 5];
 /// The level range rolled along the trail.
 const TRAIL: [u8; 2] = [4, 5];
 
-/// Yaw 0 faces +Z (south, toward the Vale), 32 768 north, 16 384 east and 49 152 west.
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, NORTH, SOUTH, WEST};
 
 type Row = super::units::SpawnRow;
 

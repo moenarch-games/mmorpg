@@ -14,8 +14,7 @@ use super::units::templates::SOUTHWOOD_STAG;
 /// The stags' creature spawn IDs.
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 3_180..=3_199;
 
-/// Yaw 16 384 faces east (+X), toward the wood.
-const EAST: u16 = 16_384;
+use crate::trig::facing::EAST;
 /// A stag grazes within 6 m of its spawn.
 const WANDER: i32 = 600;
 

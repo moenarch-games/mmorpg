@@ -13,11 +13,7 @@ use super::units::WANDER_RADIUS_UNITS;
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 1_400..=1_419;
 use super::units::templates::{GRAIN_RAT, TIMBER_WOLF, YOUNG_BOAR};
 
-/// Yaw 0 faces +Z (south), 32 768 north, 16 384 east and 49 152 west.
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, NORTH, SOUTH, WEST};
 
 #[rustfmt::skip]
 const SPAWNS: [(u32, CreatureTemplateId, [i32; 2], u16); 12] = [

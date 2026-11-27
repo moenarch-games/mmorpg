@@ -121,16 +121,6 @@ pub struct Placement {
     pub yaw: u16,
 }
 
-/// Turns `[x, z]` by `quarters` quarter turns about +Y (+Z toward +X).
-const fn turn([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
-    match quarters % 4 {
-        0 => [x, z],
-        1 => [z, -x],
-        2 => [-x, -z],
-        _ => [-z, x],
-    }
-}
-
 /// The square's bench, as [`placements`] puts it before its house (x, z units; its front faces
 /// +Z), and how far along it the two seats are (#619).
 pub const BENCH: [i32; 2] = [2_450, 2_460];
@@ -153,7 +143,7 @@ pub fn placements(house: [i32; 2]) -> Vec<Placement> {
     let mut placements: Vec<_> = SQUARE
         .iter()
         .map(|&(item, [x, y, z], degrees)| {
-            let [dx, dz] = turn([x, z], QUARTERS);
+            let [dx, dz] = crate::trig::turn_quarters([x, z], QUARTERS);
             let degrees = (i32::from(degrees) + turned).rem_euclid(360);
             Placement {
                 item,
