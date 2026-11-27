@@ -641,17 +641,8 @@ impl ZoneSimulation {
         let Some(player) = self.players.get(&player_id) else {
             return Ok(());
         };
-        if !player.is_alive() || !player.swing_queued {
-            return Ok(());
-        }
-        // A pressed swing waits out the previous one, a stun or a landing, as
-        // does one the graph refuses in water. A follow-up (#928) cuts the recovery short.
-        let melee = crate::action::ActionInput::WardenMelee;
-        if (player.swing_timer > 0 && player.melee.follow_up == 0)
-            || crate::action::holding_rule(self.action_graph, player, melee).is_some()
-            || crate::action::refusing_rule(self.action_graph, player, melee).is_some()
-            || crate::aura::has_kind(&player.auras, crate::AuraKind::Stun)
-        {
+        // The action graph decides whether the pressed swing begins now (#1221).
+        if !crate::action::basic_melee_ready(self.action_graph, player) {
             return Ok(());
         }
         self.begin_strike(player_id)

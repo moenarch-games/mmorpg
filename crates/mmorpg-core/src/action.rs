@@ -85,8 +85,8 @@
 //! interruptions. Every class ability starts [`ActionId::GlobalCooldown`].
 //!
 //! Runtime state stays in the existing canonical fields: `landing` for the
-//! movement region, `cast`, a timed `swing` (#679), `strike_recovery`, `combo` and `global_cooldown`
-//! for the offense region, `guard` for the defense region, and auras, the
+//! movement region, `cast`, a timed `swing` (#679), `strike_recovery`, `combo`, the basic
+//! strike's `melee` state and swing timer, and `global_cooldown` for the offense region, `guard` for the defense region, and auras, the
 //! guard break and health for the reaction region.
 //! [`ZoneSimulation::action_inspection`] is the read-only query surface that
 //! the Action Lab (#381) reads.
@@ -144,6 +144,9 @@ pub enum ActionId {
     Cast,
     /// The global cooldown a class ability started, of any class.
     GlobalCooldown,
+    /// The basic strike every class presses (#885, #1221): a standing chain, running or
+    /// jumping strike, from its wind-up through its recovery and chain window.
+    BasicMelee,
     /// The experimental graph's authored action in this slot (#414).
     Authored(u8),
 }
@@ -723,7 +726,7 @@ pub struct ActionGraph {
 }
 
 /// The authored actions.
-pub const ACTIONS: [ActionDef; 13] = [
+pub const ACTIONS: [ActionDef; 14] = [
     ActionDef {
         id: ActionId::Airborne,
         region: Region::Movement,
@@ -793,6 +796,12 @@ pub const ACTIONS: [ActionDef; 13] = [
         region: Region::Offense,
         recovery_ms: Some(1_500),
     },
+    // A basic strike recovers for its weapon and variant's interval, not a fixed time.
+    ActionDef {
+        id: ActionId::BasicMelee,
+        region: Region::Offense,
+        recovery_ms: None,
+    },
 ];
 
 /// The authored recovery modifiers: a landing after an airborne melee
@@ -836,6 +845,7 @@ const fn action_code(id: ActionId) -> u16 {
         ActionId::Climb => 10,
         ActionId::Mantle => 11,
         ActionId::Roll => 12,
+        ActionId::BasicMelee => 13,
         ActionId::Authored(slot) => 256 + slot as u16,
     }
 }
@@ -965,9 +975,10 @@ pub enum GraphError {
     NotAReaction(ActionId),
     /// An interruption names a rule the graph lacks.
     UnknownRule(RuleId),
-    /// The zone cannot apply this consequence to this target: only a guard
-    /// and edge openings can be suspended or cancelled, and held inputs can
-    /// only be preserved or cancelled.
+    /// The zone cannot apply this consequence to this target: only a guard,
+    /// a basic strike's wind-up and edge openings can be suspended or
+    /// cancelled, a cast only cancelled, and held inputs can only be preserved
+    /// or cancelled.
     UnsupportedInterruption(Interrupted),
     /// Two interruptions of the same reaction, target and phase disagree.
     ConflictingInterruption(Interrupted),
@@ -1045,6 +1056,7 @@ pub const fn phases(id: ActionId) -> &'static [Phase] {
             Phase::Recovery,
             Phase::FollowUp,
         ],
+        ActionId::BasicMelee => &[Phase::Startup, Phase::Recovery, Phase::FollowUp],
         ActionId::Authored(_) => &[Phase::Startup, Phase::Active, Phase::Recovery],
     }
 }
@@ -1459,6 +1471,17 @@ impl ActionGraph {
                 Consequence::Preserve => rule.reaction != ActionId::Death,
                 Consequence::Suspend => false,
             },
+            // Death always ends a basic strike; another reaction may cancel or pause only its
+            // wind-up, since its recovery is the swing timer every press waits out (#1221).
+            Interrupted::Action(ActionId::BasicMelee) => match rule.consequence {
+                Consequence::Cancel => {
+                    rule.reaction == ActionId::Death || rule.phase == Some(Phase::Startup)
+                }
+                Consequence::Suspend => {
+                    rule.reaction != ActionId::Death && rule.phase == Some(Phase::Startup)
+                }
+                Consequence::Preserve => rule.reaction != ActionId::Death,
+            },
             Interrupted::Action(_) => rule.consequence == Consequence::Preserve,
             Interrupted::Edge(id) => {
                 let Some(def) = self.edge(id) else {
@@ -1772,6 +1795,8 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         ActionId::DirectedSlash => state.strike_recovery,
         ActionId::GuardBreak => state.guard.broken,
         ActionId::GlobalCooldown => state.global_cooldown,
+        // The swing timer runs from the press; the wind-up is the strike's startup.
+        ActionId::BasicMelee if state.melee.pending.is_none() => state.swing_timer,
         ActionId::Airborne
         | ActionId::Swim
         | ActionId::Climb
@@ -1781,9 +1806,58 @@ fn recovery_left(state: &PlayerState, id: ActionId) -> Option<u16> {
         | ActionId::Stun
         | ActionId::Death
         | ActionId::Cast
+        | ActionId::BasicMelee
         | ActionId::Authored(_) => 0,
     };
     (left > 0).then_some(left)
+}
+
+/// The basic strike's phase (#885, #1221), read from its canonical state: winding up while
+/// a strike is pending, recovering while the swing timer runs after its contact, following
+/// up while a standing chain's window is still open after the recovery.
+fn basic_melee(state: &PlayerState) -> Option<Phase> {
+    if state.melee.pending.is_some() {
+        Some(Phase::Startup)
+    } else if recovery_left(state, ActionId::BasicMelee).is_some() {
+        Some(Phase::Recovery)
+    } else if state.melee.chain > 0 && state.melee.window > 0 {
+        Some(Phase::FollowUp)
+    } else {
+        None
+    }
+}
+
+/// The chain strike a standing basic press continues with: the next one while the chain's
+/// window is open, else the first.
+pub(crate) const fn basic_chain_step(state: &PlayerState) -> u8 {
+    if state.melee.window > 0 {
+        state.melee.chain
+    } else {
+        0
+    }
+}
+
+/// Whether the player's pressed basic strike begins now (#1221). It waits out the previous
+/// strike's wind-up and recovery, unless a hit opened the follow-up (#928) that cuts the
+/// recovery short; a stun; and whatever holds or refuses melee: a Warden's landing, or a
+/// graph that refuses attacks in water. Basic strikes share [`ActionInput::WardenMelee`]'s
+/// compatibility rules but none of its edges, so no directed follow-up's effect (such as
+/// the global-cooldown waiver) applies to them.
+pub(crate) fn basic_melee_ready(graph: &ActionGraph, state: &PlayerState) -> bool {
+    let input = ActionInput::WardenMelee;
+    state.is_alive()
+        && state.swing_queued
+        && state.melee.pending.is_none()
+        && (state.swing_timer == 0 || state.melee.follow_up > 0)
+        && holding_rule(graph, state, input).is_none()
+        && refusing_rule(graph, state, input).is_none()
+        && !aura::has_kind(&state.auras, AuraKind::Stun)
+}
+
+/// What the reactions in effect do to the player's basic strike now; the baseline's stun
+/// cancels a wind-up.
+pub(crate) fn basic_melee_interruption(graph: &ActionGraph, state: &PlayerState) -> Consequence {
+    consequence(graph, state, Interrupted::Action(ActionId::BasicMelee))
 }
 
 /// The ticks a running cast has left, with its ability.
@@ -1847,6 +1921,8 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
         recovery_left,
         ability: action.and_then(|id| action_ability(state, id)),
         active_left: None,
+        strike: None,
+        follow_up_left: None,
     };
     let traversing = [
         ActionId::Roll,
@@ -1875,8 +1951,8 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
     } else {
         report(Region::Movement, None, None, None)
     };
-    // A cast outranks the slash, and both outrank the global cooldown they
-    // run alongside.
+    // A cast outranks the slash, the slash an authored action, that a basic strike, and all
+    // of them outrank the global cooldown they run alongside.
     let offense = if let Some((_, left)) = cast_left(state) {
         RegionReport {
             active_left: Some(left),
@@ -1931,6 +2007,24 @@ fn region_actions(graph: &ActionGraph, state: &PlayerState) -> [RegionReport; 4]
                 Some(ActionId::Authored(def.slot)),
                 Some(phase),
                 (phase == Phase::Recovery).then(|| (active + recovery).saturating_sub(since)),
+            )
+        }
+    } else if let Some(phase) = basic_melee(state) {
+        // The pending strike, else the one that struck; a press follows it up during the
+        // hit's follow-up (#928) or the chain's window.
+        let melee = state.melee;
+        RegionReport {
+            strike: melee.pending.map(|pending| pending.variant).or(melee.last),
+            follow_up_left: match phase {
+                Phase::Recovery => (melee.follow_up > 0).then_some(melee.follow_up),
+                Phase::FollowUp => Some(melee.window),
+                Phase::Startup | Phase::Active => None,
+            },
+            ..report(
+                Region::Offense,
+                Some(ActionId::BasicMelee),
+                Some(phase),
+                recovery_left(state, ActionId::BasicMelee),
             )
         }
     } else if let Some(left) = recovery_left(state, ActionId::GlobalCooldown) {
@@ -1990,6 +2084,8 @@ fn target_phase(graph: &ActionGraph, state: &PlayerState, target: Interrupted) -
             .and_then(|report| report.phase)
     };
     match target {
+        // A basic strike may run beneath a cast or a slash the offense region reports.
+        Interrupted::Action(ActionId::BasicMelee) => basic_melee(state),
         Interrupted::Action(id) => phase_of(id),
         Interrupted::Edge(id) => {
             let def = graph.edge(id)?;
@@ -2582,6 +2678,11 @@ pub struct RegionReport {
     pub ability: Option<AbilityId>,
     /// Ticks of a cast or channel left.
     pub active_left: Option<u16>,
+    /// A basic strike's variant: the pending one, else the one that struck (#1221).
+    pub strike: Option<crate::StrikeVariant>,
+    /// Ticks left in which a basic press follows the strike up: the hit's follow-up (#928)
+    /// during its recovery, the chain's window after it.
+    pub follow_up_left: Option<u16>,
 }
 
 /// One edge's state, in absolute ticks.
