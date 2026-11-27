@@ -448,6 +448,26 @@ pub(crate) fn creature_templates() -> Vec<CreatureTemplate> {
         .collect()
 }
 
+/// A placed creature as a content table row: `(id, template, position, facing, levels, wander
+/// radius)`, the shape every Greyhaven group table (garrison, discoveries, marsh) uses (#1231).
+pub(super) type SpawnRow = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
+
+/// A table of [`SpawnRow`]s as content spawns.
+pub(super) fn spawns_of(rows: &[SpawnRow]) -> Vec<CreatureSpawn> {
+    rows.iter()
+        .map(
+            |&(id, template, position, facing, levels, wander_radius)| CreatureSpawn {
+                id: CreatureId::new(id),
+                template,
+                position,
+                facing,
+                wander_radius,
+                levels: Some(levels),
+            },
+        )
+        .collect()
+}
+
 pub(super) fn creature_spawns() -> Vec<CreatureSpawn> {
     SPAWNS
         .iter()

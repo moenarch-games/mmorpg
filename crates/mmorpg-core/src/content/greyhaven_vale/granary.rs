@@ -12,12 +12,9 @@
 //!   Raiders are the hamlets' spawns 1420-1431.
 
 use crate::content::CreatureSpawn;
-use crate::{
-    AidKind, AidTask, Civilian, CreatureId, EscortCompanion, Npc, NpcId, NpcRole, RaidApproach,
-    RaidSite,
-};
+use crate::{AidKind, AidTask, Civilian, EscortCompanion, Npc, NpcId, NpcRole, RaidSite};
 
-use super::units::templates::REDBRAND_BANDIT;
+use super::raid::{ApproachRow, raid_approaches, staged_raiders};
 
 /// Goodwife Ena, who keeps the granary and gives the four quests.
 pub const GOODWIFE_ENA: NpcId = NpcId::new(36);
@@ -81,23 +78,6 @@ pub fn companions() -> Vec<EscortCompanion> {
     ]
 }
 
-/// Raiders are Redbrand bandits at the low end of the Hollow's levels, as at Millbrook.
-const RAIDER_LEVELS: [u8; 2] = [3, 4];
-/// Raiders reserved per approach.
-const SLOTS: u32 = 6;
-
-/// `(first raider ID, first staging slot, slot step, facing, route to the barn, spread at it, way
-/// out to the retreat route)`.
-type ApproachRow = (
-    u32,
-    [i32; 2],
-    [i32; 2],
-    u16,
-    &'static [[i32; 2]],
-    [i32; 2],
-    &'static [[i32; 2]],
-);
-
 #[rustfmt::skip]
 const APPROACHES: [ApproachRow; 2] = [
     // North: out of sight beyond the hamlet's north edge, then down past Ploughman Garr's furrows,
@@ -116,26 +96,9 @@ const RETREAT: [[i32; 2]; 3] = [
     [-18_400, 28_800],
 ];
 
-fn slot(row: &ApproachRow, index: u32) -> [i32; 2] {
-    let step = i32::try_from(index).unwrap_or(0);
-    [row.1[0] + row.2[0] * step, row.1[1] + row.2[1] * step]
-}
-
 /// The reserved raiders' content spawns at their staging slots.
 pub(super) fn raider_spawns() -> Vec<CreatureSpawn> {
-    APPROACHES
-        .iter()
-        .flat_map(|row| {
-            (0..SLOTS).map(move |index| CreatureSpawn {
-                id: CreatureId::new(row.0 + index),
-                template: REDBRAND_BANDIT,
-                position: slot(row, index),
-                facing: row.3,
-                wander_radius: super::units::WANDER_RADIUS_UNITS,
-                levels: Some(RAIDER_LEVELS),
-            })
-        })
-        .collect()
+    staged_raiders(&APPROACHES)
 }
 
 /// The granary as a quest defence site: Ena starts its defence, the hands guard its stores, and a
@@ -146,17 +109,7 @@ pub fn site() -> RaidSite {
         name: "Ena's granary".to_owned(),
         objective: GRANARY,
         footprint: [[-11_400, 34_800], [-10_200, 36_400]],
-        approaches: APPROACHES
-            .iter()
-            .map(|row| RaidApproach {
-                raiders: (0..SLOTS)
-                    .map(|index| CreatureId::new(row.0 + index))
-                    .collect(),
-                route: row.4.to_vec(),
-                spread: row.5,
-                exit: row.6.to_vec(),
-            })
-            .collect(),
+        approaches: raid_approaches(&APPROACHES),
         retreat: RETREAT.to_vec(),
         camp_spread: [0, 100],
         aid: vec![
