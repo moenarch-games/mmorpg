@@ -91,7 +91,9 @@ fn workspace() -> &'static Graph {
     GRAPH.get_or_init(|| {
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let output = Command::new(cargo)
-            .args(["metadata", "--format-version", "1", "--locked", "--offline"])
+            // Not offline: full metadata resolves every platform's dependencies, and a CI cache
+            // restored for Linux builds lacks Android-only crates such as `android-activity` (#1258).
+            .args(["metadata", "--format-version", "1", "--locked"])
             .arg("--manifest-path")
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml"))
             .output()
