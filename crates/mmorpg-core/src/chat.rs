@@ -218,7 +218,6 @@ impl ZoneSimulation {
             return Ok(());
         }
         let from = self.player_position(speaker)?;
-        let range = i128::from(message.range_units());
         let mut hearers = Vec::new();
         // The interest index narrows the hearers to the cells in range (#1056); `near` lists
         // units in `EntityRef` order, so players come in ascending ID order.
@@ -227,11 +226,7 @@ impl ZoneSimulation {
                 continue;
             };
             let at = self.player_position(id)?;
-            let [dx, dz] = [
-                i128::from(at.x) - i128::from(from.x),
-                i128::from(at.z) - i128::from(from.z),
-            ];
-            if dx * dx + dz * dz <= range * range {
+            if crate::reach::within_xz([from.x, from.z], [at.x, at.z], message.range_units()) {
                 hearers.push(id);
             }
         }

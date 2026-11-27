@@ -430,11 +430,11 @@ impl RaidSite {
     /// Whether its signal reaches `at` (#1019): within [`SIGNAL_RADIUS_UNITS`] of the footprint.
     #[must_use]
     pub fn signals(&self, at: [i32; 2]) -> bool {
-        self.distance_squared(at) <= i64::from(SIGNAL_RADIUS_UNITS).pow(2)
+        self.footprint_distance_squared(at) <= i64::from(SIGNAL_RADIUS_UNITS).pow(2)
     }
 
     /// The horizontal distance from `at` to the footprint, squared.
-    fn distance_squared(&self, at: [i32; 2]) -> i64 {
+    fn footprint_distance_squared(&self, at: [i32; 2]) -> i64 {
         let [min, max] = self.footprint;
         let gap =
             |value: i32, low: i32, high: i32| i64::from((low - value).max(value - high).max(0));
@@ -1228,7 +1228,9 @@ impl ZoneSimulation {
                 continue;
             }
             let at = self.player_position(player_id)?;
-            if site.distance_squared([at.x, at.z]) <= i64::from(PARTICIPANT_RADIUS_UNITS).pow(2) {
+            if site.footprint_distance_squared([at.x, at.z])
+                <= i64::from(PARTICIPANT_RADIUS_UNITS).pow(2)
+            {
                 count = count.saturating_add(1);
             }
         }
@@ -1468,7 +1470,7 @@ impl ZoneSimulation {
         if !self.site_raid_ref(index).aftermath.contains(&task) {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         }
-        if crate::ai::distance_squared([at.x, at.z], spot) > i64::from(AID_REACH_UNITS).pow(2) {
+        if !crate::reach::within_xz([at.x, at.z], spot, AID_REACH_UNITS) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
         let state = self.site_raid(index);
@@ -1506,9 +1508,7 @@ impl ZoneSimulation {
         }
         let at = self.player_position(player_id)?;
         let here = [at.x, at.z];
-        let within = |spot: [i32; 2], reach: i32| {
-            crate::ai::distance_squared(here, spot) <= i64::from(reach).pow(2)
-        };
+        let within = |spot: [i32; 2], reach: i32| crate::reach::within_xz(here, spot, reach);
         let notice = match prep {
             RaidPrep::Investigate => {
                 let Err(index) = self.raid.scouted.binary_search(&player_id) else {
@@ -1576,7 +1576,9 @@ impl ZoneSimulation {
             if self.strike_civilian(index, site, id, [at[0], at[2]], template)? {
                 continue;
             }
-            if site.distance_squared([at[0], at[2]]) > i64::from(OBJECTIVE_REACH_UNITS).pow(2) {
+            if site.footprint_distance_squared([at[0], at[2]])
+                > i64::from(OBJECTIVE_REACH_UNITS).pow(2)
+            {
                 continue;
             }
             let Some(hit) = self.strike_objective(id, template, None) else {
@@ -1615,7 +1617,9 @@ impl ZoneSimulation {
             .zip(&incident.civilians)
             .enumerate()
             .filter(|(_, (_, health))| **health > 0)
-            .map(|(index, (civilian, _))| (crate::ai::distance_squared(here, civilian.at), index))
+            .map(|(index, (civilian, _))| {
+                (crate::reach::xz_distance_squared(here, civilian.at), index)
+            })
             .filter(|(distance, _)| *distance <= reach)
             .min();
         let Some((_, index)) = nearest else {
@@ -1655,7 +1659,7 @@ impl ZoneSimulation {
                     continue;
                 };
                 // Only this site's defence (#1019): the one its steward starts.
-                if site.distance_squared([at.x, at.z]) <= radius {
+                if site.footprint_distance_squared([at.x, at.z]) <= radius {
                     self.complete_objectives(player_id, |objective| {
                         matches!(objective, crate::QuestObjective::Defend { npc } if steward.is_none_or(|steward| npc == steward))
                     });
@@ -1915,7 +1919,7 @@ impl ZoneSimulation {
             }
         };
         while let Some(point) = goal
-            && crate::ai::distance_squared(here, point) <= i64::from(radius(waypoint)).pow(2)
+            && crate::reach::within_xz(here, point, radius(waypoint))
         {
             waypoint = waypoint.saturating_add(1);
             goal = site.waypoint(member.leg, approach, slot, waypoint);
@@ -1936,11 +1940,12 @@ impl ZoneSimulation {
             let [min, max] = site.footprint;
             let nearest = [here[0].clamp(min[0], max[0]), here[1].clamp(min[1], max[1])];
             let (dx, dz) = crate::ai::offset(here, nearest);
-            let velocity = if site.distance_squared(here) > i64::from(STAND_OFF_UNITS).pow(2) {
-                crate::ai::steer(dx, dz, crate::CREATURE_WALK_SPEED_SUBUNITS_PER_TICK)
-            } else {
-                [0, 0]
-            };
+            let velocity =
+                if site.footprint_distance_squared(here) > i64::from(STAND_OFF_UNITS).pow(2) {
+                    crate::ai::steer(dx, dz, crate::CREATURE_WALK_SPEED_SUBUNITS_PER_TICK)
+                } else {
+                    [0, 0]
+                };
             return Ok(Some((velocity, crate::trig::yaw_from_vector(dx, dz))));
         };
         let toward = self.route_waypoint(centre, half, goal, 0)?.unwrap_or(goal);

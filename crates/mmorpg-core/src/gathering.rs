@@ -142,8 +142,7 @@ impl ZoneSimulation {
             return Ok(Some((ErrorCode::EmptyLoot, None)));
         }
         let at = self.player_position(player_id)?;
-        if crate::ai::distance_squared([at.x, at.z], site.at) > i64::from(GATHER_REACH_UNITS).pow(2)
-        {
+        if !crate::reach::within_xz([at.x, at.z], site.at, GATHER_REACH_UNITS) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }
         if let Some(code) = self.settle_gathered(player_id, &[(site.item, site.quantity)])? {

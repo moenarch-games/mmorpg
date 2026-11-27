@@ -31,6 +31,7 @@
 //! the assist radius engage the same target (one level, no chains). Steering
 //! sets body velocity only; physics resolves obstacles and contact.
 
+use crate::reach::xz_distance_squared;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -51,15 +52,6 @@ use crate::{
     unit::CREATURE_REACH_UNITS,
 };
 
-/// Squared XZ distance, saturating at `i64::MAX`. Only recovered player
-/// positions near opposite ends of the `i32` range get that far apart, and
-/// every radius test fails there as it should.
-pub(crate) fn distance_squared(from: [i32; 2], to: [i32; 2]) -> i64 {
-    let dx = i64::from(to[0]) - i64::from(from[0]);
-    let dz = i64::from(to[1]) - i64::from(from[1]);
-    dx.saturating_mul(dx).saturating_add(dz.saturating_mul(dz))
-}
-
 /// The XZ offset from `from` to `to` that steering follows. An offset beyond
 /// the `i32` range, which only a recovered extreme player position produces,
 /// is halved on both axes, which keeps its direction.
@@ -79,7 +71,7 @@ pub(crate) fn offset(from: [i32; 2], to: [i32; 2]) -> (i32, i32) {
 /// Whether `to` is a wander point of a spawn at `home`: the direction table
 /// and its rounding place a point at most one unit beyond the radius.
 pub(crate) fn is_wander_point(home: [i32; 2], to: [i32; 2], radius: i32) -> bool {
-    distance_squared(home, to) <= (i64::from(radius) + 1).pow(2)
+    xz_distance_squared(home, to) <= (i64::from(radius) + 1).pow(2)
 }
 
 /// The point `distance` units from `home` along `yaw`.
@@ -130,7 +122,7 @@ const SUBUNITS: i64 = crate::physics::SUBUNITS_PER_UNIT as i64;
 /// Chase velocity toward a target `(dx, dz)` away: `speed` while beyond
 /// `reach`, then a last step that ends inside it, and zero once inside.
 fn chase_velocity(dx: i32, dz: i32, reach: i32, speed: i32) -> [i32; 2] {
-    if distance_squared([0, 0], [dx, dz]) <= i64::from(reach).pow(2) {
+    if crate::reach::within_xz([0, 0], [dx, dz], reach) {
         return [0, 0];
     }
     let gap = i64::try_from(xz_length(dx, dz))
@@ -472,7 +464,7 @@ impl ZoneSimulation {
         } else {
             LEASH_RADIUS_UNITS
         };
-        let leashed = distance_squared(home, here) > i64::from(leash).pow(2)
+        let leashed = !crate::reach::within_xz(home, here, leash)
             || chase.is_some_and(|(_, to)| self.handoff_corridor_at(to[0], to[1]).is_some())
             || self.near_handoff_corridor(here, [half.x, half.z]);
         // Walls, pieces and rubble in the way (#307): a route around them.
@@ -569,8 +561,7 @@ impl ZoneSimulation {
                     };
                     let to = [at.x, at.z];
                     let (dx, dz) = offset(here, to);
-                    let near = distance_squared(here, to)
-                        <= i64::from(crate::water::TRAIL_KEEP_UNITS).pow(2);
+                    let near = crate::reach::within_xz(here, to, crate::water::TRAIL_KEEP_UNITS);
                     (
                         if near {
                             [0, 0]
@@ -660,7 +651,7 @@ impl ZoneSimulation {
                     ticks: ticks - 1,
                     point,
                 };
-                if distance_squared(here, point) <= i64::from(ARRIVAL_RADIUS_UNITS).pow(2) {
+                if crate::reach::within_xz(here, point, ARRIVAL_RADIUS_UNITS) {
                     ([0, 0], None)
                 } else {
                     let (dx, dz) = route.map_or_else(|| offset(here, point), |to| offset(here, to));
@@ -672,8 +663,7 @@ impl ZoneSimulation {
             }
             CreatureAi::Evading { ticks } => {
                 let (dx, dz) = offset(here, home);
-                let arrived =
-                    distance_squared(here, home) <= i64::from(ARRIVAL_RADIUS_UNITS).pow(2);
+                let arrived = crate::reach::within_xz(here, home, ARRIVAL_RADIUS_UNITS);
                 if arrived || ticks >= EVADE_TIMEOUT_TICKS {
                     teleport_home = !arrived;
                     // A raider back on its march (#530) keeps its wounds and marches on at once.
@@ -825,7 +815,7 @@ impl ZoneSimulation {
                 continue;
             }
             let position = self.player_position(player_id)?;
-            let distance = distance_squared(here, [position.x, position.z]);
+            let distance = xz_distance_squared(here, [position.x, position.z]);
             let radius = i64::from(if territorial {
                 crate::TERRITORY_RADIUS_UNITS
             } else if family.ambushes() {
@@ -923,7 +913,7 @@ impl ZoneSimulation {
                 .body(body_id(entity))
                 .ok_or_else(|| ZoneError::new("creature physics body is missing"))?
                 .position();
-            let distance = distance_squared(here, [helper_position.x, helper_position.z]);
+            let distance = xz_distance_squared(here, [helper_position.x, helper_position.z]);
             if distance <= i64::from(ASSIST_RADIUS_UNITS).pow(2) {
                 self.engage(other, target, false)?;
             }
@@ -1028,7 +1018,7 @@ fn wander(
     };
     match *destination {
         Some(to) => {
-            let arrived = distance_squared(here, to) <= i64::from(ARRIVAL_RADIUS_UNITS).pow(2);
+            let arrived = crate::reach::within_xz(here, to, ARRIVAL_RADIUS_UNITS);
             if arrived || *timer == 0 {
                 *destination = None;
                 *timer = wander_wait(rng);
@@ -1077,9 +1067,9 @@ mod tests {
     #[test]
     fn distances_and_offsets_never_overflow() {
         let (low, high) = ([i32::MIN, i32::MIN], [i32::MAX, i32::MAX]);
-        assert_eq!(distance_squared(low, high), i64::MAX);
-        assert_eq!(distance_squared([i32::MIN, 0], [i32::MAX, 0]), i64::MAX);
-        assert_eq!(distance_squared([-3, 4], [0, 0]), 25);
+        assert_eq!(xz_distance_squared(low, high), i64::MAX);
+        assert_eq!(xz_distance_squared([i32::MIN, 0], [i32::MAX, 0]), i64::MAX);
+        assert_eq!(xz_distance_squared([-3, 4], [0, 0]), 25);
         assert_eq!(offset([5, -7], [2, 9]), (-3, 16));
         assert_eq!(offset(low, high), (i32::MAX, i32::MAX));
         assert_eq!(offset(high, low), (-i32::MAX, -i32::MAX));
@@ -1124,7 +1114,7 @@ mod tests {
         let units = |v: i32| f64::from(v) / s;
         for dx in (-300..=300).step_by(3) {
             for dz in (-300..=300).step_by(3) {
-                let before = distance_squared([0, 0], [dx, dz]);
+                let before = xz_distance_squared([0, 0], [dx, dz]);
                 let [vx, vz] = chase_velocity(dx, dz, reach, CREATURE_RUN_SPEED_SUBUNITS_PER_TICK);
                 if before <= reach_squared {
                     assert_eq!([vx, vz], [0, 0], "({dx}, {dz}) is inside reach");

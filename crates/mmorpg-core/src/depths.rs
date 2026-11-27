@@ -277,11 +277,12 @@ impl ZoneSimulation {
                 .get(&player)
                 .is_some_and(|state| state.quests.is_completed(threshold.qualifying_quest))
         };
+        let threatened = self.threatened_players();
         self.players
             .iter()
             .filter(|(player, state)| {
                 state.is_alive()
-                    && state.combat_timer == 0
+                    && !crate::threat_cache::in_combat(state, **player, &threatened)
                     && !self.transfers.waystone_departures.contains_key(*player)
             })
             .filter_map(|(&player, _)| {

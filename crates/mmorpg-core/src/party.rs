@@ -237,4 +237,25 @@ impl ZoneSimulation {
         mates.sort_unstable();
         mates
     }
+
+    /// `player_id`'s living party mates within quest reach of `npc`, in ascending ID order: the
+    /// mates who share an NPC's credit or vouch for the player there (#1253).
+    pub(crate) fn party_mates_near(
+        &self,
+        player_id: PlayerId,
+        npc: crate::NpcId,
+    ) -> Result<Vec<PlayerId>, ZoneError> {
+        let mut near = Vec::new();
+        for mate in self.party_mates(player_id) {
+            if self
+                .players
+                .get(&mate)
+                .is_some_and(|state| state.is_alive())
+                && self.within_quest_reach(mate, npc)?
+            {
+                near.push(mate);
+            }
+        }
+        Ok(near)
+    }
 }

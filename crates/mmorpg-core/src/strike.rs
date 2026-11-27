@@ -25,8 +25,8 @@
 //! and reports a whiff.
 
 use crate::ability::{AbilityEffect, AbilityId, ids};
-use crate::ai::distance_squared;
 use crate::physics::Vec3i;
+use crate::reach::xz_distance_squared;
 use crate::trig::YAW_QUARTER_TURN;
 use crate::unit::PLAYER_REACH_UNITS;
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError, ZoneSimulation};
@@ -371,7 +371,7 @@ impl ZoneSimulation {
         ) {
             return Ok(None);
         }
-        let distance = distance_squared([origin.x, origin.z], [centre.x, centre.z]);
+        let distance = xz_distance_squared([origin.x, origin.z], [centre.x, centre.z]);
         let sighted = if rewound.is_some() {
             // Present cover between the swinger and the rewound body.
             !self.world.segment_blocked(

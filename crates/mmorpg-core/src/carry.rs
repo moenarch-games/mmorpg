@@ -34,10 +34,7 @@
 use std::sync::Arc;
 
 use crate::events::push_event;
-use crate::{
-    EntityRef, ErrorCode, PLAYER_HALF_EXTENTS_UNITS, PlayerId, QuestObjective, ZoneError,
-    ZoneEvent, ZoneSimulation,
-};
+use crate::{EntityRef, ErrorCode, PlayerId, QuestObjective, ZoneError, ZoneEvent, ZoneSimulation};
 
 /// A player's feet reach a source or a set-down load this far on XZ (2 m) ...
 pub const LOAD_REACH_UNITS: i32 = 200;
@@ -169,8 +166,7 @@ impl LoadSpot {
 }
 
 fn within(at: [i32; 3], reach: i32, feet: [i32; 3]) -> bool {
-    let (dx, dz) = (i64::from(feet[0] - at[0]), i64::from(feet[2] - at[2]));
-    dx * dx + dz * dz <= i64::from(reach).pow(2) && (feet[1] - at[1]).abs() <= LOAD_HEIGHT_UNITS
+    crate::reach::within_cylinder(at, reach, LOAD_HEIGHT_UNITS, feet)
 }
 
 /// Where a set-down load stands.
@@ -264,7 +260,7 @@ impl ZoneSimulation {
             .body(crate::entity::body_id(EntityRef::Player(player_id)))
             .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
         let centre = body.position();
-        let feet = [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z];
+        let feet = crate::zone::feet_of(centre);
         let footed = player.traversal == crate::Traversal::Free
             && player.roll.rolling().is_none()
             && crate::water::swim_depth(self.content.waters(), feet).is_none()
@@ -456,7 +452,7 @@ impl ZoneSimulation {
                         .body(crate::entity::body_id(EntityRef::Player(player_id)))
                         .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
                     let centre = body.position();
-                    let feet = [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z];
+                    let feet = crate::zone::feet_of(centre);
                     if crate::water::swim_depth(self.content.waters(), feet).is_some() {
                         drowned.push(player_id);
                     } else if !player.is_alive() {

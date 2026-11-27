@@ -12,8 +12,8 @@
 //! against unit centres, not a swept volume query.
 
 use crate::ability::scaled;
-use crate::ai::distance_squared;
 use crate::entity::PLAYER_BODY_BASE;
+use crate::reach::xz_distance_squared;
 use crate::{EntityRef, PlayerId, ZoneError, ZoneEvent, ZoneSimulation};
 
 /// A beam strikes units whose centre lies within this distance of its line, units.
@@ -125,9 +125,7 @@ impl ZoneSimulation {
                 continue;
             }
             let position = self.unit_position(unit)?;
-            if distance_squared([centre[0], centre[2]], [position[0], position[2]])
-                > i64::from(range).pow(2)
-            {
+            if !crate::reach::within_xz([centre[0], centre[2]], [position[0], position[2]], range) {
                 continue;
             }
             #[allow(clippy::cast_precision_loss)]
@@ -303,7 +301,7 @@ impl ZoneSimulation {
                     continue;
                 }
                 let position = self.unit_position(unit)?;
-                let distance = distance_squared([here[0], here[2]], [position[0], position[2]]);
+                let distance = xz_distance_squared([here[0], here[2]], [position[0], position[2]]);
                 if distance <= i64::from(radius).pow(2)
                     && best.is_none_or(|(near, _)| distance < near)
                     && self.line_of_sight(current, unit)?

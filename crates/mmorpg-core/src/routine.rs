@@ -12,6 +12,7 @@
 //! from dusk to dawn. By day an NPC may run [`Errand`]s (#819): to the well, the inn's table, the
 //! fields or the market at set hours, staying a while and walking back to work.
 
+use crate::reach::xz_distance;
 use crate::{DoorId, EntityRef, NpcId, ZoneError, ZoneSimulation, trig};
 
 /// Ticks in one zone day: two real hours.
@@ -114,12 +115,6 @@ pub struct NpcPlacement {
 /// One leg of a route: where it starts and ends, and its XZ length in units.
 pub(crate) type Leg = ([i32; 2], [i32; 2], i64);
 
-/// The XZ distance between two points in units: a leg's length (#1231, the one route metric
-/// routines, carts, crossings and supply patrols share).
-pub(crate) fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
-    i64::try_from(trig::xz_length(b[0] - a[0], b[1] - a[1])).unwrap_or(i64::MAX)
-}
-
 /// Each leg starting at `start` and running through `path`, without collecting them.
 pub(crate) fn leg_iter(
     start: [i32; 2],
@@ -128,7 +123,7 @@ pub(crate) fn leg_iter(
     std::iter::once(start)
         .chain(path.iter().copied())
         .zip(path.iter().copied())
-        .map(|(from, to)| (from, to, distance(from, to)))
+        .map(|(from, to)| (from, to, xz_distance(from, to)))
 }
 
 /// `(from, to, length)` of each leg, starting at `start`.

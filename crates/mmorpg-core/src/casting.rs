@@ -23,9 +23,9 @@ use crate::ability::{
     Ability, AbilityEffect, AbilityId, AbilityRange, AuraKind, CREATURE_ABILITY_JITTER_TICKS,
     CastTime, ability_by_id, ids, learned, scaled,
 };
-use crate::ai::distance_squared;
 use crate::aura::{apply_aura, has_kind, pulse_amount};
 use crate::creature_store::Activity;
+use crate::reach::xz_distance_squared;
 use crate::snapshot::CreatureAi;
 use crate::unit::{COMBAT_LINGER_TICKS, percent_of};
 use crate::{
@@ -1047,7 +1047,7 @@ impl ZoneSimulation {
                 continue;
             }
             let position = self.unit_position(entity)?;
-            if distance_squared(centre, [position[0], position[2]]) <= i64::from(radius).pow(2) {
+            if crate::reach::within_xz(centre, [position[0], position[2]], radius) {
                 found.push(creature_id);
             }
         }
@@ -1066,7 +1066,7 @@ impl ZoneSimulation {
             if self.players_are_hostile(attacker, victim) && player.is_alive() {
                 let unit = EntityRef::Player(victim);
                 let position = self.unit_position(unit)?;
-                if distance_squared(centre, [position[0], position[2]]) <= i64::from(radius).pow(2)
+                if crate::reach::within_xz(centre, [position[0], position[2]], radius)
                     && self.line_of_sight(EntityRef::Player(attacker), unit)?
                 {
                     found.push(unit);
@@ -1227,7 +1227,7 @@ impl ZoneSimulation {
         let mut victims = Vec::new();
         for unit in units {
             let at = self.unit_position(unit)?;
-            let distance = distance_squared([centre[0], centre[2]], [at[0], at[2]]);
+            let distance = xz_distance_squared([centre[0], centre[2]], [at[0], at[2]]);
             if distance > i64::from(radius).pow(2) {
                 continue;
             }
@@ -1427,7 +1427,7 @@ impl ZoneSimulation {
     fn unit_distance_squared(&self, from: EntityRef, to: EntityRef) -> Result<i64, ZoneError> {
         let from = self.unit_position(from)?;
         let to = self.unit_position(to)?;
-        Ok(distance_squared([from[0], from[2]], [to[0], to[2]]))
+        Ok(xz_distance_squared([from[0], from[2]], [to[0], to[2]]))
     }
 
     /// Step 6, first part: global cooldowns, cooldowns and casts of players,
@@ -1898,7 +1898,7 @@ impl ZoneSimulation {
         let target = match ability.effect {
             // A stomp (#297) lands around the creature once its leader stands within reach.
             AbilityEffect::Stomp { radius, .. } => {
-                if distance_squared(here, leader_at) > i64::from(radius).pow(2) {
+                if !crate::reach::within_xz(here, leader_at, radius) {
                     return Ok(false);
                 }
                 None
@@ -1919,7 +1919,7 @@ impl ZoneSimulation {
             }
             _ => {
                 let reach = ability.range.reach().unwrap_or(0);
-                if distance_squared(here, leader_at) > i64::from(reach).pow(2)
+                if !crate::reach::within_xz(here, leader_at, reach)
                     || !self.line_of_sight(EntityRef::Creature(creature_id), leader)?
                 {
                     return Ok(false);

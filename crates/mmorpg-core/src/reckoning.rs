@@ -69,12 +69,7 @@ impl ZoneSimulation {
         for cleric in clerics {
             if cleric != victim {
                 // In combat as the zone counts it: lately fighting, or on a threat table.
-                let in_combat = self
-                    .players
-                    .get(&cleric)
-                    .is_some_and(|player| player.combat_timer > 0)
-                    || self.threatened_players().contains(&cleric);
-                if !in_combat || self.players_are_hostile(cleric, victim) {
+                if !self.player_in_combat(cleric) || self.players_are_hostile(cleric, victim) {
                     continue;
                 }
                 let from = self.player_position(cleric)?;
@@ -121,8 +116,9 @@ impl ZoneSimulation {
             if player.reckoning.is_empty() {
                 continue;
             }
-            let in_combat = player.combat_timer > 0 || threatened.contains(player_id);
-            if !player.is_alive() || !in_combat {
+            if !player.is_alive()
+                || !crate::threat_cache::in_combat(player, *player_id, &threatened)
+            {
                 player.reckoning.clear();
                 continue;
             }
