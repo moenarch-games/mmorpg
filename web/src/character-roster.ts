@@ -1,6 +1,7 @@
 import {
   MAX_CHARACTER_SLOTS,
   PREVIEW_CHARACTER,
+  comparableName,
   isCharacterClassId,
   isCharacterSex,
   localCharacterPreview,
@@ -83,9 +84,9 @@ export function loadCreatedCharacters(storage: CharacterRosterStorage): Characte
 
   const characters = envelope.characters.map(decodeStoredCharacter);
   const ids = new Set<string>([PREVIEW_CHARACTER.id]);
-  const names = new Set<string>([PREVIEW_CHARACTER.name.normalize("NFKC").toLowerCase()]);
+  const names = new Set<string>([comparableName(PREVIEW_CHARACTER.name)]);
   for (const character of characters) {
-    const name = character.name.normalize("NFKC").toLowerCase();
+    const name = comparableName(character.name);
     if (ids.has(character.id) || names.has(name)) {
       throw new Error("Local character roster contains duplicate identity.");
     }
@@ -106,7 +107,7 @@ export function saveCreatedCharacters(
   const names = new Set<string>();
   const stored = characters.map((character) => {
     const validated = localCharacterPreview(character.id, character.name, character.classId, character.sex);
-    const name = validated.name.normalize("NFKC").toLowerCase();
+    const name = comparableName(validated.name);
     if (ids.has(validated.id) || names.has(name)) {
       throw new Error("Local character roster contains duplicate identity.");
     }

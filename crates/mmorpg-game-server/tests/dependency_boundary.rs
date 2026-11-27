@@ -205,7 +205,8 @@ fn the_local_zone_host_never_links_presentation_or_the_network_runtime() {
 /// The shared client rules (#543) are pure: core gameplay types in, views and commands out,
 /// with no I/O, rendering or presentation data. `serde_json` reads the committed world-map
 /// export from a string, and `serde` derives the parse of the committed interface theme and
-/// logo files. `mmorpg-protocol` is its test-only wire codec.
+/// logo files, and the Unicode tables check character names (#1245). `mmorpg-protocol` is its
+/// test-only wire codec.
 #[test]
 fn the_client_model_holds_only_client_rules_over_core() {
     let graph = workspace();
@@ -221,7 +222,9 @@ fn the_client_model_holds_only_client_rules_over_core() {
             ("mmorpg-protocol", BTreeSet::from([Kind::Dev])),
             ("serde", normal.clone()),
             ("serde_json", normal.clone()),
-            ("strum", normal),
+            ("strum", normal.clone()),
+            ("unicode-general-category", normal.clone()),
+            ("unicode-normalization", normal),
         ])
     );
     assert_never_links(
