@@ -340,13 +340,13 @@ impl ZoneSimulation {
                     .players
                     .get_mut(&player_id)
                     .ok_or_else(|| ZoneError::new("acting player is absent"))?;
-                let Some(revision) = player.inventory_revision.checked_add(1) else {
-                    return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
-                };
-                if player.inventory.remove_item(item, 1).is_err() {
+                let mut bag = player.inventory.clone();
+                if bag.remove_item(item, 1).is_err() {
                     return Ok(Some((ErrorCode::MissingMaterials, target)));
                 }
-                player.inventory_revision = revision;
+                if let Err(code) = player.commit_bag(bag, None) {
+                    return Ok(Some((code, target)));
+                }
                 self.advance_objective(player_id, quest, index);
                 if let Some(confrontation) = content
                     .confrontation(npc)
@@ -442,12 +442,10 @@ impl ZoneSimulation {
                     let Some(copper) = player.copper.checked_sub(chosen.copper) else {
                         return Ok(Some((ErrorCode::NotEnoughMoney, target)));
                     };
-                    let Some(revision) = player.inventory_revision.checked_add(1) else {
-                        return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
-                    };
+                    if let Err(code) = player.commit_bag(bag, None) {
+                        return Ok(Some((code, target)));
+                    }
                     player.copper = copper;
-                    player.inventory = bag;
-                    player.inventory_revision = revision;
                 }
                 if let Some(entry) = player
                     .quests
@@ -529,14 +527,14 @@ impl ZoneSimulation {
         else {
             return Ok(Some((ErrorCode::InvalidQuest, target)));
         };
-        let Some(revision) = player.inventory_revision.checked_add(1) else {
-            return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
-        };
-        if player.inventory.insert(item, 1).is_err() {
+        let mut bag = player.inventory.clone();
+        if bag.insert(item, 1).is_err() {
             return Ok(Some((ErrorCode::InventoryFull, target)));
         }
-        player.inventory_revision = revision;
-        Ok(None)
+        Ok(player
+            .commit_bag(bag, None)
+            .err()
+            .map(|code| (code, target)))
     }
 
     /// Completes every open objective of the player's active quests that `matches` (#1019),

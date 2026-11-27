@@ -357,12 +357,10 @@ impl ZoneSimulation {
                 Some(ErrorCode::InventoryFull)
             }
             Err(VendorTradeError::Inventory(_)) => Some(ErrorCode::InvalidInventoryMove),
-            Ok(()) => match player.inventory_revision.checked_add(1) {
-                None => Some(ErrorCode::InvalidInventoryMove),
-                Some(revision) => {
-                    player.inventory = bag;
+            Ok(()) => match player.commit_bag(bag, None) {
+                Err(code) => Some(code),
+                Ok(()) => {
                     player.copper = copper;
-                    player.inventory_revision = revision;
                     None
                 }
             },

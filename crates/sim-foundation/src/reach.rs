@@ -41,6 +41,17 @@ pub const fn within_xz(a: [i32; 2], b: [i32; 2], radius: i32) -> bool {
     dx * dx + dz * dz <= radius * radius
 }
 
+/// Whether `b` lies within `radius` units of `a` in all three axes (the boundary counts),
+/// exactly: corpses are looted, skinned and spent from this sphere.
+#[must_use]
+pub const fn within_sphere(a: [i32; 3], b: [i32; 3], radius: i32) -> bool {
+    let dx = b[0] as i128 - a[0] as i128;
+    let dy = b[1] as i128 - a[1] as i128;
+    let dz = b[2] as i128 - a[2] as i128;
+    let radius = radius as i128;
+    dx * dx + dy * dy + dz * dz <= radius * radius
+}
+
 /// Whether feet at `feet` stand in the reach cylinder around `at`: within `radius` units
 /// horizontally and within `height` units vertically (both boundaries count). Interaction
 /// spots, caches, loads and mechanisms are reached this way.

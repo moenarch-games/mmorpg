@@ -235,6 +235,12 @@ impl CreatureState {
         matches!(self.ai, CreatureAi::Idle { .. }) && self.combat_timer == 0
     }
 
+    /// Whether its corpse is open to `player_id` (#404, Atlas 5.3.6): the tapper, or a party
+    /// member who shared the tap when it died. Looting and skinning ask the same (#1269).
+    pub(crate) fn corpse_open_to(&self, player_id: crate::PlayerId) -> bool {
+        self.tapped_by == Some(player_id) || self.loot_party.contains(&player_id)
+    }
+
     /// Whether a departing `entity` concerns it: on its threat table or the target of its cast.
     pub(crate) fn concerns(&self, entity: EntityRef) -> bool {
         self.threat.iter().any(|entry| entry.entity == entity)
