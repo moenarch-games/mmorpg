@@ -251,8 +251,14 @@ export function removeEdge(config: LabConfig, id: string): LabConfig {
  * follow-up without a named move.
  */
 export function traversalSample(config: LabConfig): LabConfig {
+  // Every jump and landing, not only the production graph's after an aerial attack (#1247).
   let next = setMovementRule(config, "Airborne", "Active", { steeringPercent: 100, momentumPercent: 100, maxAccelerationCms2: 600 });
   next = setMovementRule(next, "Landing", "Recovery", { steeringPercent: 50, momentumPercent: 0, maxAccelerationCms2: null });
+  next = {
+    ...next,
+    movement: (next.movement ?? []).map((rule) =>
+      rule.action === "Airborne" || rule.action === "Landing" ? { ...rule, conditions: [] } : rule),
+  };
   for (const id of ["LandingToMelee", "LandingToShieldBash"]) {
     next = addLandingEdge(next, id);
     next = {

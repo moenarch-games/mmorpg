@@ -2,6 +2,7 @@
 //! read from canonical player state; compatibility, interruptions, edge windows, arbitration,
 //! follow-ups and authored movement; and the zone steps that apply them.
 use super::*;
+use crate::StrikeVariant;
 
 /// The ability a running action runs: Heroic Strike for the directed
 /// slash, the cast's ability for a cast.
@@ -128,7 +129,23 @@ pub(super) fn holds(state: &PlayerState, condition: Condition) -> bool {
         Condition::AttackedAirborne => state.landing.attacked_airborne,
         Condition::Airborne => state.landing.airborne,
         Condition::Stunned => aura::has_kind(&state.auras, AuraKind::Stun),
+        Condition::StandingStrike => basic_strike(state).is_some_and(|variant| {
+            matches!(
+                variant,
+                StrikeVariant::First | StrikeVariant::Second | StrikeVariant::Finisher
+            )
+        }),
+        Condition::RunningStrike => basic_strike(state) == Some(StrikeVariant::Running),
     }
+}
+
+/// The basic strike winding up, else the one whose recovery or chain window runs.
+fn basic_strike(state: &PlayerState) -> Option<StrikeVariant> {
+    state
+        .melee
+        .pending
+        .map(|pending| pending.variant)
+        .or(state.melee.last)
 }
 
 /// Whether the player swims: alive, in deep water after the last physics
@@ -1009,6 +1026,14 @@ pub struct MovementReport {
 /// The authored movement of each region's running action phase whose
 /// conditions hold.
 pub(super) fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<MovementSource> {
+    sources_of(graph, state).collect()
+}
+
+/// [`movement_sources`] without collecting them: the zone asks every tick.
+fn sources_of<'a>(
+    graph: &'a ActionGraph,
+    state: &'a PlayerState,
+) -> impl Iterator<Item = MovementSource> + 'a {
     // A running authored action's phase moves as it authors (#414); a free
     // phase is no source.
     let authored = state
@@ -1021,12 +1046,11 @@ pub(super) fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<
             origin: Origin::Authored(def.slot),
         })
         .filter(|source| source.movement != Movement::FREE);
-    if graph.movement.is_empty() {
-        return authored.into_iter().collect();
-    }
-    region_actions(graph, state)
-        .iter()
-        .filter_map(|report| {
+    let regions = (!graph.movement.is_empty()).then(|| region_actions(graph, state));
+    regions
+        .into_iter()
+        .flatten()
+        .filter_map(move |report| {
             let (id, phase) = (report.action?, report.phase?);
             let rule = graph.movement_rule(id, phase)?;
             if !all_hold(state, rule.conditions) {
@@ -1047,13 +1071,11 @@ pub(super) fn movement_sources(graph: &ActionGraph, state: &PlayerState) -> Vec<
             }
         })
         .chain(authored)
-        .collect()
 }
 
 /// The player's combined authored movement; `None` when it moves freely.
 pub(crate) fn movement_of(graph: &ActionGraph, state: &PlayerState) -> Option<Movement> {
-    movement_sources(graph, state)
-        .into_iter()
+    sources_of(graph, state)
         .map(|source| source.movement)
         .reduce(Movement::combine)
 }

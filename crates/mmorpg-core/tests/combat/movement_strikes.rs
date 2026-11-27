@@ -766,4 +766,108 @@ mod graph {
             "half-steered lunge {authored} of {lunge}"
         );
     }
+
+    /// The baseline without its authored movement: every strike moves freely.
+    static FREE: ActionGraph = ActionGraph {
+        movement: &[],
+        ..action::BASELINE
+    };
+
+    fn travelled(from: [f32; 3], to: [f32; 3]) -> f32 {
+        (to[0] - from[0]).hypot(to[2] - from[2])
+    }
+
+    /// How far a Warden strafing east travels over a standing strike's wind-up.
+    fn standing_wind_up(graph: &'static ActionGraph) -> f32 {
+        let mut warden = Striker::new(0, NORTH);
+        warden.zone.set_action_graph(graph).unwrap();
+        warden.send(ZoneCommand::Move {
+            forward: 0,
+            strafe: 1,
+            facing: NORTH,
+        });
+        for _ in 0..20 {
+            warden.tick();
+        }
+        warden.send(ZoneCommand::Swing { facing: NORTH });
+        let (strikes, _) = warden.run(10, began);
+        assert_eq!(strikes[0].variant, StrikeVariant::First);
+        let from = warden.position();
+        warden.run(60, contact);
+        travelled(from, warden.position())
+    }
+
+    /// How far a Warden slides in the second after its running strike's contact, standing.
+    fn running_recovery(graph: &'static ActionGraph) -> f32 {
+        let mut warden = Striker::new(0, NORTH);
+        warden.zone.set_action_graph(graph).unwrap();
+        warden.send(arena::walk(NORTH));
+        for _ in 0..20 {
+            warden.tick();
+        }
+        warden.send(ZoneCommand::Swing { facing: NORTH });
+        let (strikes, _) = warden.run(10, began);
+        assert_eq!(strikes[0].variant, StrikeVariant::Running);
+        warden.send(arena::stand(NORTH));
+        warden.run(120, contact);
+        let from = warden.position();
+        for _ in 0..60 {
+            warden.tick();
+        }
+        travelled(from, warden.position())
+    }
+
+    /// How far a Warden that jumped in place and struck travels, walking north, in the air
+    /// and then over its landing's first 10 ticks.
+    fn jumping_strike(graph: &'static ActionGraph) -> (f32, f32) {
+        let mut warden = Striker::new(0, NORTH);
+        warden.zone.set_action_graph(graph).unwrap();
+        warden.send(ZoneCommand::Jump);
+        warden.tick();
+        warden.send(ZoneCommand::Swing { facing: NORTH });
+        let (strikes, _) = warden.run(10, began);
+        assert_eq!(strikes[0].variant, StrikeVariant::Jumping);
+        warden.send(arena::walk(NORTH));
+        let from = warden.position();
+        warden.run(120, contact);
+        let landed = warden.position();
+        for _ in 0..10 {
+            warden.tick();
+        }
+        (
+            travelled(from, landed),
+            travelled(landed, warden.position()),
+        )
+    }
+
+    #[test]
+    fn a_standing_wind_up_plants_the_feet() {
+        // #1247: 40% steering while a chain strike winds up.
+        let (free, planted) = (standing_wind_up(&FREE), standing_wind_up(&action::BASELINE));
+        assert!(free > 100., "free strafe {free}");
+        let ratio = planted / free;
+        assert!((0.3..0.5).contains(&ratio), "planted {planted} of {free}");
+    }
+
+    #[test]
+    fn a_running_strike_slides_out_of_its_lunge() {
+        // #1247: the recovery keeps the lunge's momentum, shedding at most 25 m/s².
+        let (free, slid) = (running_recovery(&FREE), running_recovery(&action::BASELINE));
+        assert!(free < 10., "a free recovery stops at once: {free}");
+        assert!((50. ..120.).contains(&slid), "slid {slid}");
+    }
+
+    #[test]
+    fn a_jumping_strike_commits_to_its_arc_and_lands_heavily() {
+        // #1247: little air control after a jumping strike, then 40% steering on landing.
+        let (free_air, free_landing) = jumping_strike(&FREE);
+        let (air, landing) = jumping_strike(&action::BASELINE);
+        assert!(free_air > 100., "free air control {free_air}");
+        assert!(air < free_air / 2., "committed {air} of {free_air}");
+        let ratio = landing / free_landing;
+        assert!(
+            (0.3..0.5).contains(&ratio),
+            "landing {landing} of {free_landing}"
+        );
+    }
 }
