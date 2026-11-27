@@ -46,6 +46,7 @@ pub mod world_map;
 use mmorpg_characters::{CharacterStore, EntryBackend, EntryChange, LeaseHolder, StoreError};
 use mmorpg_core::{CharacterId, ClassChoice, PlayerClass, Sex};
 use tsify::Tsify as _;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
 use crate::host::{LOCAL_ZONE_ID, LocalZoneHost, SubmitOutcome};
@@ -64,6 +65,12 @@ extern "C" {
 
     #[wasm_bindgen(method, catch)]
     fn write(this: &CharacterEntries, key: &str, entry: &[u8]) -> Result<(), JsValue>;
+
+    /// A [`wire::IngestedProjection`] as the page receives it.
+    type IngestedView;
+
+    #[wasm_bindgen(method, getter)]
+    fn snapshot(this: &IngestedView) -> JsValue;
 }
 
 struct PageEntries<'a>(&'a CharacterEntries);
@@ -1195,7 +1202,7 @@ impl ProjectionStore {
             .0
             .ingest(payload)
             .map_err(|error| JsError::new(&error))?;
-        Ok(wire::IngestedProjection::from(ingested).into_ts()?)
+        self.view(ingested)
     }
 
     /// Ingests the local zone's projection for `player` without its bytes crossing to the page.
@@ -1210,7 +1217,23 @@ impl ProjectionStore {
             .0
             .ingest_local(&payload)
             .map_err(|error| JsError::new(&error))?;
-        Ok(wire::IngestedProjection::from(ingested).into_ts()?)
+        self.view(ingested)
+    }
+
+    /// The page's view of `ingested`, remembered with its decoded projection: the client rules
+    /// the page hands the view to read the decoded projection instead of deserialising the view
+    /// again, once per rule and tick (#1257).
+    fn view(
+        &self,
+        ingested: projections::Ingested,
+    ) -> Result<tsify::Ts<wire::IngestedProjection>, JsError> {
+        let decoded = self.0.get(ingested.id);
+        let view = wire::IngestedProjection::from(ingested).into_ts()?;
+        if let Some(decoded) = decoded {
+            let snapshot = view.js_value().unchecked_into::<IngestedView>().snapshot();
+            client_model::remember_view(snapshot, decoded);
+        }
+        Ok(view)
     }
 
     /// Encoded command bytes wrapped with the sheet revisions held.
