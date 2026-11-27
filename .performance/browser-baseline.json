@@ -1,0 +1,51 @@
+{
+  "schema": "mmorpg.runtime-values/v1",
+  "section": "browser",
+  "recorded": "2026-11-27 on main 17682571 (before the #1257 frame-rate fix), scripts/profile-browser.py --no-sweep",
+  "renderer": "ANGLE (NVIDIA, Vulkan 1.4.329 (NVIDIA NVIDIA GeForce RTX 3060 Ti (0x00002489)), NVIDIA)",
+  "viewport": [
+    1440,
+    900
+  ],
+  "browser": "159.0.8154.6",
+  "values": {
+    "idle": {
+      "fps": 37.5,
+      "cpuFrameMs.p50": 22.8,
+      "cpuFrameMs.p95": 24.8,
+      "phasesMs.render.p50": 15.9,
+      "phasesMs.simulation.p95": 3.2,
+      "wasmBoundaryPerFrame.calls.p95": 1435,
+      "wasmBoundaryPerFrame.imports.p95": 36727,
+      "wasmBoundaryPerFrame.bytesIn.p95": 8549,
+      "wasmBoundaryPerFrame.bytesOut.p95": 27239
+    },
+    "move-rotate": {
+      "fps": 48.4,
+      "cpuFrameMs.p50": 17.5,
+      "cpuFrameMs.p95": 26.4,
+      "phasesMs.render.p50": 11.4,
+      "phasesMs.simulation.p95": 3.2,
+      "wasmBoundaryPerFrame.calls.p95": 1437,
+      "wasmBoundaryPerFrame.imports.p95": 36727,
+      "wasmBoundaryPerFrame.bytesIn.p95": 8549,
+      "wasmBoundaryPerFrame.bytesOut.p95": 35027
+    },
+    "dense-hub": {
+      "fps": 49.8,
+      "cpuFrameMs.p50": 14.6,
+      "cpuFrameMs.p95": 17.4,
+      "phasesMs.render.p50": 9.7,
+      "wasmBoundaryPerFrame.calls.p95": 1138,
+      "wasmBoundaryPerFrame.imports.p95": 25279
+    },
+    "overview": {
+      "fps": 49.8,
+      "cpuFrameMs.p50": 15.2,
+      "cpuFrameMs.p95": 18.2,
+      "phasesMs.render.p50": 9.8,
+      "wasmBoundaryPerFrame.calls.p95": 1072,
+      "wasmBoundaryPerFrame.imports.p95": 22735
+    }
+  }
+}
