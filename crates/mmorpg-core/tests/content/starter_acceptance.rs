@@ -29,7 +29,8 @@ impl Script {
     /// Runs toward `goal` until within melee and loot reach, then stands.
     fn approach(&mut self, me: [i32; 3], goal: [i32; 3]) {
         let [dx, dz] = [f64::from(goal[0] - me[0]), f64::from(goal[2] - me[2])];
-        let far = dx.hypot(dz) > 180.0;
+        // It stops within a sword's reach (#1249: 1.55 m, centre to centre).
+        let far = dx.hypot(dz) > 120.0;
         if far != self.walking || far {
             let facing = ((dx.atan2(dz) / std::f64::consts::TAU).rem_euclid(1.0) * 65_536.0) as u16;
             if far != self.walking || self.facing.abs_diff(facing) > 1_024 {

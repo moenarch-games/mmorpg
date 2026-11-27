@@ -557,7 +557,8 @@ mod tests {
     fn a_practice_strike_winds_up_before_its_timed_sweep_strikes_a_target() {
         let mut walker = Walker::new();
         let [x, z] = TRAINING_TARGETS[1];
-        walker.walk_to(PRACTICE_SPAWN[0] + x, PRACTICE_SPAWN[1] + z - 150);
+        // A metre short of it, within a sword's reach (#1249).
+        walker.walk_to(PRACTICE_SPAWN[0] + x, PRACTICE_SPAWN[1] + z - 100);
         let target_health = |walker: &Walker| {
             decode_snapshot(&walker.host.projection(walker.player).unwrap())
                 .unwrap()

@@ -426,6 +426,8 @@ fn observation_does_not_name_actors_omitted_by_projection_entity_cap() {
         target: Some(WOLF),
     };
     for _ in 0..30 {
+        // Stepping in as needed, then swinging (#1249).
+        press(&mut zone);
         zone.advance_tick().unwrap();
         if zone
             .snapshot_for_player(1)

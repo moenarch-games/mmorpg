@@ -133,10 +133,10 @@ fn strike_with(
 
 #[test]
 fn a_warden_swapping_sword_for_spear_changes_reach_arc_and_timing() {
-    // 3 m straight ahead: beyond the sword's 2.55 m, inside the spear's 3.3 m thrust.
-    let ahead = [0, -300];
-    // 2 m away, 40° off the facing: inside the sword's 50° arc, outside the spear's 30°.
-    let aside = [129, -153];
+    // 2 m straight ahead: beyond the sword's 1.55 m, inside the spear's 2.33 m thrust (#1249).
+    let ahead = [0, -200];
+    // 1.2 m away, 30° off the facing: inside the sword's 51° arc, outside the spear's 10°.
+    let aside = [60, -104];
     let (refusal, sword_far) = strike(0, ahead, false);
     assert_eq!(refusal, None);
     let (refusal, spear_far) = strike(0, ahead, true);
@@ -175,8 +175,8 @@ fn a_class_may_only_equip_the_weapon_families_it_wields() {
 
 #[test]
 fn a_warden_with_a_great_weapon_strikes_later_and_further_than_with_a_mace() {
-    // 2.7 m straight ahead: beyond the mace's 2.45 m, inside the great weapon's 2.75 m.
-    let ahead = [0, -270];
+    // 1.6 m straight ahead: beyond the mace's 1.32 m, inside the great weapon's 1.86 m (#1249).
+    let ahead = [0, -160];
     let brute_breaker = Some(ItemId::new(12));
     for great in <GreatWeapon as strum::VariantArray>::VARIANTS {
         let (refusal, heavy) = strike_with(0, ahead, Some(great.item()));

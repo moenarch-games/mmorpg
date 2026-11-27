@@ -262,8 +262,13 @@ pub fn commands(
             );
             let (dx, dz) = (creature_at[0] - player_at[0], creature_at[2] - player_at[2]);
             let reach = i64::from(mmorpg_core::unit::PLAYER_REACH_UNITS);
-            (i64::from(dx).pow(2) + i64::from(dz).pow(2) <= reach.pow(2))
-                .then(|| mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap_or(0))
+            let distance = i64::from(dx).pow(2) + i64::from(dz).pow(2);
+            (distance <= reach.pow(2)).then(|| {
+                (
+                    mmorpg_core::trig::yaw_from_vector(dx, dz).unwrap_or(0),
+                    distance,
+                )
+            })
         });
         if tick == 30 {
             zone.apply_command(player.player_id, sequence, ZoneCommand::Jump)?;
@@ -288,14 +293,38 @@ pub fn commands(
             )?;
         }
         // A swing turns its bot, so none interrupts the scripted run north (ticks 30 to 35).
-        if let Some(facing) =
+        // Beyond its fists' reach (#1249) it steps in, and stops once there.
+        if let Some((facing, distance)) =
             in_reach.filter(|_| player.combat.health > 0 && !(30..35).contains(&tick))
         {
-            zone.apply_command(
-                player.player_id,
-                sequence + 3,
-                ZoneCommand::Swing { facing },
-            )?;
+            let fists = mmorpg_core::FamilyMelee::of(mmorpg_core::WeaponFamily::Unarmed);
+            let strike =
+                i64::from(fists.chain.iter().map(|s| s.reach_units).min().unwrap_or(0) - 10);
+            if distance > strike.pow(2) {
+                let step = ZoneCommand::Move {
+                    forward: 1,
+                    strafe: 0,
+                    facing,
+                };
+                zone.apply_command(player.player_id, sequence + 2, step)?;
+            } else {
+                if player.forward > 0 {
+                    zone.apply_command(
+                        player.player_id,
+                        sequence + 2,
+                        ZoneCommand::Move {
+                            forward: 0,
+                            strafe: 0,
+                            facing,
+                        },
+                    )?;
+                }
+                zone.apply_command(
+                    player.player_id,
+                    sequence + 3,
+                    ZoneCommand::Swing { facing },
+                )?;
+            }
         }
     }
     Ok(())

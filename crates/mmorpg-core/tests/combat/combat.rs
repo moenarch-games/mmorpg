@@ -10,6 +10,7 @@ use mmorpg_core::{FamilyMelee, WeaponFamily};
 
 /// A classless player strikes bare-handed (#885).
 const FISTS: FamilyMelee = FamilyMelee::of(WeaponFamily::Unarmed);
+const SWORD: FamilyMelee = FamilyMelee::of(WeaponFamily::Sword);
 /// The longest bare-handed strike interval, which bounds any wait for the next strike.
 const LONGEST_INTERVAL: u64 = FISTS.chain[2].interval_ticks as u64;
 use mmorpg_core::{
@@ -516,7 +517,7 @@ fn leashed_creatures_evade_and_ignore_damage() {
     let mut checkpoint = session.zone.snapshot().unwrap();
     let evading = checkpoint.creatures[0].clone();
     let player = &mut checkpoint.players[0];
-    player.position = [evading.position[0], 90.0, evading.position[2] - 150.0];
+    player.position = [evading.position[0], 90.0, evading.position[2] - 80.0];
     player.velocity = [0.0; 3];
     player.forward = 0;
     player.facing = NORTHWARD;
@@ -756,22 +757,34 @@ fn identical_inputs_produce_identical_canonical_state() {
 /// (#928), and a swing that covers nobody whiffs.
 #[test]
 fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
-    let content = arena::arena(
-        vec![arena::boar()],
-        vec![
-            // West, 33.7° south of west, and due south of the player at the origin.
-            arena::spawn(1, BOAR, [-180, 0]),
-            arena::spawn(2, BOAR, [-150, -100]),
-            arena::spawn(3, BOAR, [0, -180]),
-        ],
-        vec![],
+    // A Warden: content with the ability catalog, so a class can be chosen.
+    let content = Arc::new(
+        mmorpg_core::ZoneContent::new(
+            arena::ground(),
+            Default::default(),
+            vec![arena::boar()],
+            vec![
+                // West, south-west and due south of the player at the origin, within a sword's
+                // reach (#1249): a fist's narrow jab never covers two boars.
+                arena::spawn(1, BOAR, [-140, 0]),
+                arena::spawn(2, BOAR, [-99, -99]),
+                arena::spawn(3, BOAR, [0, -140]),
+            ],
+            vec![],
+            GRAVEYARD,
+        )
+        .unwrap()
+        .with_creature_abilities(Default::default())
+        .unwrap(),
     );
     let mut session = Session::new(content);
     let third = EntityRef::Creature(CreatureId::new(3));
+    session.send(ZoneCommand::ChooseClass { class: 0, sex: 0 });
+    session.tick();
     session.send(ZoneCommand::SelectTarget(Some(third)));
     session.send(ZoneCommand::Swing { facing: WEST });
     // The strike winds up and lands on its contact tick (#885).
-    let contact = u64::from(FISTS.chain[0].contact_ticks);
+    let contact = u64::from(SWORD.chain[0].contact_ticks);
     session.ticks(contact + 1);
     let swung: Vec<_> = session
         .events
@@ -787,8 +800,8 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     assert_eq!(
         swung,
         [
-            (1 + contact, Some(EntityRef::Creature(FIRST))),
-            (1 + contact, Some(EntityRef::Creature(SECOND)))
+            (2 + contact, Some(EntityRef::Creature(FIRST))),
+            (2 + contact, Some(EntityRef::Creature(SECOND)))
         ],
         "both boars in the arc, not the selected one beside it"
     );
@@ -808,7 +821,7 @@ fn a_swing_hits_everything_in_its_arc_and_whiffs_without_anyone() {
     });
     assert_eq!(
         whiffed,
-        2 + contact + u64::from(FISTS.chain[1].contact_ticks)
+        3 + contact + u64::from(SWORD.chain[1].contact_ticks)
     );
     assert_eq!(
         session.creature(CreatureId::new(3)).health,

@@ -17,7 +17,7 @@ use support::arena::{self, GRAVEYARD, WOLF};
 const SOUTH: u16 = 32_768;
 const TARGET: EntityRef = EntityRef::Creature(CreatureId::new(1));
 
-/// A creature 1.5 m south of the Warden's spawn at the origin.
+/// A creature 1.2 m south of the Warden's spawn at the origin, within a sword's reach.
 fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
     let template = CreatureTemplate {
         behaviour,
@@ -29,7 +29,7 @@ fn content(behaviour: CreatureBehaviour, damage: [u16; 2]) -> Arc<ZoneContent> {
             arena::ground(),
             ZoneAreas::default(),
             vec![template],
-            vec![arena::spawn(1, WOLF, [0, -150])],
+            vec![arena::spawn(1, WOLF, [0, -120])],
             Vec::new(),
             GRAVEYARD,
         )
@@ -87,6 +87,9 @@ fn first_swing(movement: &[ZoneCommand]) -> (Option<u16>, Option<MeleeStance>, S
         for event in &events {
             if let ZoneEvent::StrikeBegan { variant, .. } = *event {
                 began = Some((variant, warden.stance()));
+                // The stance is the press's (#155); then it stands, so a strike backing away
+                // still lands within its blade's reach (#1249).
+                warden.send(arena::stand(SOUTH));
             }
         }
         if events

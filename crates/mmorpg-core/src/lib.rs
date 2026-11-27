@@ -318,9 +318,10 @@ pub use signal::{SIGNAL_REACH_UNITS, SignalCall};
 use sim_combat::class;
 pub use sim_combat::class::{ClassChoice, PlayerClass, ResourceKind, Sex};
 pub use sim_combat::melee::{
-    CHAIN_LENGTH, CHAIN_WINDOW_TICKS, FOLLOW_UP_WINDOW_TICKS, FamilyMelee,
+    BladeSweep, CHAIN_LENGTH, CHAIN_WINDOW_TICKS, FOLLOW_UP_WINDOW_TICKS, FamilyMelee,
     LANDING_STRIKE_RECOVERY_PERCENT, LANDING_STRIKE_TOLERANCE_TICKS, MAX_CONTACT_TICKS,
-    MAX_INTERVAL_TICKS, StrikeProfile, StrikeReward, StrikeVariant, WeaponFamily,
+    MAX_INTERVAL_TICKS, StrikeProfile, StrikeReward, StrikeVariant, TARGET_RADIUS_UNITS,
+    WeaponFamily, blade_sweep,
 };
 pub use sim_combat::unit;
 pub use sim_foundation::{

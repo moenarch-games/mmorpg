@@ -243,7 +243,7 @@ fn journey() -> Journey {
     assert_eq!(state.debris.len(), 16, "both barrels went up");
     assert!(matches!(record(&state, beyond).ai, CreatureAi::Idle { .. }));
 
-    // That bandit charges; the Ranger shoots and fights it down.
+    // That bandit charges; the Ranger shoots it down.
     j.until(
         7_200,
         |zone| {
@@ -254,7 +254,8 @@ fn journey() -> Journey {
                     target: Some(unit(beside)),
                     facing: Some(facing),
                 }),
-                _ => arena::swing_at(zone, PLAYER, unit(beside)),
+                // Between shots it waits: its bow bash reaches only 0.9 m (#1249).
+                _ => None,
             }
         },
         |state| !alive(state, beside),
