@@ -86,6 +86,8 @@ MMORPG_CERT_PEM=cert.pem MMORPG_KEY_PEM=key.pem \
 
 ## Documentation
 
+- Audit snapshot: [capability inventory and combat integration findings](docs/reviews/capability-inventory/README.md) (#1217; dated review, not an implementation specification).
+
 - Architecture and contracts: [architecture](docs/ARCHITECTURE.md), [protocol](docs/PROTOCOL.md), [zone lifecycle](docs/ZONE_LIFECYCLE.md), [ADRs](docs/adr/), [physics backends](docs/PHYSICS_AB.md), [static collision](docs/STATIC_COLLISION.md).
 - Gameplay: [Greyhaven Vale starter zone](docs/STARTER_ZONE.md), [progression](docs/PROGRESSION.md), [inventory](docs/INVENTORY.md), [loot](docs/LOOT.md), [PvP combat](docs/PVP_COMBAT.md), [Battle Royale](docs/BATTLE_ROYALE.md), [ephemeral characters](docs/EPHEMERAL_CHARACTERS.md), [save and load](docs/SAVE_LOAD.md).
 - Evidence: [scenarios](docs/SCENARIOS.md), [interest](docs/INTEREST_WORKLOADS.md), [combat](docs/COMBAT_WORKLOADS.md) and [presentation](docs/PRESENTATION_WORKLOADS.md) workloads.
