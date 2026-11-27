@@ -2888,6 +2888,7 @@ impl ZoneContent {
                         .all(|value| value.abs() <= crate::MAX_CONTENT_COORDINATE_UNITS)
                 })
                 && crossing.length() > 0
+                && crossing.legs_have_length()
                 && crossing.health > 0
                 && crossing.radius > 0
         };

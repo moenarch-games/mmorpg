@@ -34,6 +34,7 @@ use std::sync::Arc;
 use crate::creature::Life;
 use crate::events::push_event;
 use crate::physics::Vec3i;
+use crate::routine::distance;
 use crate::snapshot::CreatureAi;
 use crate::{
     CreatureId, EntityRef, ErrorCode, NpcId, NpcPlacement, QuestObjective, ZoneError, ZoneEvent,
@@ -91,36 +92,31 @@ impl WagonCrossing {
     /// The route's length in units.
     #[must_use]
     pub fn length(&self) -> u32 {
-        let total: i64 = self
-            .route
-            .windows(2)
-            .map(|leg| distance(leg[0], leg[1]))
-            .sum();
+        let total: i64 = self.legs().map(|leg| leg.2).sum();
         u32::try_from(total).unwrap_or(u32::MAX)
     }
 
-    /// The point `progress` units along the route and the heading of its leg there.
+    /// The point `progress` units along the route and the heading of its leg there, sampled
+    /// like every other route ([`crate::routine`], #1231). Content keeps every leg longer than
+    /// zero, so the heading is always its leg's.
     #[must_use]
     pub fn point_at(&self, progress: u32) -> ([i32; 2], u16) {
-        let mut left = i64::from(progress);
-        let mut heading = 0;
-        for leg in self.route.windows(2) {
-            let (from, to) = (leg[0], leg[1]);
-            let length = distance(from, to);
-            heading =
-                crate::trig::yaw_from_vector(to[0] - from[0], to[1] - from[1]).unwrap_or(heading);
-            if left <= length {
-                let lerp = |a: i32, b: i32| {
-                    i32::try_from(
-                        i64::from(a) + (i64::from(b) - i64::from(a)) * left / length.max(1),
-                    )
-                    .unwrap_or(a)
-                };
-                return ([lerp(from[0], to[0]), lerp(from[1], to[1])], heading);
-            }
-            left -= length;
-        }
-        (self.route.last().copied().unwrap_or([0, 0]), heading)
+        let placement = crate::routine::along_legs(self.legs(), i64::from(progress), true);
+        (placement.position, placement.facing)
+    }
+
+    /// The route's legs, from its first point.
+    fn legs(&self) -> impl Iterator<Item = crate::routine::Leg> + Clone + '_ {
+        let (start, path) = self
+            .route
+            .split_first()
+            .map_or(([0, 0], &[][..]), |(start, path)| (*start, path));
+        crate::routine::leg_iter(start, path)
+    }
+
+    /// Whether no two consecutive route points are the same: content checks it.
+    pub(crate) fn legs_have_length(&self) -> bool {
+        self.legs().all(|leg| leg.2 > 0)
     }
 }
 
@@ -141,10 +137,6 @@ pub struct CrossingRun {
     pub halted: bool,
     /// Zero while it runs; once over, the tick the carter is back at his post.
     pub rests_until: u64,
-}
-
-fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
-    i64::try_from(crate::trig::xz_length(a[0] - b[0], a[1] - b[1])).unwrap_or(i64::MAX)
 }
 
 impl ZoneSimulation {
