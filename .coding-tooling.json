@@ -12,7 +12,8 @@
       "lint": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "--", "-D", "warnings"],
       "build": ["cargo", "build", "--workspace", "--all-features", "--locked"],
       "test:unit": ["cargo", "test", "--workspace", "--all-features", "--locked"],
-      "performance:work": ["python3", "scripts/operation-work.py"]
+      "performance:work": ["python3", "scripts/operation-work.py"],
+      "profile:runtime": ["python3", "scripts/runtime_budget.py", "native"]
     }
   },
   "taskKnowledge": {

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "description": "Runtime budgets of named scenarios (#1256, Atlas 7.1.i1256): wall-clock milliseconds and per-frame JS-WASM boundary crossings. A value past its `max` (or under its `min`) is an error; one worse than main's baseline by more than `warnRatio` is a warning. Checked by scripts/runtime_budget.py (native) and scripts/profile-browser.py --budgets (browser). The deterministic work bounds stay in contract.json.",
+  "warnRatio": 1.15,
+  "sections": {
+    "native": {
+      "description": "Zone scenarios on a hosted CI runner (no GPU), from mmorpg-protocol's runtime_scenarios example in release: Greyhaven zone ticks at three populations of running players, and one publication round (every viewer projected and encoded) at 256. Ceilings leave several times the headroom over a Ryzen 7 5700X (2026-11-27: tick p95 0.33 / 0.83 / 4.1 ms, publication p95 8.0 ms) so runner noise never fails; the 256-player tick stays inside one 60 Hz tick. Hosted runners are noisier than the browser's GPU machine, hence the wider warning ratio.",
+      "warnRatio": 1.25,
+      "command": ["cargo", "run", "-q", "--locked", "--release", "-p", "mmorpg-protocol", "--example", "runtime_scenarios"],
+      "scenarios": {
+        "zone-tick-greyhaven-16": [
+          { "metric": "tick_ms.p50", "max": 1.5 },
+          { "metric": "tick_ms.p95", "max": 2.5 }
+        ],
+        "zone-tick-greyhaven-64": [
+          { "metric": "tick_ms.p50", "max": 4 },
+          { "metric": "tick_ms.p95", "max": 6 }
+        ],
+        "zone-tick-greyhaven-256": [
+          { "metric": "tick_ms.p50", "max": 12 },
+          { "metric": "tick_ms.p95", "max": 16.6 }
+        ],
+        "publish-greyhaven-256": [
+          { "metric": "round_ms.p50", "max": 30 },
+          { "metric": "round_ms.p95", "max": 40 }
+        ]
+      }
+    },
+    "browser": {
+      "description": "Greyhaven frame scenarios of scripts/profile-browser.py (1440x900, pixel ratio 1) on a GPU machine; hosted runners have none, so CI does not run them. fps is a floor, CPU frame and phase times are p50/p95 milliseconds, and wasmBoundaryPerFrame counts each frame's JS-WASM crossings: export calls, the module's calls into JS imports (materialized JS values) and bytes copied in and out. Ceilings are the 2026-11-27 main measurement on an RTX 3060 Ti (browser-baseline.json: idle 37.5 fps, CPU frame p50 22.8 ms, render p50 15.9 ms, 1435 calls and 36727 imports a frame) plus headroom; they tighten when the #1257 frame-rate fix lands.",
+      "scenarios": {
+        "idle": [
+          { "metric": "fps", "min": 30 },
+          { "metric": "cpuFrameMs.p50", "max": 30 },
+          { "metric": "cpuFrameMs.p95", "max": 35 },
+          { "metric": "phasesMs.render.p50", "max": 22 },
+          { "metric": "phasesMs.simulation.p95", "max": 6 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 1900 },
+          { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 48000 },
+          { "metric": "wasmBoundaryPerFrame.bytesIn.p95", "max": 12000 },
+          { "metric": "wasmBoundaryPerFrame.bytesOut.p95", "max": 36000 }
+        ],
+        "move-rotate": [
+          { "metric": "fps", "min": 35 },
+          { "metric": "cpuFrameMs.p50", "max": 24 },
+          { "metric": "cpuFrameMs.p95", "max": 36 },
+          { "metric": "phasesMs.render.p50", "max": 16 },
+          { "metric": "phasesMs.simulation.p95", "max": 6 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 1900 },
+          { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 48000 },
+          { "metric": "wasmBoundaryPerFrame.bytesIn.p95", "max": 12000 },
+          { "metric": "wasmBoundaryPerFrame.bytesOut.p95", "max": 46000 }
+        ],
+        "dense-hub": [
+          { "metric": "fps", "min": 38 },
+          { "metric": "cpuFrameMs.p50", "max": 20 },
+          { "metric": "cpuFrameMs.p95", "max": 25 },
+          { "metric": "phasesMs.render.p50", "max": 14 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 1500 },
+          { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 33000 }
+        ],
+        "overview": [
+          { "metric": "fps", "min": 38 },
+          { "metric": "cpuFrameMs.p50", "max": 21 },
+          { "metric": "cpuFrameMs.p95", "max": 26 },
+          { "metric": "phasesMs.render.p50", "max": 14 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 1400 },
+          { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 30000 }
+        ]
+      }
+    }
+  }
+}
