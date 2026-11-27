@@ -459,6 +459,8 @@ const swordSockets = new WeakMap<THREE.Object3D, THREE.Matrix4>();
 function poseSword(model: THREE.Object3D, layers: readonly ClipLayer[], bounds: Pick<Asset, "height" | "floor">): void {
   const layer = layers.find((layer) => layer.clip.startsWith("TimedSword_"));
   const socket = swordSockets.get(model);
+  // Before the joint lookups, each a walk of the whole rig: most frames swing no sword (#1257).
+  if (!layer || !socket) { return; }
   const upper = model.getObjectByName("upperarm_r");
   const lower = model.getObjectByName("lowerarm_r");
   const hand = model.getObjectByName("hand_r");
