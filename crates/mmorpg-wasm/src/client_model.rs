@@ -17,7 +17,11 @@ use mmorpg_client_model::{
 };
 use mmorpg_core as core;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    rc::Rc,
+};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
@@ -35,6 +39,17 @@ thread_local! {
     /// projections (#1257).
     static VIEWS: RefCell<VecDeque<(JsValue, Rc<core::ZoneSnapshot>)>> =
         const { RefCell::new(VecDeque::new()) };
+    /// Projections the rules deserialised from a page object (`projection-rules`, #1257).
+    static DESERIALISED: Cell<u32> = const { Cell::new(0) };
+}
+
+/// How many projections the client rules deserialised from a page object since the page
+/// loaded: none for the views a projection store handed out (`projection-rules` in
+/// `.performance/contract.json`).
+#[wasm_bindgen(js_name = projectionViewDeserialisations)]
+#[must_use]
+pub fn projection_view_deserialisations() -> u32 {
+    DESERIALISED.with(Cell::get)
 }
 
 /// Remembers the page's `view` of the ingested projection `decoded`: the rules below read
@@ -67,6 +82,7 @@ fn core_snapshot(snapshot: &Ts<ZoneSnapshot>) -> Result<Rc<core::ZoneSnapshot>, 
     if let Some(decoded) = remembered {
         return Ok(decoded);
     }
+    DESERIALISED.with(|count| count.set(count.get().wrapping_add(1)));
     core::ZoneSnapshot::try_from(&snapshot.to_rust()?)
         .map(Rc::new)
         .map_err(|error| JsError::new(&error))

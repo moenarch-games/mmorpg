@@ -336,7 +336,7 @@ function matricesCurrent(): void {}
  * lighting's own frame asks the scene for its world matrices once more before its passes (render-engine's `#frame`);
  * they were brought up to date just before, so that second walk of every node is skipped too (#1257).
  */
-function onceAcrossPasses(scene: THREE.Scene, passes: () => void): void {
+export function onceAcrossPasses(scene: THREE.Scene, passes: () => void): void {
   const autoUpdate = scene.matrixWorldAutoUpdate;
   // Unconditionally, as the lighting's frame did.
   scene.updateMatrixWorld();
