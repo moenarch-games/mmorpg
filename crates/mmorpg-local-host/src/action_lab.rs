@@ -516,6 +516,8 @@ pub fn inspection_json(zone: &ZoneSimulation, player: PlayerId) -> Option<String
                 "recoveryLeft": report.recovery_left,
                 "ability": report.ability.map(ability_name),
                 "activeLeft": report.active_left,
+                "strike": report.strike.map(name),
+                "followUpLeft": report.follow_up_left,
             })
         })
         .collect();

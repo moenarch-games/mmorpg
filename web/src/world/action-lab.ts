@@ -81,6 +81,10 @@ export type Inspection = {
     ability: string | null;
     /** Ticks of a cast or channel left. */
     activeLeft: number | null;
+    /** A basic strike's variant: the pending one, else the one that struck (#1221). */
+    strike: string | null;
+    /** Ticks left in which a basic press follows the strike up (#928, #1221). */
+    followUpLeft: number | null;
   }[];
   edges: readonly {
     edge: string; priority: number; status: EdgeStatus;
@@ -256,6 +260,14 @@ function reasonText(reason: BlockReason): string {
     case "Expired": return "the actionable window has closed";
     case "Cancelled": return `${reason.reaction} cancels the opening`;
   }
+}
+
+/** A region's running action phase with what it runs and its ticks left, e.g. `Recovery (First) 12t · follow up 9t`. */
+export function describeRegion(report: Inspection["regions"][number], ticks: (left: number) => string): string {
+  const what = report.ability ?? report.strike;
+  const lefts = [report.recoveryLeft, report.activeLeft].filter((left) => left !== null).map((left) => ` ${ticks(left)}`).join("");
+  const followUp = report.followUpLeft === null ? "" : ` · follow up ${ticks(report.followUpLeft)}`;
+  return `${report.phase ?? "Active"}${what ? ` (${what})` : ""}${lefts}${followUp}`;
 }
 
 /** Why an edge is or is not usable at the inspected tick, with its absolute window ticks. */
@@ -605,7 +617,7 @@ export class ActionLabPanel {
           type: "button",
           className: `lab-node${active ? " active" : ""}${this.#isSelected("action", action.id) ? " selected" : ""}`,
           textContent: active && report?.phase
-            ? `${action.id}${report.ability ? ` (${report.ability})` : ""} · ${report.phase}${report.recoveryLeft !== null ? ` ${report.recoveryLeft}t` : ""}${report.activeLeft !== null ? ` ${report.activeLeft}t` : ""}`
+            ? `${action.id} · ${describeRegion(report, (left) => `${left}t`)}`
             : action.id,
         });
         button.addEventListener("click", () => this.#select({ kind: "action", id: action.id }));
@@ -667,9 +679,10 @@ export class ActionLabPanel {
       const action = this.#graph.actions.find((entry) => entry.id === selection.id);
       const report = inspection?.regions.find((entry) => entry.action === selection.id);
       rows.push(["Action", selection.id], ["Region", action?.region ?? "?"],
-        ["Recovery", action?.recoveryMs === null || !action ? "none" : `${action.recoveryMs} ms · ${action.recoveryTicks} ticks`],
+        ["Recovery", selection.id === "BasicMelee" ? "the weapon's strike interval (swing timer)"
+          : action?.recoveryMs === null || !action ? "none" : `${action.recoveryMs} ms · ${action.recoveryTicks} ticks`],
         ["Now", report
-          ? `${report.phase ?? "active"}${report.ability ? ` (${report.ability})` : ""}${report.recoveryLeft !== null ? `, ${report.recoveryLeft} ticks left` : ""}${report.activeLeft !== null ? `, ${report.activeLeft} ticks left` : ""}`
+          ? describeRegion(report, (left) => `${left} ticks left`)
           : "not running"]);
       for (const modifier of this.#graph.modifiers.filter((entry) => entry.action === selection.id)) {
         rows.push([`If ${modifier.condition}`, `${modifier.recoveryMs} ms · ${modifier.recoveryTicks} ticks`]);
