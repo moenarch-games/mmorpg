@@ -9,6 +9,7 @@
 //! NPCs green-ish; corpses lie flat, and the viewer's target stands on a
 //! marker. Names come from the zone content.
 use strum::VariantArray;
+mod keyframes;
 mod kit_effects;
 mod skinned;
 
