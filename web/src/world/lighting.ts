@@ -13,6 +13,7 @@ import {
 } from "@moritzbrantner/three-lighting";
 import type { RendererMaterialRequest } from "@moritzbrantner/three-d-renderer";
 import { profileRenderPasses } from "./frame-profile";
+import { HeldMatrices } from "./held-matrices";
 import { shadowLodReady } from "./shadow-lod";
 import { loadWasm, wasm } from "../wasm";
 
@@ -298,26 +299,57 @@ export class GreyhavenLighting {
 }
 
 const skeletonUpdate = THREE.Skeleton.prototype.update;
+/** Per held skeleton, the pose revision its bone texture holds (`HeldMatrices`, #1257). */
+const uploadedPose = new WeakMap<THREE.Skeleton, number>();
+/** The frame's skeletons already brought up to date; cleared after each frame's passes. */
+const updatedSkeletons = new Set<THREE.Skeleton>();
+/** Skeletons whose bone matrices were recomputed (and bone textures re-uploaded) since the last `takeSkeletonUpdates`. */
+let skeletonUpdates = 0;
+
+/** Bone matrix recomputations (each a bone texture upload) since the last call (#1257). */
+export function takeSkeletonUpdates(): number {
+  const updates = skeletonUpdates;
+  skeletonUpdates = 0;
+  return updates;
+}
+
+function skeletonUpdateOnce(this: THREE.Skeleton): void {
+  if (updatedSkeletons.has(this)) { return; }
+  updatedSkeletons.add(this);
+  // A held skeleton whose root was not posed since its texture last uploaded keeps it.
+  const pose = HeldMatrices.poseOf(this);
+  if (pose !== undefined) {
+    if (uploadedPose.get(this) === pose) { return; }
+    uploadedPose.set(this, pose);
+  }
+  skeletonUpdates += 1;
+  skeletonUpdate.call(this);
+}
+
+/** The scene's world matrices, already current for the frame's passes. */
+function matricesCurrent(): void {}
 
 /**
  * Runs `passes` (one `renderer.render` per sun cascade, local shadow view and the main pass) with the scene's world
  * matrices and skeletons brought up to date once: three redoes both in every `render` call, though nothing moves
- * between the passes of one frame, recomputing every world matrix and re-uploading every bone texture each time.
+ * between the passes of one frame, recomputing every world matrix and re-uploading every bone texture each time. The
+ * lighting's own frame asks the scene for its world matrices once more before its passes (render-engine's `#frame`);
+ * they were brought up to date just before, so that second walk of every node is skipped too (#1257).
  */
 function onceAcrossPasses(scene: THREE.Scene, passes: () => void): void {
   const autoUpdate = scene.matrixWorldAutoUpdate;
-  if (autoUpdate) { scene.updateMatrixWorld(); }
+  // Unconditionally, as the lighting's frame did.
+  scene.updateMatrixWorld();
   scene.matrixWorldAutoUpdate = false;
-  const updated = new Set<THREE.Skeleton>();
-  THREE.Skeleton.prototype.update = function update(this: THREE.Skeleton): void {
-    if (updated.has(this)) { return; }
-    updated.add(this);
-    skeletonUpdate.call(this);
-  };
+  const ownUpdate = Object.hasOwn(scene, "updateMatrixWorld") ? scene.updateMatrixWorld : null;
+  scene.updateMatrixWorld = matricesCurrent;
+  THREE.Skeleton.prototype.update = skeletonUpdateOnce;
   try {
     passes();
   } finally {
     THREE.Skeleton.prototype.update = skeletonUpdate;
+    updatedSkeletons.clear();
+    if (ownUpdate) { scene.updateMatrixWorld = ownUpdate; } else { delete (scene as Partial<THREE.Scene>).updateMatrixWorld; }
     scene.matrixWorldAutoUpdate = autoUpdate;
   }
 }
