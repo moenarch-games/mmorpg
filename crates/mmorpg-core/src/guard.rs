@@ -42,6 +42,7 @@ use std::collections::BTreeSet;
 
 use crate::trig::{self, YAW_QUARTER_TURN};
 use crate::{EntityRef, PLAYER_HALF_EXTENTS_UNITS, PlayerId, StrikeHeight, ZoneError};
+use sim_combat::swing::within_arc;
 
 /// Horizontal speed of a protecting guard, in percent of the unguarded speed.
 pub const GUARD_SPEED_PERCENT: i32 = 60;
@@ -163,12 +164,8 @@ impl crate::ZoneSimulation {
         };
         let to = self.player_position(player_id)?;
         let [x, _, z] = crate::physics::to_units(from);
-        let (dx, dz) = (x - to.x, z - to.z);
-        let length = i64::try_from(trig::xz_length(dx, dz))
-            .map_err(|_| ZoneError::new("guard distance overflow"))?;
-        let (arc_x, arc_z) = trig::direction(facing.wrapping_add(GUARD_ARC_OFFSET));
-        let along = i64::from(dx) * i64::from(arc_x) + i64::from(dz) * i64::from(arc_z);
-        Ok((along >= length * i64::from(trig::cos(GUARD_ARC_HALF_WIDTH))).then_some(lane))
+        let arc = facing.wrapping_add(GUARD_ARC_OFFSET);
+        Ok(within_arc([x - to.x, z - to.z], arc, GUARD_ARC_HALF_WIDTH).then_some(lane))
     }
 
     /// Resolves a melee impact against the player's guard, with an optional aimed lane.
@@ -199,13 +196,15 @@ impl crate::ZoneSimulation {
         }
         // The bearing from the defender to the attacker against the arc.
         let (dx, dz) = (from.x - to.x, from.z - to.z);
-        let length = i64::try_from(trig::xz_length(dx, dz))
-            .map_err(|_| ZoneError::new("guard distance overflow"))?;
-        let (arc_x, arc_z) = trig::direction(facing.wrapping_add(GUARD_ARC_OFFSET));
-        let along = i64::from(dx) * i64::from(arc_x) + i64::from(dz) * i64::from(arc_z);
-        if along < length * i64::from(trig::cos(GUARD_ARC_HALF_WIDTH)) {
+        if !within_arc(
+            [dx, dz],
+            facing.wrapping_add(GUARD_ARC_OFFSET),
+            GUARD_ARC_HALF_WIDTH,
+        ) {
             return Ok(GuardOutcome::Unguarded);
         }
+        let length = i64::try_from(trig::xz_length(dx, dz))
+            .map_err(|_| ZoneError::new("guard distance overflow"))?;
         // Momentum: the attacker's speed toward the defender, scaled by
         // its body volume over the defender's.
         let closing = if length == 0 {
