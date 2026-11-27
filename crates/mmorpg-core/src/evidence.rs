@@ -171,16 +171,7 @@ impl ZoneSimulation {
             player.inventory = bag;
             player.inventory_revision = revision;
             for &(slot, index, _) in &laid {
-                let entry = &mut player.quests.entries[slot];
-                entry.progress[index] = 1;
-                push_event(
-                    &mut player.events,
-                    ZoneEvent::QuestProgress {
-                        quest: entry.quest,
-                        objective: u8::try_from(index).unwrap_or(u8::MAX),
-                        count: 1,
-                    },
-                );
+                player.quests.entries[slot].set_progress(index, 1, &mut player.events);
             }
         }
         let mut credited = !taken.is_empty() || !laid.is_empty();
@@ -190,16 +181,8 @@ impl ZoneSimulation {
             };
             for (index, objective) in quest.objectives.iter().enumerate() {
                 if *objective == (QuestObjective::Inspect { spot }) && entry.progress[index] == 0 {
-                    entry.progress[index] = 1;
                     credited = true;
-                    push_event(
-                        &mut player.events,
-                        ZoneEvent::QuestProgress {
-                            quest: quest.id,
-                            objective: u8::try_from(index).unwrap_or(u8::MAX),
-                            count: 1,
-                        },
-                    );
+                    entry.set_progress(index, 1, &mut player.events);
                 }
             }
         }

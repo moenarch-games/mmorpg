@@ -788,6 +788,23 @@ pub struct QuestEntry {
     pub progress: [u8; MAX_QUEST_OBJECTIVES],
 }
 
+impl QuestEntry {
+    /// Stores `count` as objective `index`'s progress and tells the player (#1232): the one
+    /// place an objective's stored progress changes, so its [`ZoneEvent::QuestProgress`] always
+    /// follows it.
+    pub(crate) fn set_progress(&mut self, index: usize, count: u8, events: &mut Vec<ZoneEvent>) {
+        self.progress[index] = count;
+        push_event(
+            events,
+            ZoneEvent::QuestProgress {
+                quest: self.quest,
+                objective: u8::try_from(index).unwrap_or(u8::MAX),
+                count,
+            },
+        );
+    }
+}
+
 /// A player's quests: at most [`MAX_QUEST_LOG`] active entries in quest-ID
 /// order and the turned-in quests, as many as content defines.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1518,16 +1535,36 @@ impl ZoneSimulation {
         quest: QuestId,
         objective: u8,
     ) -> bool {
-        let content = std::sync::Arc::clone(&self.content);
         let index = usize::from(objective);
         // Kill credits pay kills, trial kills and flank kills (#1019) alike.
-        let Some(
-            QuestObjective::Kill { count, .. }
-            | QuestObjective::DefeatWithLoan { count, .. }
-            | QuestObjective::Outflank { count, .. },
-        ) = content
+        let killing = self
+            .content
             .quest(quest)
-            .and_then(|definition| definition.objectives.get(index).copied())
+            .and_then(|definition| definition.objectives.get(index))
+            .is_some_and(|objective| {
+                matches!(
+                    objective,
+                    QuestObjective::Kill { .. }
+                        | QuestObjective::DefeatWithLoan { .. }
+                        | QuestObjective::Outflank { .. }
+                )
+            });
+        killing && self.advance_objective(player_id, quest, index)
+    }
+
+    /// Advances objective `index` of `quest` in the player's log by one, up to its required
+    /// count; `false` when the quest left the log or the objective is already complete.
+    pub(crate) fn advance_objective(
+        &mut self,
+        player_id: PlayerId,
+        quest: QuestId,
+        index: usize,
+    ) -> bool {
+        let Some(required) = self
+            .content
+            .quest(quest)
+            .and_then(|definition| definition.objectives.get(index))
+            .map(|objective| objective.required())
         else {
             return false;
         };
@@ -1542,18 +1579,10 @@ impl ZoneSimulation {
         else {
             return false;
         };
-        if entry.progress[index] >= count {
+        if entry.progress[index] >= required {
             return false;
         }
-        entry.progress[index] += 1;
-        push_event(
-            &mut player.events,
-            ZoneEvent::QuestProgress {
-                quest,
-                objective,
-                count: entry.progress[index],
-            },
-        );
+        entry.set_progress(index, entry.progress[index] + 1, &mut player.events);
         true
     }
 
@@ -1695,7 +1724,7 @@ impl ZoneSimulation {
                         | QuestObjective::Outflank { .. } => false,
                     };
                     if done {
-                        reached.push((slot, quest.id, index));
+                        reached.push((slot, index));
                     }
                 }
             }
@@ -1723,16 +1752,8 @@ impl ZoneSimulation {
                     },
                 );
             }
-            for (slot, quest, index) in reached {
-                player.quests.entries[slot].progress[index] = 1;
-                push_event(
-                    &mut player.events,
-                    ZoneEvent::QuestProgress {
-                        quest,
-                        objective: u8::try_from(index).unwrap_or(u8::MAX),
-                        count: 1,
-                    },
-                );
+            for (slot, index) in reached {
+                player.quests.entries[slot].set_progress(index, 1, &mut player.events);
             }
         }
         Ok(())

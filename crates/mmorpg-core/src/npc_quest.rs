@@ -356,7 +356,7 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::MissingMaterials, target)));
                 }
                 player.inventory_revision = revision;
-                self.complete_objective(player_id, quest, index);
+                self.advance_objective(player_id, quest, index);
                 if let Some(confrontation) = content
                     .confrontation(npc)
                     .filter(|confrontation| confrontation.evidence == Some(item))
@@ -368,7 +368,7 @@ impl ZoneSimulation {
                 if let Some(code) = self.admission(player_id, npc)?.refusal() {
                     return Ok(Some((code, target)));
                 }
-                self.complete_objective(player_id, quest, index);
+                self.advance_objective(player_id, quest, index);
             }
             // An escort starts its NPC and, for a homecoming, the companions in its line (#1019).
             QuestObjective::Escort { .. } | QuestObjective::EscortTo { .. } => {
@@ -408,7 +408,7 @@ impl ZoneSimulation {
                 if let Some(code) = self.admission(player_id, npc)?.refusal() {
                     return Ok(Some((code, target)));
                 }
-                self.complete_objective(player_id, quest, index);
+                self.advance_objective(player_id, quest, index);
                 for mate in self.party_mates(player_id) {
                     if mate != player_id {
                         self.complete_objectives(mate, |objective| {
@@ -422,7 +422,7 @@ impl ZoneSimulation {
                 if !self.hand_over_load(player_id, source) {
                     return Ok(Some((ErrorCode::NotCarrying, target)));
                 }
-                self.complete_objective(player_id, quest, index);
+                self.advance_objective(player_id, quest, index);
             }
             // A decision (#1019) stores the chosen option until the turn-in keeps it; a paid
             // option takes its copper now or is refused, an option that hands over an item needs
@@ -548,43 +548,6 @@ impl ZoneSimulation {
         Ok(None)
     }
 
-    /// Completes objective `index` of `quest` in the player's log, once.
-    fn complete_objective(&mut self, player_id: PlayerId, quest: QuestId, index: usize) -> bool {
-        let Some(required) = self
-            .content
-            .quest(quest)
-            .and_then(|definition| definition.objectives.get(index))
-            .map(|objective| objective.required())
-        else {
-            return false;
-        };
-        let Some(player) = self.players.get_mut(&player_id) else {
-            return false;
-        };
-        let Some(entry) = player
-            .quests
-            .entries
-            .iter_mut()
-            .find(|entry| entry.quest == quest)
-        else {
-            return false;
-        };
-        if entry.progress[index] >= required {
-            return false;
-        }
-        entry.progress[index] += 1;
-        let count = entry.progress[index];
-        push_event(
-            &mut player.events,
-            ZoneEvent::QuestProgress {
-                quest,
-                objective: u8::try_from(index).unwrap_or(u8::MAX),
-                count,
-            },
-        );
-        true
-    }
-
     /// Completes every open objective of the player's active quests that `matches` (#1019),
     /// once each.
     pub(crate) fn complete_objectives(
@@ -624,7 +587,7 @@ impl ZoneSimulation {
             })
             .collect();
         for (quest, index) in open {
-            self.complete_objective(player_id, quest, index);
+            self.advance_objective(player_id, quest, index);
         }
     }
 
@@ -831,7 +794,7 @@ impl ZoneSimulation {
                         companion.rests_until = until;
                     }
                 }
-                self.complete_objective(player, quest, index);
+                self.advance_objective(player, quest, index);
                 let Some(objective) = self
                     .content
                     .quest(quest)
