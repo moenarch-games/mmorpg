@@ -298,3 +298,41 @@ impl PendingAttack {
         }
     }
 }
+
+/// A creature's blow at a scripted objective (#1019, #1229): a raid's barn or civilians, a
+/// crossing's cart, a watched flock's sheep. These are not units with bodies, so the blow lands
+/// on the swing timer at the incident's reach, for its level's damage midpoint; each incident
+/// keeps its own objective, reach, scaling and outcome.
+impl crate::ZoneSimulation {
+    /// Whether creature `id`'s swing is ready for an objective: idle (in no fight), neither
+    /// stunned nor casting, its swing timer run out. Life and reach are the caller's.
+    pub(crate) fn objective_swing_ready(&self, id: crate::CreatureId) -> bool {
+        self.creatures.get(&id).is_some_and(|creature| {
+            matches!(creature.ai, crate::CreatureAi::Idle { .. })
+                && !crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
+                && creature.swing_timer == 0
+                && creature.cast.is_none()
+        })
+    }
+
+    /// Creature `id` strikes an objective: its swing timer starts, observers see the blow at
+    /// `target` (`None` for a structure), and the midpoint of its level's damage range is the
+    /// hit, for the caller to apply. `None` when the creature is gone.
+    pub(crate) fn strike_objective(
+        &mut self,
+        id: crate::CreatureId,
+        template: &crate::CreatureTemplate,
+        target: Option<EntityRef>,
+    ) -> Option<u32> {
+        let creature = self.creatures.get_mut(&id)?;
+        let [low, high] = template.damage_at(creature.level);
+        creature.swing_timer = template.swing_ticks;
+        let source = EntityRef::Creature(id);
+        self.notify_observers(
+            &[source],
+            &std::collections::BTreeSet::new(),
+            crate::ZoneEvent::AttackPerformed { source, target },
+        );
+        Some((u32::from(low) + u32::from(high)).div_ceil(2))
+    }
+}

@@ -527,7 +527,7 @@ impl ZoneSimulation {
             {
                 continue;
             }
-            let ready = creature.swing_timer == 0 && creature.cast.is_none();
+            let ready = self.objective_swing_ready(prowler.creature);
             let at = self.unit_position(EntityRef::Creature(prowler.creature))?;
             let here = [at[0], at[2]];
             if state.held[index] < GAP_HOLD_TICKS {
@@ -546,22 +546,10 @@ impl ZoneSimulation {
                 continue;
             }
             let (_, template) = Self::creature_content(&content, prowler.creature)?;
-            let Some(creature) = self.creatures.get_mut(&prowler.creature) else {
-                continue;
-            };
-            let [low, high] = template.damage_at(creature.level);
-            creature.swing_timer = template.swing_ticks;
-            let amount = (u32::from(low) + u32::from(high)).div_ceil(2);
-            state.flock[sheep] = state.flock[sheep].saturating_sub(amount);
-            let source = EntityRef::Creature(prowler.creature);
-            self.notify_observers(
-                &[source],
-                &std::collections::BTreeSet::new(),
-                ZoneEvent::AttackPerformed {
-                    source,
-                    target: Some(EntityRef::Npc(watch.flock[sheep])),
-                },
-            );
+            let bitten = Some(EntityRef::Npc(watch.flock[sheep]));
+            if let Some(amount) = self.strike_objective(prowler.creature, template, bitten) {
+                state.flock[sheep] = state.flock[sheep].saturating_sub(amount);
+            }
         }
         let all_stood =
             usize::try_from(state.stood.count_ones()).ok() == Some(watch.prowlers.len());
