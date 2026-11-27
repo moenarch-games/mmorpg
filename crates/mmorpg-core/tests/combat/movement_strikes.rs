@@ -486,8 +486,8 @@ fn a_whiff_or_a_press_already_waiting_opens_no_follow_up() {
 mod graph {
     use super::*;
     use mmorpg_core::action::{
-        self, ActionGraph, ActionId, Consequence, Interrupted, InterruptionRule, Phase, Region,
-        RegionReport,
+        self, ActionGraph, ActionId, Consequence, Interrupted, InterruptionRule, Movement,
+        MovementRule, Phase, Region, RegionReport,
     };
     use mmorpg_core::{Aura, ability::ids};
 
@@ -718,6 +718,52 @@ mod graph {
         assert_eq!(
             restored.action_inspection(1).unwrap().regions,
             original.zone.action_inspection(1).unwrap().regions
+        );
+    }
+
+    /// How far a running strike's lunge carries a Warden running north under `graph`.
+    fn lunge_distance(graph: &'static ActionGraph) -> f32 {
+        let mut warden = Striker::new(0, NORTH);
+        warden.zone.set_action_graph(graph).unwrap();
+        warden.send(arena::walk(NORTH));
+        for _ in 0..20 {
+            warden.tick();
+        }
+        warden.send(ZoneCommand::Swing { facing: NORTH });
+        let (strikes, _) = warden.run(10, began);
+        assert_eq!(strikes[0].variant, StrikeVariant::Running);
+        warden.send(arena::stand(NORTH));
+        let from = warden.position();
+        warden.run(120, contact);
+        let to = warden.position();
+        (to[0] - from[0]).hypot(to[2] - from[2])
+    }
+
+    #[test]
+    fn authored_wind_up_movement_shapes_the_lunge_it_drives() {
+        // The drive comes first, then the phase's authored movement (#1226): a lunge no
+        // longer replaces what the graph authors for the strike's wind-up.
+        static HALF_STEERING: [MovementRule; 1] = [MovementRule {
+            action: ActionId::BasicMelee,
+            phase: Phase::Startup,
+            conditions: &[],
+            movement: Movement {
+                steering_percent: 50,
+                momentum_percent: 0,
+                max_acceleration_cms2: None,
+            },
+        }];
+        static GRAPH: ActionGraph = ActionGraph {
+            movement: &HALF_STEERING,
+            ..action::BASELINE
+        };
+        let free = lunge_distance(&action::BASELINE);
+        let authored = lunge_distance(&GRAPH);
+        let lunge = SWORD.lunge_units as f32;
+        assert!((free - lunge).abs() <= 3., "free lunge {free} of {lunge}");
+        assert!(
+            (authored - lunge / 2.).abs() <= 6.,
+            "half-steered lunge {authored} of {lunge}"
         );
     }
 }

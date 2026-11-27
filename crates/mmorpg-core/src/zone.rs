@@ -1335,32 +1335,39 @@ impl ZoneSimulation {
             // A protecting guard slows movement (#156): ready and grounded.
             let guarding =
                 crate::guard::guard_ready(self.action_graph, state).is_some() && grounded;
+            // The horizontal controller velocity, composed in one order (#1226): the drive
+            // (an action's own, else the steered intent), then the running action phases'
+            // authored movement, then the surface's grip; the current and a follow-up's
+            // launch add to it below, and physics resolves every contact.
             let mut velocity = if alive {
-                let free = movement_velocity(state)?;
-                let mut percent = crate::aura::speed_percent(&state.auras)
-                    * crate::surface::speed_percent(surface)
-                    / 100;
-                // A load slows nobody, but no boost carries it past the run speed (#1077).
-                if carrying {
-                    percent = percent.min(100);
-                }
-                if guarding {
-                    percent = percent * crate::GUARD_SPEED_PERCENT / 100;
-                }
-                if swim_depth.is_some() {
-                    percent = percent * crate::water::SWIM_SPEED_PERCENT / 100;
-                }
-                let mut steered = crate::aura::scale_velocity([free.x, free.z], percent);
-                // The running action phases' authored movement (#413): the
-                // controller is asked for a mix of intent and the velocity
-                // contact let the body realize last step.
+                let mut steered = match self.lunge_velocity(player_id, state)? {
+                    // A running strike's lunge (#885) drives the body along its facing.
+                    Some(lunge) => lunge,
+                    None => {
+                        let free = movement_velocity(state)?;
+                        let mut percent = crate::aura::speed_percent(&state.auras)
+                            * crate::surface::speed_percent(surface)
+                            / 100;
+                        // A load slows nobody, but no boost carries it past the run speed
+                        // (#1077).
+                        if carrying {
+                            percent = percent.min(100);
+                        }
+                        if guarding {
+                            percent = percent * crate::GUARD_SPEED_PERCENT / 100;
+                        }
+                        if swim_depth.is_some() {
+                            percent = percent * crate::water::SWIM_SPEED_PERCENT / 100;
+                        }
+                        crate::aura::scale_velocity([free.x, free.z], percent)
+                    }
+                };
+                // The running action phases' authored movement (#413), a lunge's strike
+                // phase included: the controller is asked for a mix of the drive and the
+                // velocity contact let the body realize last step.
                 if let Some(movement) = crate::action::movement_of(self.action_graph, state) {
                     let last = body.velocity();
                     steered = movement.velocity(steered, [last.x, last.z]);
-                }
-                // A running strike's lunge (#885) carries the body along its facing.
-                if let Some(lunge) = self.lunge_velocity(player_id, state)? {
-                    steered = lunge;
                 }
                 // Ice (#294): a slick surface limits how fast the velocity can change.
                 if let Some(grip) = crate::surface::grip(surface) {
