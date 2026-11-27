@@ -154,7 +154,8 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
     let spawn = CreatureSpawn {
         id: CreatureId::new(1),
         template: template.id,
-        position: [feet[0] - 180, feet[2]],
+        // Within a fist's reach (#1249); it fights back from there, inside its own reach.
+        position: [feet[0] - 75, feet[2]],
         facing: 0,
         wander_radius: 0,
         levels: None,
@@ -202,7 +203,7 @@ async fn corpse_loot_crosses_real_transport_and_resume_without_double_credit() {
             .await?;
         let mut sheet = None;
         for _ in 0..mmorpg_core::golden::t30(90) {
-            // The wolf stands 180 units toward -X: swing that way (#517) until it falls.
+            // The wolf stands 75 units toward -X: swing that way (#517) until it falls.
             session
                 .send_swing(3 * mmorpg_core::trig::YAW_QUARTER_TURN)
                 .await?;
