@@ -329,15 +329,7 @@ impl ZoneSimulation {
                 .iter_mut()
                 .find(|entry| entry.quest == quest)
             {
-                entry.progress[index] = count;
-                crate::events::push_event(
-                    &mut player.events,
-                    crate::ZoneEvent::QuestProgress {
-                        quest,
-                        objective: u8::try_from(index).unwrap_or(u8::MAX),
-                        count,
-                    },
-                );
+                entry.set_progress(index, count, &mut player.events);
             }
         }
         if broken {
