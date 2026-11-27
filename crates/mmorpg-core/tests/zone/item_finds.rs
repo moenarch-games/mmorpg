@@ -96,8 +96,8 @@ fn two_finds_of_one_base_item_play_differently() {
     // The fine blade hits harder; the balanced one recovers 15% sooner at the base's strength.
     assert!(fine_strength > base_strength && fine == base);
     assert!(balanced < base && balanced_strength == base_strength);
-    // The hunter's long haft reaches 3.6 m, past the militia spear's 3.3 m thrust.
-    let far = [0, -360];
+    // The hunter's long haft reaches 2.63 m, past the militia spear's 2.33 m thrust (#1249).
+    let far = [0, -250];
     assert!(!strike(SPEAR, far).1 && strike(LONG_SPEAR, far).1);
     // Replay gives the same outcomes.
     assert_eq!(strike(BALANCED_SHORTSWORD, ahead).0, balanced);

@@ -128,10 +128,11 @@ impl Warden {
     /// every 3 s, as a player presses them.
     fn fight(&mut self, foe: EntityRef, ticks: u32) {
         for tick in 0..ticks {
-            if tick % 30 == 0
-                && let Some(swing) = arena::swing_at(&self.zone, 1, foe)
-            {
-                self.send(swing);
+            // Steps in or stops each tick (#1249); presses a swing twice a second.
+            match arena::swing_at(&self.zone, 1, foe) {
+                Some(ZoneCommand::Swing { .. }) if tick % 30 != 0 => {}
+                Some(command) => self.send(command),
+                None => {}
             }
             if tick % 180 == 90
                 && let Some((facing, _)) = arena::aim_at(&self.zone, 1, foe)

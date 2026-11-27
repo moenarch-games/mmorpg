@@ -269,8 +269,9 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
     fight.tick();
     assert_eq!(fight.errors_at(2), [ErrorCode::NotEnoughResource]);
 
-    // Rage: +6 per swing hit dealt (the arc may hit packmates too, #517), +4 per hit taken.
-    fight.until(t30(600), |fight| fight.resource() >= 60);
+    // Rage: +6 per swing hit dealt (the arc may hit packmates too, #517), +4 per hit taken; the
+    // blade's arc rarely reaches a packmate (#1249).
+    fight.until(t30(1200), |fight| fight.resource() >= 60);
     let dealt = fight
         .since(0, |event| matches!(event, ZoneEvent::DamageDealt { .. }))
         .len();
@@ -365,7 +366,7 @@ fn a_warden_builds_rage_and_spends_it_on_strikes_bashes_cries_and_cleaves() {
         };
         let near = (2..=3).all(|wolf| {
             let [a, b] = [at(1), at(wolf)];
-            (a[0] - b[0]).hypot(a[1] - b[1]) < 250.0
+            (a[0] - b[0]).hypot(a[1] - b[1]) < 290.0
         });
         let me = fight.me().position;
         let reach = (at(1)[0] - me[0]).hypot(at(1)[1] - me[2]) < 250.0;

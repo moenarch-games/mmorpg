@@ -1,10 +1,10 @@
 //! The same Greyhaven group fight with a sword and with a spear (#914): a level 4 Warden pulls
 //! the Eastwater Fen wolf pack (three Timber Wolves) and holds its basic strike at the nearest
-//! wolf, once with its own sword and once after equipping the Militia Spear. The pack closes to
-//! its bite range (about 2.2 m, inside both weapons' reach), so in this crush the families differ
-//! by timing and arc: the sword lands first and strikes more often, its 50° sweep catches two
-//! crowding wolves more often than the spear's 30° thrust, and the spear's heavier, slower
-//! strikes finish the pack sooner. Which far or off-axis units each family can reach is
+//! wolf, once with its own sword and once after equipping the Militia Spear, stepping in while
+//! the wolf stands beyond its weapon's reach. The pack closes to its bite range (about 2.2 m):
+//! the spear's thrust reaches it there and lands first, the sword only once its wielder steps
+//! in (#1249: each strike reaches as far as its weapon does), and the spear's heavier strikes
+//! finish the pack sooner. Which far or off-axis units each family can reach is
 //! `weapon_families.rs`. The fight replays identically.
 use crate::support;
 
@@ -125,8 +125,12 @@ fn fight(spear: bool) -> Fight {
     // A press waits for its contact before the next one.
     let mut pressed = false;
     for _ in 0..FIGHT_TICKS {
-        if let Some((facing, _)) = nearest(&zone, &dead) {
-            if pressed {
+        if let Some((facing, distance)) = nearest(&zone, &dead) {
+            // Beyond the weapon's reach, the Warden steps in first (#1249).
+            let reach = i64::from(arena::strike_reach(&zone, PLAYER));
+            if distance > reach.pow(2) {
+                send(&mut zone, arena::walk(facing));
+            } else if pressed {
                 send(&mut zone, arena::stand(facing));
             } else {
                 send(&mut zone, ZoneCommand::Swing { facing });
@@ -188,22 +192,9 @@ fn sword_and_spear_fight_the_fen_pack_differently() {
     let spear = fight(true);
     assert_eq!(sword.family, Some(WeaponFamily::Sword));
     assert_eq!(spear.family, Some(WeaponFamily::Spear));
-    // The sword's shorter wind-up lands first and its quicker recovery strikes more often.
+    // The spear reaches the pack where it bites (#1249); the sword's wielder steps in first.
     assert!(
-        sword.first_hit < spear.first_hit,
-        "{} | {}",
-        sword.summary(),
-        spear.summary()
-    );
-    assert!(
-        sword.strikes > spear.strikes,
-        "{} | {}",
-        sword.summary(),
-        spear.summary()
-    );
-    // Its wider sweep catches two crowding wolves in one blow more often.
-    assert!(
-        sword.multi > spear.multi,
+        spear.first_hit < sword.first_hit,
         "{} | {}",
         sword.summary(),
         spear.summary()

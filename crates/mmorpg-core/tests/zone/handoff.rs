@@ -385,13 +385,22 @@ fn creatures_evade_attacks_from_a_corridor_and_never_follow_into_it() {
     let mut zone = ZoneSimulation::with_content(WEST, Arc::clone(&content)).unwrap();
     zone.create_character(1, warden()).unwrap();
 
-    // A player inside the corridor neither draws it nor hurts it.
+    // A player inside the corridor neither draws it nor hurts it: a Heroic Strike reaches the
+    // 2.5 m to it, past any basic strike's blade (#1249).
     let mut zone = placed(&zone, 1, 5_000.0, 0.0);
+    let mut state = zone.snapshot().unwrap();
+    state.players[0].combat.abilities.resource = 100;
+    let mut zone = ZoneSimulation::from_snapshot(state, Arc::clone(zone.content())).unwrap();
     let wolf = EntityRef::Creature(CreatureId::new(1));
     zone.advance_tick().unwrap();
     assert!(matches!(wolf_ai(&zone).0, CreatureAi::Idle { .. }));
-    let swing = arena::swing_at(&zone, 1, wolf).expect("the wolf is within reach");
-    zone.apply_command(1, 1, swing).unwrap();
+    let (facing, _) = arena::aim_at(&zone, 1, wolf).expect("the wolf is in view");
+    let strike = ZoneCommand::UseAbility {
+        ability: mmorpg_core::ability::ids::HEROIC_STRIKE.get(),
+        target: Some(wolf),
+        facing: Some(facing),
+    };
+    zone.apply_command(1, 1, strike).unwrap();
     let mut evaded = false;
     for _ in 0..90 {
         zone.advance_tick().unwrap();

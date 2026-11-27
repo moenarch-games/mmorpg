@@ -84,8 +84,8 @@ pub const ENTRIES: [(&str, Option<&str>, f64); 27] = [
     (FROST_HOLD_END, Some("Play"), 0.35),
 ];
 
-/// The arcs' swing radii (the descriptor's `swingRadius`): the contact lies this far ahead of
-/// the striker's chest, so the arc curves back round its body.
+/// The arcs' authored swing radii (the descriptor's `swingRadius`): each is scaled so its contact
+/// lies at its strike's reach ahead of the striker's chest, the arc curving back round its body.
 const CUT_RADIUS: f64 = 1.15;
 const HEAVY_RADIUS: f64 = 1.55;
 const CLEAVE_RADIUS: f64 = 1.6;
@@ -93,8 +93,6 @@ const CLEAVE_RADIUS: f64 = 1.6;
 const SIDE_TURN: f64 = std::f64::consts::FRAC_PI_4;
 /// Where the sword held in its guard glints, from the body centre: ahead, to the right and up.
 const GUARD_BLADE: [f64; 3] = [0.45, 0.3, 0.35];
-/// How far ahead of the chest a thrust's point meets its target.
-const THRUST_REACH: f64 = 1.1;
 /// The chest above the body centre, where strikes contact.
 const CHEST: f64 = 0.25;
 /// One-shot effects live at once; the oldest goes first.
@@ -128,6 +126,8 @@ struct Spawned {
     frame: Frame,
     start: f64,
     duration: f64,
+    /// Uniform scale of the entry: an arc drawn at its strike's reach (#1249).
+    scale: f64,
 }
 
 /// A strike waiting for its contact.
@@ -137,6 +137,8 @@ struct Pending {
     key: &'static str,
     backhand: bool,
     slam: bool,
+    /// How far its weapon reaches from the striker's axis, in metres (#1249).
+    tip: f64,
     at: f64,
 }
 
@@ -239,6 +241,10 @@ impl KitEffects {
     }
 
     fn spawn(&mut self, key: &'static str, frame: Frame, now: f64) {
+        self.spawn_scaled(key, frame, now, 1.);
+    }
+
+    fn spawn_scaled(&mut self, key: &'static str, frame: Frame, now: f64, scale: f64) {
         let (_, duration) = entry(key);
         self.next += 1;
         self.spawned.push(Spawned {
@@ -247,6 +253,7 @@ impl KitEffects {
             frame,
             start: now,
             duration,
+            scale,
         });
         if self.spawned.len() > POOL {
             self.spawned.remove(0);
@@ -349,6 +356,7 @@ impl KitEffects {
                         key: strike_key(family, variant),
                         backhand: variant == StrikeVariant::Second,
                         slam: variant == StrikeVariant::Jumping,
+                        tip: f64::from(mmorpg_core::blade_sweep(family, variant).tip_units) / 100.,
                         at: now + f64::from(contact) / f64::from(TICK_HZ),
                     });
                 }
@@ -476,27 +484,36 @@ impl KitEffects {
             let forward = [a.yaw.sin(), 0., a.yaw.cos()];
             let chest = [a.feet[0], a.centre + CHEST, a.feet[2]];
             let ahead = |reach: f64| std::array::from_fn(|i| chest[i] + forward[i] * reach);
-            let frame = match strike.key {
+            // The arc or thrust meets the strike's reach (#1249): where its weapon's tip gets, as
+            // the zone hits, an arc scaled from its authored swing radius to that reach.
+            let (frame, scale) = match strike.key {
                 // The thrust's +Z runs along the facing, its trail back toward the striker.
-                THRUST => Frame {
-                    p: ahead(THRUST_REACH),
-                    q: heading(a.yaw),
-                },
+                THRUST => (
+                    Frame {
+                        p: ahead(strike.tip),
+                        q: heading(a.yaw),
+                    },
+                    1.,
+                ),
                 // An arc's local −X points back at its swing centre, the striker; its +Z sweeps
                 // across the body, the other way on a backhand.
                 key => {
                     let q = heading(a.yaw - FRAC_PI_2);
-                    Frame {
-                        p: ahead(if key == ARC_HEAVY {
-                            HEAVY_RADIUS
-                        } else {
-                            CUT_RADIUS
-                        }),
-                        q: if strike.backhand { qm(q, qa(0, PI)) } else { q },
-                    }
+                    let radius = if key == ARC_HEAVY {
+                        HEAVY_RADIUS
+                    } else {
+                        CUT_RADIUS
+                    };
+                    (
+                        Frame {
+                            p: ahead(strike.tip),
+                            q: if strike.backhand { qm(q, qa(0, PI)) } else { q },
+                        },
+                        strike.tip / radius,
+                    )
                 }
             };
-            self.spawn(strike.key, frame, strike.at);
+            self.spawn_scaled(strike.key, frame, strike.at, scale);
             if strike.slam {
                 self.spawn(
                     GROUND_SLAM,
@@ -541,7 +558,7 @@ impl KitEffects {
                 Instance {
                     id: e.id,
                     key: e.key,
-                    model: model(e.frame, [1.; 3]),
+                    model: model(e.frame, [e.scale; 3]),
                     clip,
                     time: (now - e.start) as f32,
                     tint: None,

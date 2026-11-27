@@ -24,6 +24,8 @@ use std::{
 use strum::VariantArray;
 use three_d_core::{Color3, Mesh, Vec2, Vec3, VertexAttributes};
 
+#[cfg(test)]
+mod blade_sweeps;
 mod packed;
 mod residents;
 pub(super) use residents::{resident_look, residents_drawable};

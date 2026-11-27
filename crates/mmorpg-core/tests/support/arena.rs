@@ -153,17 +153,69 @@ pub fn aim_at(
     Some((facing, i64::from(dx).pow(2) + i64::from(dz).pow(2)))
 }
 
-/// A player pressing attack at `target` (#517): a swing toward it while it stands within melee
-/// reach in the player's projection, otherwise nothing, as a player swings once the target is
-/// in front of them.
+/// A player pressing attack at `target` (#517): a swing toward it while it stands within the
+/// player's standing strike reach in its projection (#1249: where the weapon reaches), a step
+/// toward a living one just beyond (within the general melee reach), otherwise nothing,
+/// as a player closes the last step and swings once the target is in front of them.
 pub fn swing_at(
     zone: &mmorpg_core::ZoneSimulation,
     player: u32,
     target: mmorpg_core::EntityRef,
 ) -> Option<ZoneCommand> {
     let (facing, distance) = aim_at(zone, player, target)?;
+    let strike = i64::from(strike_reach(zone, player));
     let reach = i64::from(mmorpg_core::unit::PLAYER_REACH_UNITS);
-    (distance <= reach.pow(2)).then_some(ZoneCommand::Swing { facing })
+    let dead = zone.snapshot_for_player(player).ok().is_some_and(|view| {
+        view.entities
+            .iter()
+            .any(|unit| unit.entity() == target && unit.flags.dead)
+    });
+    // Stepping forward: a step in (or the player's own walk) that a swing stops first, so it
+    // is a standing one.
+    let stepping = zone.snapshot().ok().is_some_and(|state| {
+        state
+            .players
+            .iter()
+            .any(|p| p.player_id == player && p.forward > 0)
+    });
+    if distance > reach.pow(2) {
+        None
+    } else if dead {
+        // A corpse: no step toward it; one in reach is swung at as before.
+        if stepping {
+            Some(stand(facing))
+        } else {
+            (distance <= strike.pow(2)).then_some(ZoneCommand::Swing { facing })
+        }
+    } else if distance > strike.pow(2) {
+        Some(walk(facing))
+    } else if stepping {
+        Some(stand(facing))
+    } else {
+        Some(ZoneCommand::Swing { facing })
+    }
+}
+
+/// The shortest reach of `player`'s standing chain strikes with its projected weapon family, a
+/// little inside it so a target at the edge is surely covered.
+pub fn strike_reach(zone: &mmorpg_core::ZoneSimulation, player: u32) -> i32 {
+    let family = zone
+        .snapshot_for_player(player)
+        .ok()
+        .and_then(|view| {
+            view.entities
+                .iter()
+                .find(|unit| unit.entity() == mmorpg_core::EntityRef::Player(player))
+                .and_then(|unit| unit.flags.weapon)
+        })
+        .unwrap_or(mmorpg_core::WeaponFamily::Unarmed);
+    let row = mmorpg_core::FamilyMelee::of(family);
+    row.chain
+        .iter()
+        .map(|strike| strike.reach_units)
+        .min()
+        .unwrap_or(0)
+        - 10
 }
 
 /// The player turns in place to face `target` (#517), keeping still; `stand(0)` while it is out

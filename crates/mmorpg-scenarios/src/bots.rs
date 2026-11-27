@@ -992,10 +992,22 @@ impl Runner<'_> {
                     .as_ref()
                     .map(|entity| format!(" entity={entity}"))
                     .unwrap_or_default();
-                (
-                    ZoneCommand::Swing { facing },
-                    format!("{entity} facing={facing}"),
-                )
+                // Aimed at a unit beyond its weapon's reach, the bot steps in first (#1249).
+                if step.facing.is_none() && self.beyond_reach(index, step.entity.as_ref())? {
+                    (
+                        ZoneCommand::Move {
+                            forward: 1,
+                            strafe: 0,
+                            facing,
+                        },
+                        format!("{entity} facing={facing} stepping_in"),
+                    )
+                } else {
+                    (
+                        ZoneCommand::Swing { facing },
+                        format!("{entity} facing={facing}"),
+                    )
+                }
             }
             Action::ReleaseSpirit => (ZoneCommand::ReleaseSpirit, String::new()),
             Action::Loot => {
@@ -1833,6 +1845,36 @@ impl Runner<'_> {
                 )
             });
         Ok(toward.unwrap_or(me.facing))
+    }
+
+    /// Whether the living unit a swing aims at stands beyond the bot's standing strike reach
+    /// with its weapon (#1249: as far as the weapon visibly reaches), so it steps in instead.
+    fn beyond_reach(&self, index: usize, entity: Option<&UnitSpec>) -> Result<bool, String> {
+        let Some(view) = self.bots[index].view.as_ref() else {
+            return Ok(false);
+        };
+        let Some(me) = visible_player(view, view.viewer_id) else {
+            return Ok(false);
+        };
+        let Some(target) = self.resolve_unit(entity)? else {
+            return Ok(false);
+        };
+        let Some(unit) = view.entities.iter().find(|unit| unit.entity() == target) else {
+            return Ok(false);
+        };
+        let family = me
+            .flags
+            .weapon
+            .unwrap_or(mmorpg_core::WeaponFamily::Unarmed);
+        let reach = mmorpg_core::FamilyMelee::of(family)
+            .chain
+            .iter()
+            .map(|strike| i64::from(strike.reach_units))
+            .min()
+            .unwrap_or(0)
+            - 10;
+        let [dx, dz] = [0, 2].map(|axis| i64::from(unit.position[axis] - me.position[axis]));
+        Ok(!unit.flags.dead && dx * dx + dz * dz > reach * reach)
     }
 
     /// The unit a scenario names; a bot must have joined.

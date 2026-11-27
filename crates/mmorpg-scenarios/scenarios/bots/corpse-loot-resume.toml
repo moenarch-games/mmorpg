@@ -111,34 +111,43 @@ until = 2760
 # window opens (#928) and every strike begins as soon as its recovery allows.
 every = 10
 
+# A step in toward the wolf (#1249) ends with the swinging: the hunter stands by its corpse.
+[[steps]]
+tick = 2760
+bot = "hunter"
+action = "move"
+forward = 0
+strafe = 0
+entity = "creature:108"
+
 
 [[steps]]
 tick = 2787
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2161
+died_at = 2409
 
 [[steps]]
 tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2163
+died_at = 2411
 
 [[steps]]
 tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2163
+died_at = 2411
 
 [[steps]]
 tick = 2789
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2163
+died_at = 2411
 seq = 11
 expect = "ignored_stale"
 
@@ -159,14 +168,14 @@ tick = 2797
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2163
+died_at = 2411
 
 [[steps]]
 tick = 2799
 bot = "hunter"
 action = "loot"
 creature = 108
-died_at = 2163
+died_at = 2411
 connection_epoch = 1
 expect = "rejected:stale_connection"
 
@@ -183,7 +192,7 @@ bot = "hunter"
 tick = 2784
 sheet = true
 creature = 108
-died_at = 2163
+died_at = 2411
 
 [[expect]]
 kind = "copper"
@@ -204,7 +213,7 @@ bot = "hunter"
 tick = 2788
 sheet = true
 creature = 108
-died_at = 2163
+died_at = 2411
 
 [[expect]]
 kind = "loot"
