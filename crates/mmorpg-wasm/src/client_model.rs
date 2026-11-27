@@ -1,5 +1,5 @@
 //! The browser's thin wrappers over `mmorpg-client-model` (#543): the action
-//! bar and cast bar, chat parsing and the chat log, the movement outbox, the
+//! bar and cast bar, chat parsing and the chat log, floating combat text, the movement outbox, the
 //! hold-to-draw rule and quest views, so both clients run the same client
 //! rules. Inputs arrive in
 //! the browser's wire shape ([`crate::wire`]); results cross as plain objects
@@ -7,7 +7,7 @@
 //! content, the content every browser world presents quests from.
 use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
-    exploration,
+    combat_text, exploration,
     hud::{self, CooldownKind},
     manual_aim, mouse_owner,
     outbox::{self, MovementCommands},
@@ -106,6 +106,113 @@ pub fn action_bar(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
         .map(Into::into)
         .collect();
     to_js(&slots)
+}
+
+/// What a floating combat text says (#1234), which picks its look.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(rename_all = "kebab-case")]
+pub enum CombatTextKind {
+    Damage,
+    Critical,
+    Periodic,
+    Taken,
+    Heal,
+    Absorb,
+    Interrupt,
+    Miss,
+    Block,
+    GuardBreak,
+    Cleave,
+    Flank,
+    Mastery,
+}
+
+impl From<combat_text::CombatTextKind> for CombatTextKind {
+    fn from(kind: combat_text::CombatTextKind) -> Self {
+        use combat_text::CombatTextKind as Kind;
+        match kind {
+            Kind::Damage => Self::Damage,
+            Kind::Critical => Self::Critical,
+            Kind::Periodic => Self::Periodic,
+            Kind::Taken => Self::Taken,
+            Kind::Heal => Self::Heal,
+            Kind::Absorb => Self::Absorb,
+            Kind::Interrupt => Self::Interrupt,
+            Kind::Miss => Self::Miss,
+            Kind::Block => Self::Block,
+            Kind::GuardBreak => Self::GuardBreak,
+            Kind::Cleave => Self::Cleave,
+            Kind::Flank => Self::Flank,
+            Kind::Mastery => Self::Mastery,
+        }
+    }
+}
+
+/// One floating combat text; the browser lists it in its HUD rather than over a unit.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+pub struct CombatText {
+    pub kind: CombatTextKind,
+    pub text: String,
+}
+
+fn combat_texts_js(texts: Vec<combat_text::CombatText>) -> Result<JsValue, JsError> {
+    let texts: Vec<CombatText> = texts
+        .into_iter()
+        .map(|text| CombatText {
+            kind: text.kind.into(),
+            text: text.text,
+        })
+        .collect();
+    to_js(&texts)
+}
+
+/// The floating texts one projection's events produce, in event order.
+#[wasm_bindgen(js_name = combatTexts, unchecked_return_type = "CombatText[]")]
+pub fn combat_texts(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
+    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    combat_texts_js(combat_text::combat_texts(&snapshot))
+}
+
+/// Whether this projection interrupted the viewer's own cast.
+#[wasm_bindgen(js_name = viewerInterrupted)]
+pub fn viewer_interrupted(snapshot: Ts<ZoneSnapshot>) -> Result<bool, JsError> {
+    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    Ok(combat_text::viewer_interrupted(&snapshot))
+}
+
+/// How long a floating combat text lives, in milliseconds.
+#[wasm_bindgen(js_name = combatTextMs)]
+#[must_use]
+pub fn combat_text_ms() -> f64 {
+    combat_text::COMBAT_TEXT_MS as f64
+}
+
+/// The floating texts a stream of projections raises (#1234), each projection taken once:
+/// its events' texts, then a cleave or pierce through several units and a mastery level gained.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct CombatTextFeed {
+    feed: combat_text::CombatTextFeed,
+}
+
+#[wasm_bindgen]
+impl CombatTextFeed {
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        self.feed.reset();
+    }
+
+    /// The texts a newer projection adds; none for one already taken.
+    #[wasm_bindgen(unchecked_return_type = "CombatText[]")]
+    pub fn observe(&mut self, snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
+        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        combat_texts_js(self.feed.observe(&snapshot))
+    }
 }
 
 /// What a cast bar shows: a cast fills, a channel drains.

@@ -1,15 +1,21 @@
 //! World-space interface: nameplates and NPC quest `!`/`?` markers above the
-//! presented units, and floating combat text from the projection's events
-//! (the browser's `combat-text.ts` and quest markers). Purely cosmetic: events
-//! are lossy, and everything shown already appears in the frames and logs.
+//! presented units, and floating combat text over the units it concerns. Which
+//! texts a projection raises is the shared client rule
+//! ([`mmorpg_client_model::combat_text`], #1234); this module only draws them.
+//! Purely cosmetic: events are lossy, and everything shown already appears in
+//! the frames and logs.
 use egui::{Align2, Color32, FontId, Pos2};
-use mmorpg_core::{
-    AuraKind, EntityKind, EntityRef, QuestMarker, QuestSheet, ZoneEvent, ZoneSnapshot,
-};
+use mmorpg_client_model::combat_text::{COMBAT_TEXT_MS, CombatTextFeed};
+pub use mmorpg_client_model::combat_text::{CombatText, CombatTextKind};
+use mmorpg_core::{EntityKind, EntityRef, QuestMarker, QuestSheet, ZoneSnapshot};
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
+
+/// How long a floating text lives.
+pub const COMBAT_TEXT_LIFETIME: Duration = Duration::from_millis(COMBAT_TEXT_MS);
+const MAX_FLOATING_TEXTS: usize = 24;
 
 /// Where a unit's labels hang, above its presented head, in world metres.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,202 +27,6 @@ pub struct UnitLabel {
 /// A world point's place on screen in egui points, or `None` behind the eye.
 pub type Project<'a> = &'a dyn Fn([f32; 3]) -> Option<Pos2>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CombatTextKind {
-    Damage,
-    Critical,
-    Periodic,
-    Taken,
-    Heal,
-    Absorb,
-    Interrupt,
-    Miss,
-    /// One swing struck several units (#909).
-    Cleave,
-    /// A Sinister Strike from the victim's flank (#949).
-    Flank,
-}
-
-/// One floating text and the unit it rises from.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CombatText {
-    pub kind: CombatTextKind,
-    pub text: String,
-    pub anchor: EntityRef,
-}
-
-/// How long a floating text lives, as the browser's `COMBAT_TEXT_MS`.
-pub const COMBAT_TEXT_LIFETIME: Duration = Duration::from_millis(1_400);
-const MAX_FLOATING_TEXTS: usize = 24;
-
-/// Whether the viewer's damage this tick can only be a periodic tick (the
-/// browser's `damageIsPeriodic`): nothing else of the viewer's resolved.
-fn damage_is_periodic(snapshot: &ZoneSnapshot) -> bool {
-    let viewer = EntityRef::Player(snapshot.viewer_id);
-    let resolved = snapshot.events.iter().any(|event| {
-        matches!(event,
-            ZoneEvent::AbilityUsed { source, .. }
-                | ZoneEvent::StrikeSwept { source, .. }
-                | ZoneEvent::AttackPerformed { source, .. }
-                if *source == viewer)
-    });
-    if resolved {
-        return false;
-    }
-    snapshot.viewer.cast.is_some_and(|cast| cast.channel)
-        || snapshot
-            .target_detail
-            .auras
-            .iter()
-            .any(|aura| aura.kind == AuraKind::DamageOverTime)
-}
-
-/// How many units the viewer's current swing has struck after this projection, from `count`
-/// before it (the browser's `cleaveCount`, #909): the viewer's wind-up starts a new swing, and
-/// each of its sweeps that struck a unit counts one.
-#[must_use]
-pub fn cleave_count(snapshot: &ZoneSnapshot, count: usize) -> usize {
-    let viewer = EntityRef::Player(snapshot.viewer_id);
-    snapshot
-        .events
-        .iter()
-        .fold(count, |count, event| match *event {
-            ZoneEvent::SwingBegan { source, .. } if source == viewer => 0,
-            ZoneEvent::StrikeSwept {
-                source,
-                target: Some(_),
-                ..
-            } if source == viewer => count + 1,
-            _ => count,
-        })
-}
-
-/// The viewer's latest Piercing Shot (#932): the tick it was loosed and how many units it struck.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PierceShot {
-    pub loosed: u64,
-    pub struck: usize,
-}
-
-/// The viewer's latest Piercing Shot after this projection, from `shot` before it (the
-/// browser's `pierceShot`, #932): loosing one starts a count, the viewer's next ability or
-/// attack ends it, and each of the viewer's hits within a second of the release counts one.
-#[must_use]
-pub fn pierce_shot(snapshot: &ZoneSnapshot, shot: Option<PierceShot>) -> Option<PierceShot> {
-    let viewer = EntityRef::Player(snapshot.viewer_id);
-    let window = u64::from(mmorpg_core::ticks_from_ms(1_000));
-    snapshot
-        .events
-        .iter()
-        .fold(shot, |shot, event| match *event {
-            ZoneEvent::AbilityUsed {
-                source, ability, ..
-            } if source == viewer => (ability == mmorpg_core::ability::ids::PIERCING_SHOT)
-                .then_some(PierceShot {
-                    loosed: snapshot.tick,
-                    struck: 0,
-                }),
-            ZoneEvent::AttackPerformed { source, .. } if source == viewer => None,
-            ZoneEvent::DamageDealt { source, .. } if source == viewer => shot.map(|shot| {
-                if snapshot.tick.saturating_sub(shot.loosed) <= window {
-                    PierceShot {
-                        struck: shot.struck + 1,
-                        ..shot
-                    }
-                } else {
-                    shot
-                }
-            }),
-            _ => shot,
-        })
-}
-
-/// The floating texts one projection's events produce, in event order.
-#[must_use]
-pub fn combat_texts(snapshot: &ZoneSnapshot) -> Vec<CombatText> {
-    let viewer = EntityRef::Player(snapshot.viewer_id);
-    let periodic = damage_is_periodic(snapshot);
-    let text = |kind, text: String, anchor| Some(CombatText { kind, text, anchor });
-    snapshot
-        .events
-        .iter()
-        .filter_map(|event| match *event {
-            ZoneEvent::DamageDealt {
-                target,
-                amount,
-                critical,
-                ..
-            } => {
-                let (kind, shown) = if critical {
-                    (CombatTextKind::Critical, format!("{amount}!"))
-                } else if periodic {
-                    (CombatTextKind::Periodic, amount.to_string())
-                } else {
-                    (CombatTextKind::Damage, amount.to_string())
-                };
-                text(kind, shown, target)
-            }
-            ZoneEvent::DamageTaken {
-                target,
-                amount,
-                critical,
-                ..
-            } => text(
-                CombatTextKind::Taken,
-                format!("-{amount}{}", if critical { "!" } else { "" }),
-                target,
-            ),
-            ZoneEvent::Miss { source, target } if source == viewer => {
-                text(CombatTextKind::Miss, "Miss".into(), target)
-            }
-            ZoneEvent::Evade { target, .. } => text(CombatTextKind::Miss, "Evade".into(), target),
-            ZoneEvent::TrapHit { target, amount, .. } => {
-                text(CombatTextKind::Taken, format!("-{amount}"), target)
-            }
-            ZoneEvent::Healed {
-                source,
-                target,
-                amount,
-                ..
-            } if target == viewer || source == viewer || snapshot.viewer.target == Some(target) => {
-                text(CombatTextKind::Heal, format!("+{amount}"), target)
-            }
-            ZoneEvent::Absorbed { target, .. } => {
-                text(CombatTextKind::Absorb, "Absorb".into(), target)
-            }
-            ZoneEvent::StrikeSwept {
-                source,
-                target: None,
-                ..
-            } if source == viewer => text(CombatTextKind::Miss, "Whiff".into(), source),
-            // A signaler raising its horn (#952): interrupt it or kill it before help comes.
-            ZoneEvent::CastStarted {
-                source,
-                ability: mmorpg_core::ability::ids::SIGNAL_HORN,
-                ..
-            } => text(
-                CombatTextKind::Interrupt,
-                "Calling for help!".into(),
-                source,
-            ),
-            ZoneEvent::Flanked { target, .. } => {
-                text(CombatTextKind::Flank, "Flank!".into(), target)
-            }
-            ZoneEvent::Interrupted { target, .. } => text(
-                CombatTextKind::Interrupt,
-                if target == viewer {
-                    "Interrupted"
-                } else {
-                    "Interrupt"
-                }
-                .into(),
-                target,
-            ),
-            _ => None,
-        })
-        .collect()
-}
-
 const fn text_style(kind: CombatTextKind) -> (Color32, f32) {
     match kind {
         CombatTextKind::Damage => (Color32::from_rgb(255, 255, 255), 20.0),
@@ -227,23 +37,21 @@ const fn text_style(kind: CombatTextKind) -> (Color32, f32) {
         CombatTextKind::Absorb => (Color32::from_rgb(150, 205, 255), 17.0),
         CombatTextKind::Interrupt => (Color32::from_rgb(255, 160, 64), 19.0),
         CombatTextKind::Miss => (Color32::from_rgb(200, 200, 200), 17.0),
+        // The guard's and mastery's colours are the browser's.
+        CombatTextKind::Block => (Color32::from_rgb(207, 227, 255), 18.0),
+        CombatTextKind::GuardBreak => (Color32::from_rgb(255, 106, 77), 20.0),
         CombatTextKind::Cleave => (Color32::from_rgb(255, 190, 90), 22.0),
         CombatTextKind::Flank => (Color32::from_rgb(255, 120, 200), 24.0),
+        CombatTextKind::Mastery => (Color32::from_rgb(244, 217, 138), 20.0),
     }
 }
 
 /// Floating combat texts alive now.
 #[derive(Default)]
 pub struct FloatingTexts {
-    tick: Option<u64>,
+    feed: CombatTextFeed,
     entries: VecDeque<(CombatText, Instant, usize)>,
     lane: usize,
-    /// Units the viewer's running swing has struck so far (#909).
-    cleaved: usize,
-    /// The viewer's latest Piercing Shot and the units it struck (#932).
-    pierce: Option<PierceShot>,
-    /// The sword mastery level last seen (#915).
-    mastery: Option<u8>,
 }
 
 impl FloatingTexts {
@@ -251,54 +59,9 @@ impl FloatingTexts {
         *self = Self::default();
     }
 
-    /// Takes each newer projection's events once.
+    /// Takes each newer projection's texts once.
     pub fn observe(&mut self, snapshot: &ZoneSnapshot, now: Instant) {
-        if self.tick.is_some_and(|tick| snapshot.tick <= tick) {
-            return;
-        }
-        self.tick = Some(snapshot.tick);
-        let cleaved = cleave_count(snapshot, self.cleaved);
-        let cleave = (cleaved > self.cleaved && cleaved > 1).then(|| CombatText {
-            kind: CombatTextKind::Cleave,
-            text: format!("Cleave \u{d7}{cleaved}"),
-            anchor: EntityRef::Player(snapshot.viewer_id),
-        });
-        self.cleaved = cleaved;
-        // A Piercing Shot through several units floats the cleave's "×N" (#932).
-        let pierce = pierce_shot(snapshot, self.pierce);
-        let before = self
-            .pierce
-            .filter(|before| pierce.is_some_and(|shot| shot.loosed == before.loosed))
-            .map_or(0, |before| before.struck);
-        let pierced = pierce
-            .filter(|shot| shot.struck > 1 && shot.struck > before)
-            .map(|shot| CombatText {
-                kind: CombatTextKind::Cleave,
-                text: format!("Pierce \u{d7}{}", shot.struck),
-                anchor: EntityRef::Player(snapshot.viewer_id),
-            });
-        self.pierce = pierce;
-        // A mastery level gained in play floats its unlock (#915); the browser says the same.
-        let level = snapshot.viewer.mastery.level;
-        let mastered = self
-            .mastery
-            .filter(|&before| level > before)
-            .map(|_| CombatText {
-                kind: CombatTextKind::Cleave,
-                text: if level == mmorpg_core::LEAPING_SLASH_LEVEL {
-                    format!("Sword mastery {level}: Leaping Slash unlocked")
-                } else {
-                    format!("Sword mastery {level}")
-                },
-                anchor: EntityRef::Player(snapshot.viewer_id),
-            });
-        self.mastery = Some(level);
-        for text in combat_texts(snapshot)
-            .into_iter()
-            .chain(cleave)
-            .chain(pierced)
-            .chain(mastered)
-        {
+        for text in self.feed.observe(snapshot) {
             self.lane = self.lane.wrapping_add(1);
             self.entries.push_back((text, now, self.lane % 5));
         }
@@ -458,10 +221,10 @@ pub fn paint(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mmorpg_core::{CreatureId, ZoneId, ZoneSimulation, greyhaven_vale};
+    use mmorpg_core::{CreatureId, ZoneEvent, ZoneId, ZoneSimulation, greyhaven_vale};
 
     #[test]
-    fn events_become_floating_text_over_the_unit_they_concern() {
+    fn a_projection_floats_its_texts_once_for_their_lifetime() {
         let content = greyhaven_vale::content();
         let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
         zone.add_player(1).unwrap();
@@ -482,82 +245,13 @@ mod tests {
                 amount: 4,
                 critical: false,
             },
-            ZoneEvent::Miss {
-                source: you,
-                target: wolf,
-            },
-            ZoneEvent::Miss {
-                source: wolf,
-                target: you,
-            },
         ];
-        let texts = combat_texts(&snapshot);
-        let shown: Vec<_> = texts
-            .iter()
-            .map(|t| (t.kind, t.text.as_str(), t.anchor))
-            .collect();
-        assert_eq!(
-            shown,
-            [
-                (CombatTextKind::Critical, "12!", wolf),
-                (CombatTextKind::Taken, "-4", you),
-                (CombatTextKind::Miss, "Miss", wolf),
-            ]
-        );
         let mut floating = FloatingTexts::default();
         let now = Instant::now();
         floating.observe(&snapshot, now);
         floating.observe(&snapshot, now);
-        assert_eq!(floating.alive(now).count(), 3, "a tick is taken once");
+        let anchors: Vec<_> = floating.alive(now).map(|(text, ..)| text.anchor).collect();
+        assert_eq!(anchors, [wolf, you], "a tick is taken once, over its units");
         assert_eq!(floating.alive(now + COMBAT_TEXT_LIFETIME).count(), 0);
-    }
-
-    #[test]
-    fn a_piercing_shot_through_two_units_floats_pierce_x2_once() {
-        let content = greyhaven_vale::content();
-        let mut zone = ZoneSimulation::with_content(ZoneId::new(1), content).unwrap();
-        zone.add_player(1).unwrap();
-        zone.advance_tick().unwrap();
-        let mut snapshot = zone.snapshot_for_player(1).unwrap();
-        let you = EntityRef::Player(1);
-        let hit = |id| ZoneEvent::DamageDealt {
-            source: you,
-            target: EntityRef::Creature(CreatureId::new(id)),
-            amount: 10,
-            critical: false,
-        };
-        let mut floating = FloatingTexts::default();
-        let now = Instant::now();
-        let pierces = |floating: &mut FloatingTexts| {
-            floating
-                .alive(now)
-                .filter(|(text, ..)| text.text.starts_with("Pierce"))
-                .map(|(text, ..)| text.text.clone())
-                .collect::<Vec<_>>()
-        };
-        snapshot.events = vec![ZoneEvent::AbilityUsed {
-            source: you,
-            target: None,
-            ability: mmorpg_core::ability::ids::PIERCING_SHOT,
-        }];
-        floating.observe(&snapshot, now);
-        // The arrow passes the first wolf, then the second a few ticks later.
-        for events in [vec![hit(1)], vec![], vec![hit(2)]] {
-            snapshot.tick += 3;
-            snapshot.events = events;
-            floating.observe(&snapshot, now);
-        }
-        assert_eq!(pierces(&mut floating), ["Pierce \u{d7}2"]);
-        // A later ordinary attack ends the count: its hits are not the arrow's.
-        snapshot.tick += 3;
-        snapshot.events = vec![
-            ZoneEvent::AttackPerformed {
-                source: you,
-                target: None,
-            },
-            hit(3),
-        ];
-        floating.observe(&snapshot, now);
-        assert_eq!(pierces(&mut floating), ["Pierce \u{d7}2"]);
     }
 }

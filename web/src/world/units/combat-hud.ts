@@ -142,9 +142,6 @@ export const COMBO_TEXT: Readonly<Record<ComboPhase, string>> = {
   "cleave-open": "Combo: cleave! Swing again or Shield Bash now",
 };
 
-/** The mastery level that unlocks the Leaping Slash (#915), as the zone's `LEAPING_SLASH_LEVEL`. */
-export const LEAPING_SLASH_LEVEL = 1;
-
 /** Sword mastery (#915) once practised; the native HUD says the same. */
 export function masteryText(viewer: ZoneSnapshot["viewer"]): string | null {
   if (viewer.swordMastery === 0 && viewer.swordPractice === 0) {
@@ -152,13 +149,6 @@ export function masteryText(viewer: ZoneSnapshot["viewer"]): string | null {
   }
   const progress = viewer.swordPracticeToNext === 0 ? "mastered" : `${viewer.swordPractice}/${viewer.swordPracticeToNext}`;
   return `Sword mastery ${viewer.swordMastery} (${progress})`;
-}
-
-/** The floating unlock feedback for reaching sword mastery `level` (#915). */
-export function masteryUnlockText(level: number): string {
-  return level === LEAPING_SLASH_LEVEL
-    ? `Sword mastery ${level}: Leaping Slash unlocked`
-    : `Sword mastery ${level}`;
 }
 
 export function combatStatus(snapshot: ZoneSnapshot, catalog: ContentCatalog): string {

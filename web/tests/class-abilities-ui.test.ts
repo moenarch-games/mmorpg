@@ -6,8 +6,11 @@ import { actionBar, cooldownSeconds, formatRemaining, sweepDegrees, tooltipText 
 import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
 import { errorText } from "../src/world/units/combat-hud";
 import { castBarView } from "../src/world/units/cast-bar";
-import { PIERCING_SHOT_ABILITY, combatTexts, damageIsPeriodic, pierceShot, viewerInterrupted } from "../src/world/units/combat-text";
+import { CombatTextFeed, combatTexts, viewerInterrupted } from "../src/world/units/combat-text";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
+
+/** The Ranger's Piercing Shot (#291). */
+const PIERCING_SHOT_ABILITY = 19;
 
 /** Ticks of the 30 Hz rate these cases were written against, at `TICK_HZ`. */
 const t = (ticks: number) => (ticks * TICK_HZ) / 30;
@@ -179,9 +182,10 @@ describe("combat text", () => {
     const swung: ZoneEvent = { kind: "attack-performed", source: me, target: wolf };
     expect(combatTexts(snapshot({ events: [swung, dealt(7)], targetDetail: { cast: null, auras: [dot] } }))).toEqual([{ kind: "damage", text: "7" }]);
     const channel: CastState = { ability: 12, elapsed: 30, total: 180, channel: true };
-    expect(damageIsPeriodic(snapshot({ events: [dealt(5)] }, { cast: channel }))).toBe(true);
+    expect(combatTexts(snapshot({ events: [dealt(5)] }, { cast: channel }))).toEqual([{ kind: "periodic", text: "5" }]);
     // Events carry no provenance: a swing (even a whiff) during a channel is ambiguous.
-    expect(damageIsPeriodic(snapshot({ events: [dealt(5), { kind: "attack-performed", source: me, target: null }] }, { cast: channel }))).toBe(false);
+    expect(combatTexts(snapshot({ events: [dealt(5), { kind: "attack-performed", source: me, target: null }] }, { cast: channel })))
+      .toEqual([{ kind: "damage", text: "5" }]);
     expect(combatTexts(snapshot({ events: [dealt(20, true)] }))).toEqual([{ kind: "critical", text: "20!" }]);
   });
 
@@ -194,16 +198,18 @@ describe("combat text", () => {
     expect(combatTexts(snapshot({ events }))).toEqual([{ kind: "taken", text: "-6" }, { kind: "miss", text: "Miss" }]);
   });
 
-  test("a Piercing Shot counts the units it strikes until the viewer's next attack (#932)", () => {
+  test("a Piercing Shot through two units floats Pierce ×2 once, until the viewer's next attack (#932)", () => {
     const loosed: ZoneEvent = { kind: "ability-used", source: me, target: null, ability: PIERCING_SHOT_ABILITY };
-    let shot = pierceShot(snapshot({ tick: 10n, events: [loosed] }), null);
-    expect(shot).toEqual({ loosed: 10n, struck: 0 });
-    shot = pierceShot(snapshot({ tick: 13n, events: [dealt(20)] }), shot);
-    shot = pierceShot(snapshot({ tick: 16n, events: [dealt(14)] }), shot);
-    expect(shot?.struck).toBe(2);
-    // The viewer's next swing or ability ends the count; others' damage never counts.
-    expect(pierceShot(snapshot({ tick: 19n, events: [{ kind: "attack-performed", source: me, target: wolf }, dealt(5)] }), shot)).toBeNull();
-    expect(pierceShot(snapshot({ tick: 19n, events: [{ kind: "damage-dealt", source: wolf, target: me, amount: 3, critical: false }] }), shot)).toEqual(shot);
+    const feed = new CombatTextFeed();
+    const pierces = (tick: bigint, events: ZoneEvent[]) =>
+      feed.observe(snapshot({ tick, events })).filter((text) => text.text.startsWith("Pierce"));
+    expect(pierces(10n, [loosed])).toEqual([]);
+    expect(pierces(13n, [dealt(20)])).toEqual([]);
+    expect(pierces(16n, [dealt(14)])).toEqual([{ kind: "cleave", text: "Pierce ×2" }]);
+    expect(pierces(16n, [dealt(14)])).toEqual([], "a tick is taken once");
+    // The viewer's next swing or ability ends the count.
+    expect(pierces(19n, [{ kind: "attack-performed", source: me, target: wolf }, dealt(5)])).toEqual([]);
+    feed.free();
   });
 });
 
