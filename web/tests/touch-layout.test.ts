@@ -29,26 +29,29 @@ test("the thumbstick quantizes into the wire's eight movement sectors", () => {
   expect(mergeHeld(IDLE_INTENT, IDLE_INTENT).steering).toBe(false);
 });
 
-test("context buttons follow nearby loot, NPCs, doors and opponents", () => {
+test("context buttons follow nearby loot, the Interact ladder and opponents (#1252)", () => {
   const base = { zoneId: 1, contentRevision: 5n, tick: 1n, acknowledgedSequence: 0, viewerId: 1 };
-  const inputs = { isVendor: (id: number) => id === 7, doorInReach: false, repairInReach: false, arena: false };
+  const inputs = { isVendor: (id: number) => id === 7, next: null, arena: false };
   const npc = (id: number, x: number) => ({ ...playerEntity(id, [x, 90, 0]), kind: "npc" as const });
   const wolf = { ...playerEntity(9, [1_000, 90, 0]), kind: "creature" as const, flags: { ...NO_FLAGS, attackable: true, hostile: true } };
   const corpse = { ...playerEntity(10, [200, 90, 0]), kind: "creature" as const, healthPercent: 0,
     flags: { ...NO_FLAGS, dead: true, lootable: true } };
+  const door = { kind: "command" as const, command: { kind: "use-door" as const, door: 3, open: true }, label: "Open" };
 
-  const idle = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, doorInReach: true });
-  expect(idle).toEqual({ combat: false, dead: false, weaponDrawn: false, interact: "open", npc: null });
+  const idle = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, next: door });
+  expect(idle).toEqual({ combat: false, dead: false, weaponDrawn: false, interact: "use", label: "Open", npc: null });
   // In an arena (#551) target and attack show from the first moment, before any fight.
   const arena = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }), { ...inputs, arena: true });
   expect(arena).toMatchObject({ combat: true, dead: false });
-  const vendor = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), npc(8, 450), npc(7, 300)] }), inputs);
-  expect(vendor).toMatchObject({ interact: "vendor", npc: { kind: "npc", id: 7 } });
-  const fight = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), wolf, corpse, npc(8, 100)] }), inputs);
-  expect(fight).toMatchObject({ combat: true, interact: "loot" });
+  const vendor = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), npc(8, 450), npc(7, 300)] }),
+    { ...inputs, next: { kind: "talk", npc: 7, selected: false } });
+  expect(vendor).toMatchObject({ interact: "vendor", label: "Trade", npc: { kind: "npc", id: 7 } });
+  const fight = touchContext(testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0]), wolf, corpse, npc(8, 100)] }),
+    { ...inputs, next: { kind: "talk", npc: 8, selected: false } });
+  expect(fight).toMatchObject({ combat: true, interact: "loot", label: "Loot" });
   const dead = touchContext({ ...testSnapshot({ ...base, entities: [playerEntity(1, [0, 90, 0])] }),
     viewer: { ...HEALTHY_VIEWER, health: 0, dead: true } }, inputs);
-  expect(dead).toEqual({ combat: false, dead: true, weaponDrawn: false, interact: null, npc: null });
+  expect(dead).toEqual({ combat: false, dead: true, weaponDrawn: false, interact: null, label: "", npc: null });
 });
 
 test("a lifted face releases its slot; a cancelled pointer or retirement releases it retired (#485)", () => {
