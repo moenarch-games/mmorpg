@@ -438,6 +438,87 @@ mod tests {
         assert_eq!(corpse_of(CreatureFamily::Wolf), None);
     }
 
+    fn raid(signs: bool) -> mmorpg_core::RaidView {
+        mmorpg_core::RaidView {
+            phase: 0,
+            integrity: 100,
+            aid: std::collections::BTreeSet::new(),
+            signs,
+            warned: false,
+            braced: std::collections::BTreeSet::new(),
+            scouted: false,
+            standing: None,
+        }
+    }
+
+    #[test]
+    fn a_forewarned_evening_reads_the_tracks_reports_them_and_braces_the_barn() {
+        use mmorpg_core::RaidPrep;
+        let content = greyhaven_vale::content();
+        let site = content.raid().expect("Greyhaven has a night raid");
+        let prep = |signal: &mmorpg_core::RaidView, at: [i32; 2], lookout: Option<[i32; 2]>| {
+            let mut snapshot = viewer_at([at[0], 0, at[1]]);
+            if let Some([x, z]) = lookout {
+                snapshot
+                    .entities
+                    .push(unit(EntityKind::Npc, site.lookout.get(), [x, 0, z]));
+            }
+            snapshot.raid = Some(signal.clone());
+            match next_interaction(&snapshot, &content, &[]) {
+                Some(Interaction::Command(ZoneCommand::RaidPrepare { prep })) => Some(prep),
+                _ => None,
+            }
+        };
+        let evening = raid(true);
+        let [x, z] = site.tracks;
+        assert_eq!(
+            prep(&evening, [x, z - 150], None),
+            Some(RaidPrep::Investigate)
+        );
+        assert_eq!(prep(&evening, [x, z - 350], None), None);
+        assert_eq!(prep(&raid(false), [x, z], None), None);
+        let scouted = mmorpg_core::RaidView {
+            scouted: true,
+            ..evening
+        };
+        let far = [i32::MAX / 2, i32::MAX / 2];
+        assert_eq!(
+            prep(&scouted, far, Some([far[0], far[1] + 200])),
+            Some(RaidPrep::Report)
+        );
+        assert_eq!(prep(&scouted, [x, z], None), None);
+        let warned = mmorpg_core::RaidView {
+            warned: true,
+            ..scouted
+        };
+        let [bx, bz] = site.braces[0];
+        assert_eq!(prep(&warned, [bx, bz + 50], None), Some(RaidPrep::Brace(0)));
+        let braced = mmorpg_core::RaidView {
+            braced: [0].into(),
+            ..warned
+        };
+        assert_ne!(prep(&braced, [bx, bz + 50], None), Some(RaidPrep::Brace(0)));
+    }
+
+    #[test]
+    fn an_open_aid_task_in_reach_is_helped_at_the_site_whose_signal_reaches() {
+        let content = greyhaven_vale::content();
+        for site in content.raids().iter().filter(|site| !site.aid.is_empty()) {
+            let task = site.tasks()[0].at;
+            let aid = |open: &[u32], at: [i32; 2]| {
+                let mut snapshot = viewer_at([at[0], 0, at[1]]);
+                snapshot.raid = Some(mmorpg_core::RaidView {
+                    aid: open.iter().copied().collect(),
+                    ..raid(false)
+                });
+                next_interaction(&snapshot, &content, &[])
+            };
+            let helps = Some(Interaction::Command(ZoneCommand::RaidAid { task: 0 }));
+            assert_eq!(aid(&[0], [task[0], task[1] + 250]), helps, "{}", site.name);
+            assert_ne!(aid(&[0], [task[0], task[1] + 350]), helps, "{}", site.name);
+            assert_ne!(aid(&[], task), helps, "{}", site.name);
+        }
+    }
     fn corpse_ref() -> EntityRef {
         EntityRef::Creature(mmorpg_core::CreatureId::new(40))
     }
