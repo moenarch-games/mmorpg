@@ -1569,17 +1569,9 @@ impl ZoneSimulation {
             }
             self.tick_work.raid_raiders_visited += 1;
             let (_, template) = Self::creature_content(&content, id)?;
-            let Some(state) = self.creatures.get(&id) else {
-                continue;
-            };
-            if !matches!(state.ai, CreatureAi::Idle { .. })
-                || state.swing_timer > 0
-                || state.cast.is_some()
-                || crate::aura::has_kind(&state.auras, crate::AuraKind::Stun)
-            {
+            if !self.objective_swing_ready(id) {
                 continue;
             }
-            let level = state.level;
             let at = self.unit_position(EntityRef::Creature(id))?;
             if self.strike_civilian(index, site, id, [at[0], at[2]], template)? {
                 continue;
@@ -1587,26 +1579,12 @@ impl ZoneSimulation {
             if site.distance_squared([at[0], at[2]]) > i64::from(OBJECTIVE_REACH_UNITS).pow(2) {
                 continue;
             }
-            let [low, high] = template.damage_at(level);
-            let raid = self.site_raid_ref(index);
-            let amount = prepared_hit(
-                (u32::from(low) + u32::from(high)).div_ceil(2),
-                usize::from(raid.warned) + raid.braced.len(),
-            );
-            if let Some(state) = self.creatures.get_mut(&id) {
-                state.swing_timer = template.swing_ticks;
-            }
+            let Some(hit) = self.strike_objective(id, template, None) else {
+                continue;
+            };
             let raid = self.site_raid(index);
+            let amount = prepared_hit(hit, usize::from(raid.warned) + raid.braced.len());
             raid.damage = (raid.damage + amount).min(OBJECTIVE_INTEGRITY);
-            let source = EntityRef::Creature(id);
-            self.notify_observers(
-                &[source],
-                &std::collections::BTreeSet::new(),
-                ZoneEvent::AttackPerformed {
-                    source,
-                    target: None,
-                },
-            );
         }
         Ok(())
     }
@@ -1643,12 +1621,10 @@ impl ZoneSimulation {
         let Some((_, index)) = nearest else {
             return Ok(false);
         };
-        let Some(state) = self.creatures.get_mut(&id) else {
+        let civilian = Some(EntityRef::Npc(site.civilians[index].npc));
+        let Some(amount) = self.strike_objective(id, template, civilian) else {
             return Ok(false);
         };
-        let [low, high] = template.damage_at(state.level);
-        state.swing_timer = template.swing_ticks;
-        let amount = (u32::from(low) + u32::from(high)).div_ceil(2);
         if let Some(health) = self
             .site_raid(site_index)
             .active
@@ -1657,15 +1633,6 @@ impl ZoneSimulation {
         {
             *health = health.saturating_sub(amount);
         }
-        let source = EntityRef::Creature(id);
-        self.notify_observers(
-            &[source],
-            &std::collections::BTreeSet::new(),
-            ZoneEvent::AttackPerformed {
-                source,
-                target: Some(EntityRef::Npc(site.civilians[index].npc)),
-            },
-        );
         Ok(true)
     }
 

@@ -322,30 +322,14 @@ impl ZoneSimulation {
                     continue;
                 }
                 halted = true;
-                if !matches!(creature.ai, CreatureAi::Idle { .. })
-                    || crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
-                    || creature.swing_timer > 0
-                    || creature.cast.is_some()
-                {
+                if !self.objective_swing_ready(raider.creature) {
                     continue;
                 }
                 let (_, template) = Self::creature_content(&content, raider.creature)?;
-                let Some(creature) = self.creatures.get_mut(&raider.creature) else {
-                    continue;
-                };
-                let [low, high] = template.damage_at(creature.level);
-                creature.swing_timer = template.swing_ticks;
-                let amount = (u32::from(low) + u32::from(high)).div_ceil(2);
-                run.health = run.health.saturating_sub(amount);
-                let source = EntityRef::Creature(raider.creature);
-                self.notify_observers(
-                    &[source],
-                    &std::collections::BTreeSet::new(),
-                    ZoneEvent::AttackPerformed {
-                        source,
-                        target: Some(EntityRef::Npc(crossing.npc)),
-                    },
-                );
+                let carter = Some(EntityRef::Npc(crossing.npc));
+                if let Some(amount) = self.strike_objective(raider.creature, template, carter) {
+                    run.health = run.health.saturating_sub(amount);
+                }
             }
             run.halted = halted;
             let length = crossing.length();
