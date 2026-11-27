@@ -15,7 +15,6 @@
 //! 35-entity packet budget (`tests/content/marsh_creatures.rs`).
 
 use crate::content::CreatureSpawn;
-use crate::{CreatureId, CreatureTemplateId};
 
 use super::units::WANDER_RADIUS_UNITS;
 use super::units::templates::{MARSH_LURKER, MIREFIN_LURKER, TIMBER_WOLF, YOUNG_BOAR};
@@ -34,7 +33,7 @@ const EAST: u16 = 16_384;
 const NORTH: u16 = 32_768;
 const WEST: u16 = 49_152;
 
-type Row = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
+type Row = super::units::SpawnRow;
 
 #[rustfmt::skip]
 const SPAWNS: [Row; 34] = {
@@ -91,17 +90,5 @@ const SPAWNS: [Row; 34] = {
 
 /// The wetlands' content spawns.
 pub(super) fn spawns() -> Vec<CreatureSpawn> {
-    SPAWNS
-        .iter()
-        .map(
-            |&(id, template, position, facing, levels, wander_radius)| CreatureSpawn {
-                id: CreatureId::new(id),
-                template,
-                position,
-                facing,
-                wander_radius,
-                levels: Some(levels),
-            },
-        )
-        .collect()
+    super::units::spawns_of(&SPAWNS)
 }

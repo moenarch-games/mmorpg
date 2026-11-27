@@ -13,13 +13,13 @@ use super::ids;
 use super::units::templates::REDBRAND_BANDIT;
 
 /// Raiders are Redbrand bandits at the low end of the Hollow's levels.
-const RAIDER_LEVELS: [u8; 2] = [3, 4];
+pub(super) const RAIDER_LEVELS: [u8; 2] = [3, 4];
 /// Raiders reserved per approach.
-const SLOTS: u32 = 6;
+pub(super) const SLOTS: u32 = 6;
 
 /// `(first raider ID, first staging slot, slot step, facing, route to the barn, spread at it, way
 /// out to the retreat route)`.
-type ApproachRow = (
+pub(super) type ApproachRow = (
     u32,
     [i32; 2],
     [i32; 2],
@@ -74,7 +74,13 @@ fn slot(row: &ApproachRow, index: u32) -> [i32; 2] {
 
 /// The reserved raiders' content spawns at their staging slots.
 pub(super) fn raider_spawns() -> Vec<CreatureSpawn> {
-    APPROACHES
+    staged_raiders(&APPROACHES)
+}
+
+/// The raiders every Redbrand raid site (Millbrook, Ena's granary) reserves at its staging
+/// slots, one approach row each (#1231).
+pub(super) fn staged_raiders(approaches: &[ApproachRow]) -> Vec<CreatureSpawn> {
+    approaches
         .iter()
         .flat_map(|row| {
             (0..SLOTS).map(move |index| CreatureSpawn {
@@ -89,6 +95,21 @@ pub(super) fn raider_spawns() -> Vec<CreatureSpawn> {
         .collect()
 }
 
+/// Each approach row as the site's raid approach: its reserved raiders, route, spread and exit.
+pub(super) fn raid_approaches(approaches: &[ApproachRow]) -> Vec<RaidApproach> {
+    approaches
+        .iter()
+        .map(|row| RaidApproach {
+            raiders: (0..SLOTS)
+                .map(|index| CreatureId::new(row.0 + index))
+                .collect(),
+            route: row.4.to_vec(),
+            spread: row.5,
+            exit: row.6.to_vec(),
+        })
+        .collect()
+}
+
 /// Millbrook Farm's barn as the raid target.
 #[must_use]
 pub fn millbrook_barn() -> RaidSite {
@@ -96,17 +117,7 @@ pub fn millbrook_barn() -> RaidSite {
         name: "Millbrook Farm".to_owned(),
         objective: ids::BARN,
         footprint: [[7_400, 3_600], [8_600, 5_200]],
-        approaches: APPROACHES
-            .iter()
-            .map(|row| RaidApproach {
-                raiders: (0..SLOTS)
-                    .map(|index| CreatureId::new(row.0 + index))
-                    .collect(),
-                route: row.4.to_vec(),
-                spread: row.5,
-                exit: row.6.to_vec(),
-            })
-            .collect(),
+        approaches: raid_approaches(&APPROACHES),
         retreat: RETREAT.to_vec(),
         camp_spread: [100, 0],
         aid: aid_tasks(),

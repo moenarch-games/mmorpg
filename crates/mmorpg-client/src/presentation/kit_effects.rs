@@ -29,7 +29,7 @@ mod spell_bundle {
 /// Morph weights baked per morphed primitive, evenly from 0 to 1.
 const MORPH_STEPS: usize = 17;
 
-type M4 = [f32; 16];
+use super::keyframes::{M4, mul, trs};
 /// A morph target's position and normal offsets.
 type Target = (Vec<[f32; 3]>, Vec<[f32; 3]>);
 
@@ -51,30 +51,8 @@ struct Track {
 
 impl Track {
     fn sample(&self, t: f32) -> [f32; 4] {
-        let last = self.times.len() - 1;
-        let k = self.times.partition_point(|&x| x <= t).saturating_sub(1);
-        if k >= last || self.step {
-            return self.values[k.min(last)];
-        }
-        let (a, b) = (self.values[k], self.values[k + 1]);
-        let span = self.times[k + 1] - self.times[k];
-        let u = if span > 0. {
-            ((t - self.times[k]) / span).clamp(0., 1.)
-        } else {
-            0.
-        };
-        if let Path::Rotation = self.path {
-            let sign = if a.iter().zip(&b).map(|(x, y)| x * y).sum::<f32>() < 0. {
-                -1.
-            } else {
-                1.
-            };
-            let q: [f32; 4] = std::array::from_fn(|i| a[i] + (b[i] * sign - a[i]) * u);
-            let len = q.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
-            q.map(|v| v / len)
-        } else {
-            std::array::from_fn(|i| a[i] + (b[i] - a[i]) * u)
-        }
+        let rotation = matches!(self.path, Path::Rotation);
+        super::keyframes::sample(&self.times, &self.values, self.step, rotation, t)
     }
 }
 
@@ -101,35 +79,6 @@ struct Effect {
     parents: Vec<Option<usize>>,
     parts: Vec<Part>,
     clips: BTreeMap<String, Clip>,
-}
-
-fn mul(a: &M4, b: &M4) -> M4 {
-    std::array::from_fn(|i| {
-        let (c, r) = (i / 4, i % 4);
-        (0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]).sum()
-    })
-}
-
-fn trs(t: [f32; 3], q: [f32; 4], s: [f32; 3]) -> M4 {
-    let [x, y, z, w] = q;
-    [
-        (1. - 2. * (y * y + z * z)) * s[0],
-        2. * (x * y + z * w) * s[0],
-        2. * (x * z - y * w) * s[0],
-        0.,
-        2. * (x * y - z * w) * s[1],
-        (1. - 2. * (x * x + z * z)) * s[1],
-        2. * (y * z + x * w) * s[1],
-        0.,
-        2. * (x * z + y * w) * s[2],
-        2. * (y * z - x * w) * s[2],
-        (1. - 2. * (x * x + y * y)) * s[2],
-        0.,
-        t[0],
-        t[1],
-        t[2],
-        1.,
-    ]
 }
 
 /// glTF colours are linear; the native mesh path expects sRGB.

@@ -19,7 +19,7 @@
 //! Spawn IDs 2200–2239 are the discoveries'.
 
 use crate::content::CreatureSpawn;
-use crate::{CreatureId, CreatureTemplateId, DiscoveryCache, ItemId};
+use crate::{CreatureId, DiscoveryCache, ItemId};
 
 use super::units::templates::{MARSH_LURKER, OLD_SCARBACK, REDBRAND_BANDIT, REDBRAND_CROSSBOWMAN};
 
@@ -43,7 +43,7 @@ const WEST: u16 = 49_152;
 const WEST_SOUTH_WEST: u16 = 40_000;
 
 /// `(spawn id, template, feet XZ, facing, levels, wander radius)`.
-type Row = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
+type Row = super::units::SpawnRow;
 
 #[rustfmt::skip]
 const SPAWNS: [Row; 5] = [
@@ -59,19 +59,7 @@ const SPAWNS: [Row; 5] = [
 
 /// The discoveries' guards.
 pub(super) fn spawns() -> Vec<CreatureSpawn> {
-    SPAWNS
-        .iter()
-        .map(
-            |&(id, template, position, facing, levels, wander_radius)| CreatureSpawn {
-                id: CreatureId::new(id),
-                template,
-                position,
-                facing,
-                wander_radius,
-                levels: Some(levels),
-            },
-        )
-        .collect()
+    super::units::spawns_of(&SPAWNS)
 }
 
 /// The three caches: the hunter's chest, the lookout's deck and the fen's crates, each with

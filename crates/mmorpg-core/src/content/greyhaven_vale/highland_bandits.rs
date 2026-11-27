@@ -11,7 +11,6 @@
 //! 35-entity packet budget with room for other players (`tests/content/highland_bandits.rs`).
 
 use crate::content::CreatureSpawn;
-use crate::{CreatureId, CreatureTemplateId};
 
 use super::units::templates::{REDBRAND_BANDIT, REDBRAND_BRUTE, REDBRAND_CROSSBOWMAN};
 
@@ -31,7 +30,7 @@ const EAST: u16 = 16_384;
 const NORTH: u16 = 32_768;
 const WEST: u16 = 49_152;
 
-type Row = (u32, CreatureTemplateId, [i32; 2], u16, [u8; 2], i32);
+type Row = super::units::SpawnRow;
 
 #[rustfmt::skip]
 const SPAWNS: [Row; 25] = {
@@ -76,17 +75,5 @@ const SPAWNS: [Row; 25] = {
 
 /// The garrison's content spawns.
 pub(super) fn spawns() -> Vec<CreatureSpawn> {
-    SPAWNS
-        .iter()
-        .map(
-            |&(id, template, position, facing, levels, wander_radius)| CreatureSpawn {
-                id: CreatureId::new(id),
-                template,
-                position,
-                facing,
-                wander_radius,
-                levels: Some(levels),
-            },
-        )
-        .collect()
+    super::units::spawns_of(&SPAWNS)
 }
