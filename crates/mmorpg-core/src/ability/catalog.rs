@@ -1,0 +1,1100 @@
+//! The ability catalogue (#1231): every class and creature ability as data, ordered by ID, and
+//! the stable IDs code names. The types it is made of are [`super`]'s; its byte encoding for
+//! content identity is `identity.rs`'s.
+use super::*;
+
+const fn ability(
+    id: u32,
+    name: &'static str,
+    user: AbilityUser,
+    level: u8,
+    cost: u16,
+    cast: CastTime,
+    cooldown: u16,
+    range: AbilityRange,
+    effect: AbilityEffect,
+) -> Ability {
+    Ability {
+        id: AbilityId(id),
+        name,
+        user,
+        level,
+        cost,
+        cast,
+        cooldown,
+        range,
+        effect,
+        projectile: None,
+    }
+}
+
+/// `ability` carried by a `kind` projectile.
+const fn shot(ability: Ability, kind: crate::ProjectileKind) -> Ability {
+    Ability {
+        projectile: Some(kind),
+        ..ability
+    }
+}
+
+const WARDEN: AbilityUser = AbilityUser::Class(PlayerClass::Warden);
+const RANGER: AbilityUser = AbilityUser::Class(PlayerClass::Ranger);
+const ARCANIST: AbilityUser = AbilityUser::Class(PlayerClass::Arcanist);
+const NECROMANCER: AbilityUser = AbilityUser::Class(PlayerClass::Necromancer);
+const ROGUE: AbilityUser = AbilityUser::Class(PlayerClass::Rogue);
+const CLERIC: AbilityUser = AbilityUser::Class(PlayerClass::Cleric);
+const DRUID: AbilityUser = AbilityUser::Class(PlayerClass::Druid);
+/// Heals and shields reach a friendly player as far as ranged spells reach a hostile one.
+const FRIENDLY: AbilityRange = AbilityRange::Friendly(3_000);
+const RANGED: AbilityRange = AbilityRange::Units(3_000);
+
+pub mod ids {
+    use super::AbilityId;
+
+    pub const ICE_WALL: AbilityId = AbilityId::new(49);
+    pub const EARTH_PILLAR: AbilityId = AbilityId::new(50);
+    pub const HEROIC_STRIKE: AbilityId = AbilityId::new(1);
+    pub const SHIELD_BASH: AbilityId = AbilityId::new(2);
+    pub const RALLYING_CRY: AbilityId = AbilityId::new(3);
+    pub const CLEAVE: AbilityId = AbilityId::new(4);
+    pub const AIMED_SHOT: AbilityId = AbilityId::new(5);
+    pub const SERPENT_STING: AbilityId = AbilityId::new(6);
+    pub const CONCUSSIVE_SHOT: AbilityId = AbilityId::new(7);
+    pub const RAPID_FIRE: AbilityId = AbilityId::new(8);
+    pub const FIREBOLT: AbilityId = AbilityId::new(9);
+    pub const FROST_NOVA: AbilityId = AbilityId::new(10);
+    pub const ARCANE_BARRIER: AbilityId = AbilityId::new(11);
+    pub const BLIZZARD: AbilityId = AbilityId::new(12);
+    pub const MUCK_BOLT: AbilityId = AbilityId::new(13);
+    pub const CRUDE_BANDAGE: AbilityId = AbilityId::new(14);
+    pub const CROSSBOW_BOLT: AbilityId = AbilityId::new(15);
+    pub const FIRE_BLAST: AbilityId = AbilityId::new(16);
+    pub const CHARGE: AbilityId = AbilityId::new(17);
+    pub const STOMP: AbilityId = AbilityId::new(18);
+    pub const PIERCING_SHOT: AbilityId = AbilityId::new(19);
+    pub const RICOCHET_SHOT: AbilityId = AbilityId::new(20);
+    pub const FROST_BREATH: AbilityId = AbilityId::new(21);
+    pub const LIGHTNING_BEAM: AbilityId = AbilityId::new(22);
+    pub const CHAIN_LIGHTNING: AbilityId = AbilityId::new(23);
+    pub const REDBRAND_WHIRL: AbilityId = AbilityId::new(24);
+    /// The Redbrand Brute's slow, telegraphed overhead smash (#160).
+    pub const OVERHEAD_SMASH: AbilityId = AbilityId::new(25);
+    pub const SHADOW_BOLT: AbilityId = AbilityId::new(26);
+    pub const CORRUPTION: AbilityId = AbilityId::new(27);
+    pub const DRAIN_LIFE: AbilityId = AbilityId::new(28);
+    pub const BONE_SHIELD: AbilityId = AbilityId::new(29);
+    pub const SINISTER_STRIKE: AbilityId = AbilityId::new(30);
+    pub const POISONED_BLADE: AbilityId = AbilityId::new(31);
+    pub const GOUGE: AbilityId = AbilityId::new(32);
+    pub const ADRENALINE_RUSH: AbilityId = AbilityId::new(33);
+    pub const SMITE: AbilityId = AbilityId::new(34);
+    pub const RENEW: AbilityId = AbilityId::new(35);
+    pub const HOLY_BEAM: AbilityId = AbilityId::new(36);
+    pub const DIVINE_SHIELD: AbilityId = AbilityId::new(37);
+    pub const WRATH: AbilityId = AbilityId::new(38);
+    pub const ENTANGLING_ROOTS: AbilityId = AbilityId::new(39);
+    pub const REJUVENATION: AbilityId = AbilityId::new(40);
+    pub const BARKSKIN: AbilityId = AbilityId::new(41);
+    /// The Rogue's thrown weapons (#290).
+    pub const THROWING_KNIFE: AbilityId = AbilityId::new(42);
+    pub const VENOM_FLASK: AbilityId = AbilityId::new(43);
+    pub const BLASTING_BOMB: AbilityId = AbilityId::new(44);
+    pub const RAISE_SKELETON: AbilityId = AbilityId::new(45);
+    /// The Druid's pet companion (#296).
+    pub const CALL_COMPANION: AbilityId = AbilityId::new(46);
+    /// Captain Ulric Thorn's telegraphed area attacks (#404 part 3).
+    pub const REAVERS_SWEEP: AbilityId = AbilityId::new(47);
+    pub const LAST_COMMAND: AbilityId = AbilityId::new(48);
+    /// The movement kit (#294).
+    pub const HEROIC_LEAP: AbilityId = AbilityId::new(51);
+    pub const GRAPPLING_HOOK: AbilityId = AbilityId::new(52);
+    pub const BLINK: AbilityId = AbilityId::new(53);
+    /// The Necromancer's corpse payoffs (#935).
+    pub const RAISE_DEAD: AbilityId = AbilityId::new(54);
+    pub const CORPSE_BURST: AbilityId = AbilityId::new(55);
+    /// The Cleric's reckoning (#936).
+    pub const DIVINE_RECKONING: AbilityId = AbilityId::new(56);
+    /// The Redbrand signaler's horn call for help (#952).
+    pub const SIGNAL_HORN: AbilityId = AbilityId::new(57);
+    /// The Druid's wolf form (#957) and the bite it alone may use.
+    pub const WOLF_FORM: AbilityId = AbilityId::new(58);
+    pub const SAVAGE_BITE: AbilityId = AbilityId::new(59);
+}
+
+/// Every ability, ordered by ID; row `i` has ID `i + 1`.
+pub const ABILITY_CATALOG: [Ability; 59] = [
+    ability(
+        1,
+        "Heroic Strike",
+        WARDEN,
+        1,
+        15,
+        CastTime::Instant,
+        0,
+        AbilityRange::Melee,
+        AbilityEffect::WeaponStrike {
+            numerator: 3,
+            denominator: 2,
+            bonus: 6,
+        },
+    ),
+    ability(
+        2,
+        "Shield Bash",
+        WARDEN,
+        2,
+        10,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        AbilityRange::Melee,
+        AbilityEffect::Bash {
+            stun_ticks: ticks_from_ms(2_000),
+            lockout_ticks: ticks_from_ms(4_000),
+            knockback: 300,
+        },
+    ),
+    ability(
+        3,
+        "Rallying Cry",
+        WARDEN,
+        4,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::HealOverTime {
+            percent: 30,
+            duration: ticks_from_ms(10_000),
+            period: ticks_from_ms(1_000),
+        },
+    ),
+    ability(
+        4,
+        "Cleave",
+        WARDEN,
+        6,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(6_000),
+        AbilityRange::Melee,
+        AbilityEffect::Cleave {
+            extra: 2,
+            radius: 300,
+        },
+    ),
+    shot(
+        ability(
+            5,
+            "Aimed Shot",
+            RANGER,
+            1,
+            30,
+            CastTime::Instant,
+            ticks_from_ms(6_000),
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 2,
+                denominator: 1,
+                bonus: 8,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    shot(
+        ability(
+            6,
+            "Serpent Sting",
+            RANGER,
+            2,
+            20,
+            CastTime::Instant,
+            0,
+            RANGED,
+            AbilityEffect::DamageOverTime {
+                base: 30,
+                per_level: 4,
+                duration: ticks_from_ms(15_000),
+                period: ticks_from_ms(3_000),
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    shot(
+        ability(
+            7,
+            "Concussive Shot",
+            RANGER,
+            4,
+            15,
+            CastTime::Instant,
+            ticks_from_ms(12_000),
+            RANGED,
+            AbilityEffect::Snare {
+                percent: 50,
+                duration: ticks_from_ms(4_000),
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    ability(
+        8,
+        "Rapid Fire",
+        RANGER,
+        6,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Haste {
+            percent: 50,
+            duration: ticks_from_ms(10_000),
+        },
+    ),
+    // A magic missile (#289): it flies straight at the unit it aims at (#884), or along the facing.
+    shot(
+        ability(
+            9,
+            "Firebolt",
+            ARCANIST,
+            1,
+            25,
+            CastTime::Cast(ticks_from_ms(2_000)),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Missile,
+    ),
+    ability(
+        10,
+        "Frost Nova",
+        ARCANIST,
+        2,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Nova {
+            damage: [4, 6],
+            per_level: 1,
+            radius: 800,
+            root_ticks: ticks_from_ms(6_000),
+            unbreakable_ticks: ticks_from_ms(1_000),
+        },
+    ),
+    ability(
+        11,
+        "Arcane Barrier",
+        ARCANIST,
+        4,
+        40,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    ability(
+        12,
+        "Blizzard",
+        ARCANIST,
+        6,
+        80,
+        CastTime::Channel(ticks_from_ms(6_000)),
+        0,
+        RANGED,
+        AbilityEffect::Blizzard {
+            damage: [4, 6],
+            per_level: 1,
+            radius: 600,
+            period: ticks_from_ms(1_000),
+        },
+    ),
+    ability(
+        13,
+        "Muck Bolt",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(8_000),
+        AbilityRange::Units(2_000),
+        AbilityEffect::Bolt {
+            damage: [5, 8],
+            per_level: 0,
+        },
+    ),
+    ability(
+        14,
+        "Crude Bandage",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(3_000)),
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Bandage {
+            percent: 20,
+            below_percent: 50,
+        },
+    ),
+    shot(
+        ability(
+            15,
+            "Crossbow Bolt",
+            AbilityUser::Creature,
+            1,
+            0,
+            CastTime::Cast(ticks_from_ms(1_000)),
+            ticks_from_ms(8_000),
+            AbilityRange::Units(2_000),
+            AbilityEffect::Bolt {
+                damage: [5, 8],
+                per_level: 0,
+            },
+        ),
+        crate::ProjectileKind::Bolt,
+    ),
+    ability(
+        16,
+        "Fire Blast",
+        ARCANIST,
+        3,
+        45,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(10_000),
+        RANGED,
+        AbilityEffect::Blast {
+            damage: [12, 16],
+            per_level: 3,
+            radius: 500,
+            knockback: 600,
+        },
+    ),
+    ability(
+        17,
+        "Charge",
+        WARDEN,
+        3,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(15_000),
+        // A charge covers 1 s at 13.5 m/s plus melee reach.
+        AbilityRange::Units(1_500),
+        AbilityEffect::Charge { knockback: 300 },
+    ),
+    // A one-second wind-up gives players time to step out (#297).
+    ability(
+        18,
+        "Stomp",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(1_000)),
+        ticks_from_ms(12_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [8, 12],
+            per_level: 2,
+            radius: 350,
+            knockback: 300,
+        },
+    ),
+    // Aimed specials (#291): always loosed along the facing, they fly physically and can miss.
+    shot(
+        ability(
+            19,
+            "Piercing Shot",
+            RANGER,
+            3,
+            35,
+            CastTime::Instant,
+            ticks_from_ms(10_000),
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 2,
+                denominator: 1,
+                bonus: 10,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    shot(
+        ability(
+            20,
+            "Ricochet Shot",
+            RANGER,
+            5,
+            30,
+            CastTime::Instant,
+            ticks_from_ms(8_000),
+            RANGED,
+            AbilityEffect::WeaponStrike {
+                numerator: 3,
+                denominator: 2,
+                bonus: 8,
+            },
+        ),
+        crate::ProjectileKind::Arrow,
+    ),
+    // Cones, beams and chains (#292).
+    ability(
+        21,
+        "Frost Breath",
+        ARCANIST,
+        5,
+        35,
+        CastTime::Instant,
+        ticks_from_ms(10_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Cone {
+            damage: [6, 9],
+            per_level: 2,
+            range: 800,
+            half_angle: 30,
+            percent: 40,
+            duration: ticks_from_ms(3_000),
+        },
+    ),
+    ability(
+        22,
+        "Lightning Beam",
+        ARCANIST,
+        8,
+        50,
+        CastTime::Channel(ticks_from_ms(2_000)),
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Beam {
+            damage: [4, 6],
+            per_level: 1,
+            length: 2_000,
+            period: ticks_from_ms(500),
+        },
+    ),
+    ability(
+        23,
+        "Chain Lightning",
+        ARCANIST,
+        7,
+        45,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(12_000),
+        RANGED,
+        AbilityEffect::Chain {
+            damage: [10, 14],
+            per_level: 3,
+            jumps: 2,
+            radius: 800,
+        },
+    ),
+    // Garrick Redbrand's one telegraphed special (#276, Atlas 5.2.14): a 1.5 s wind-up, then a
+    // spinning sweep around him; stepping out of its ring avoids it.
+    ability(
+        24,
+        "Redbrand Whirl",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(15_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [16, 22],
+            per_level: 0,
+            radius: 400,
+            knockback: 200,
+        },
+    ),
+    // The Redbrand Brute's overhead smash (#160): a 2 s wind-up with its facing locked, then a
+    // heavy blow in a 3.5 m arc ahead of it that knocks its victims back 2 m. Stepping aside,
+    // behind it or out of reach avoids it.
+    ability(
+        25,
+        "Overhead Smash",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(15_000),
+        AbilityRange::Melee,
+        AbilityEffect::Smash {
+            damage: [16, 22],
+            per_level: 0,
+            range: 350,
+            half_angle: 50,
+            knockback: 200,
+        },
+    ),
+    // The Necromancer (#301): a shadow missile that tracks its target, a curse, a life drain
+    // and a bone ward, in line with the Arcanist's mana costs. Summons follow with #295.
+    shot(
+        ability(
+            26,
+            "Shadow Bolt",
+            NECROMANCER,
+            1,
+            25,
+            CastTime::Cast(ticks_from_ms(2_000)),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Shadow,
+    ),
+    shot(
+        ability(
+            27,
+            "Corruption",
+            NECROMANCER,
+            2,
+            30,
+            CastTime::Instant,
+            0,
+            RANGED,
+            AbilityEffect::DamageOverTime {
+                base: 30,
+                per_level: 4,
+                duration: ticks_from_ms(15_000),
+                period: ticks_from_ms(3_000),
+            },
+        ),
+        crate::ProjectileKind::Shadow,
+    ),
+    ability(
+        28,
+        "Drain Life",
+        NECROMANCER,
+        4,
+        45,
+        CastTime::Channel(ticks_from_ms(3_000)),
+        ticks_from_ms(10_000),
+        RANGED,
+        AbilityEffect::Drain {
+            damage: [5, 7],
+            per_level: 1,
+            period: ticks_from_ms(1_000),
+        },
+    ),
+    ability(
+        29,
+        "Bone Shield",
+        NECROMANCER,
+        6,
+        40,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    // The Rogue (#302): a dagger strike, a poisoned blade, a stunning gouge and a burst of
+    // speed, on focus like the Ranger. Thrown weapons (#290) close the catalog; traps and
+    // dashes follow in #300 and #294.
+    ability(
+        30,
+        "Sinister Strike",
+        ROGUE,
+        1,
+        25,
+        CastTime::Instant,
+        0,
+        AbilityRange::Melee,
+        AbilityEffect::WeaponStrike {
+            numerator: 3,
+            denominator: 2,
+            bonus: 6,
+        },
+    ),
+    ability(
+        31,
+        "Poisoned Blade",
+        ROGUE,
+        2,
+        20,
+        CastTime::Instant,
+        0,
+        AbilityRange::Melee,
+        AbilityEffect::DamageOverTime {
+            base: 30,
+            per_level: 4,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
+        },
+    ),
+    ability(
+        32,
+        "Gouge",
+        ROGUE,
+        4,
+        15,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        AbilityRange::Melee,
+        AbilityEffect::Bash {
+            stun_ticks: ticks_from_ms(2_000),
+            lockout_ticks: ticks_from_ms(4_000),
+            knockback: 0,
+        },
+    ),
+    ability(
+        33,
+        "Adrenaline Rush",
+        ROGUE,
+        6,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Haste {
+            percent: 40,
+            duration: ticks_from_ms(10_000),
+        },
+    ),
+    // The Cleric (#303) on faith: Smite costs nothing and builds faith, so a fresh Cleric can
+    // always act; Renew and Divine Shield land on a selected friendly player or the caster.
+    // Numbers follow the Arcanist and Necromancer. Knockback blasts follow later.
+    shot(
+        ability(
+            34,
+            "Smite",
+            CLERIC,
+            1,
+            0,
+            CastTime::Cast(ticks_from_ms(2_000)),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Holy,
+    ),
+    ability(
+        35,
+        "Renew",
+        CLERIC,
+        2,
+        25,
+        CastTime::Instant,
+        0,
+        FRIENDLY,
+        AbilityEffect::HealOverTime {
+            percent: 25,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
+        },
+    ),
+    ability(
+        36,
+        "Holy Beam",
+        CLERIC,
+        4,
+        40,
+        CastTime::Channel(ticks_from_ms(2_000)),
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Beam {
+            damage: [4, 6],
+            per_level: 1,
+            length: 2_000,
+            period: ticks_from_ms(500),
+        },
+    ),
+    ability(
+        37,
+        "Divine Shield",
+        CLERIC,
+        6,
+        35,
+        CastTime::Instant,
+        ticks_from_ms(20_000),
+        FRIENDLY,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    // The Druid (#304) on mana like the Arcanist: a nature missile, a single-target root,
+    // a heal over time on a selected friendly player or the caster, and a bark shield. The pet
+    // companion (#296) closes the catalog; stone walls follow in #293.
+    shot(
+        ability(
+            38,
+            "Wrath",
+            DRUID,
+            1,
+            25,
+            CastTime::Cast(ticks_from_ms(2_000)),
+            0,
+            RANGED,
+            AbilityEffect::Bolt {
+                damage: [10, 14],
+                per_level: 3,
+            },
+        ),
+        crate::ProjectileKind::Nature,
+    ),
+    ability(
+        39,
+        "Entangling Roots",
+        DRUID,
+        2,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(20_000),
+        RANGED,
+        AbilityEffect::Root {
+            root_ticks: ticks_from_ms(6_000),
+            unbreakable_ticks: ticks_from_ms(1_000),
+        },
+    ),
+    ability(
+        40,
+        "Rejuvenation",
+        DRUID,
+        4,
+        35,
+        CastTime::Instant,
+        0,
+        FRIENDLY,
+        AbilityEffect::HealOverTime {
+            percent: 25,
+            duration: ticks_from_ms(15_000),
+            period: ticks_from_ms(3_000),
+        },
+    ),
+    ability(
+        41,
+        "Barkskin",
+        DRUID,
+        6,
+        40,
+        CastTime::Instant,
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Absorb {
+            base: 20,
+            per_level: 8,
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    // The Rogue's thrown weapons (#290): a knife thrown at the unit it aims at (#884), and two
+    // aimed specials lobbed along the facing: a venom flask that shatters on impact and a bomb
+    // that bounces, rolls and bursts on its fuse.
+    shot(
+        ability(
+            42,
+            "Throwing Knife",
+            ROGUE,
+            3,
+            20,
+            CastTime::Instant,
+            ticks_from_ms(3_000),
+            AbilityRange::Units(2_500),
+            AbilityEffect::WeaponStrike {
+                numerator: 1,
+                denominator: 1,
+                bonus: 6,
+            },
+        ),
+        crate::ProjectileKind::Knife,
+    ),
+    shot(
+        ability(
+            43,
+            "Venom Flask",
+            ROGUE,
+            5,
+            30,
+            CastTime::Instant,
+            ticks_from_ms(12_000),
+            RANGED,
+            AbilityEffect::Splash {
+                base: 24,
+                per_level: 4,
+                radius: 300,
+                duration: ticks_from_ms(9_000),
+                period: ticks_from_ms(3_000),
+            },
+        ),
+        crate::ProjectileKind::Flask,
+    ),
+    shot(
+        ability(
+            44,
+            "Blasting Bomb",
+            ROGUE,
+            6,
+            35,
+            CastTime::Instant,
+            ticks_from_ms(15_000),
+            RANGED,
+            AbilityEffect::Blast {
+                damage: [14, 20],
+                per_level: 2,
+                radius: 400,
+                knockback: 350,
+            },
+        ),
+        crate::ProjectileKind::Bomb,
+    ),
+    // The Necromancer's summoned minions (#295): a skeleton that follows, forms up and fights
+    // for a minute. Up to four stand at once; group commands steer them (Atlas 5.2.84).
+    ability(
+        45,
+        "Raise Skeleton",
+        NECROMANCER,
+        3,
+        35,
+        CastTime::Cast(ticks_from_ms(1_500)),
+        ticks_from_ms(3_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Summon {
+            health: 45,
+            health_per_level: 12,
+            damage: [4, 7],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(2_000),
+            duration: ticks_from_ms(60_000),
+        },
+    ),
+    // The Druid's pet companion (#296): one wolf that follows, fights and obeys the same group
+    // orders as minions (Atlas 5.2.84). It is not timed; it stays until killed.
+    ability(
+        46,
+        "Call Companion",
+        DRUID,
+        3,
+        30,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(10_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Companion {
+            health: 80,
+            health_per_level: 20,
+            damage: [5, 8],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(1_800),
+        },
+    ),
+    // Captain Ulric Thorn's telegraphed sweep (#404 part 3): a 2 s wind-up, then a heavy blow
+    // around him; stepping out of its 4.5 m ring avoids it.
+    ability(
+        47,
+        "Reaver's Sweep",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_000)),
+        ticks_from_ms(10_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [16, 22],
+            per_level: 0,
+            radius: 450,
+            knockback: 200,
+        },
+    ),
+    // His last-phase order to a larger party's face (#404 part 3): a slower, wider ring that
+    // catches anyone inside 7 m.
+    ability(
+        48,
+        "Last Command",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_500)),
+        ticks_from_ms(12_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Stomp {
+            damage: [12, 18],
+            per_level: 0,
+            radius: 700,
+            knockback: 100,
+        },
+    ),
+    // Summoned terrain (#293): temporary, destroyable obstacles raised 4 m ahead of the caster.
+    // The Arcanist owns these two; the Druid's roots and stone walls reuse the core in #304.
+    ability(
+        49,
+        "Ice Wall",
+        ARCANIST,
+        3,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(18_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SummonTerrain {
+            kind: crate::SummonedTerrainKind::IceWall,
+        },
+    ),
+    ability(
+        50,
+        "Earth Pillar",
+        ARCANIST,
+        5,
+        25,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SummonTerrain {
+            kind: crate::SummonedTerrainKind::EarthPillar,
+        },
+    ),
+    // The movement kit (#294): the Warden's leap, the Ranger's hook and the Arcanist's blink.
+    ability(
+        51,
+        "Heroic Leap",
+        WARDEN,
+        4,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(20_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Leap {
+            distance: 800,
+            damage: [6, 10],
+            per_level: 2,
+            radius: 400,
+            knockback: 400,
+        },
+    ),
+    ability(
+        52,
+        "Grappling Hook",
+        RANGER,
+        4,
+        25,
+        CastTime::Instant,
+        ticks_from_ms(14_000),
+        AbilityRange::Units(2_000),
+        AbilityEffect::Hook {
+            damage: [4, 7],
+            per_level: 1,
+        },
+    ),
+    ability(
+        53,
+        "Blink",
+        ARCANIST,
+        4,
+        40,
+        CastTime::Instant,
+        ticks_from_ms(15_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Blink { distance: 1_000 },
+    ),
+    // The Necromancer's corpse payoffs (#935): a victim that dies under the caster's Corruption
+    // leaves a fresh corpse for 10 s, spent once on either a raised helper or a burst. The
+    // numbers are provisional tuning.
+    ability(
+        54,
+        "Raise Dead",
+        NECROMANCER,
+        3,
+        20,
+        CastTime::Instant,
+        0,
+        AbilityRange::SelfCentred,
+        AbilityEffect::RaiseDead {
+            health: 60,
+            health_per_level: 12,
+            damage: [6, 9],
+            damage_per_level: 2,
+            swing_ticks: ticks_from_ms(2_000),
+            duration: ticks_from_ms(20_000),
+        },
+    ),
+    ability(
+        55,
+        "Corpse Burst",
+        NECROMANCER,
+        3,
+        25,
+        CastTime::Instant,
+        0,
+        AbilityRange::SelfCentred,
+        AbilityEffect::CorpseBurst {
+            damage: [24, 30],
+            per_level: 4,
+            radius: 600,
+        },
+    ),
+    // The Cleric's reckoning (#936, Atlas 5.2.i936): endure an enemy's blows, heal, then return
+    // 70% of the harm it dealt you and nearby allies this encounter, at most 200 stored. The
+    // rate and cap are provisional tuning.
+    ability(
+        56,
+        "Divine Reckoning",
+        CLERIC,
+        3,
+        30,
+        CastTime::Instant,
+        ticks_from_ms(12_000),
+        RANGED,
+        AbilityEffect::Reckoning {
+            percent: 70,
+            pool: 200,
+        },
+    ),
+    // A Redbrand signaler's horn call (#952): a 2.5 s call for help the signaler stands still
+    // for. A Shield Bash, a Gouge or any other stun breaks it, and the call waits its whole
+    // 30 s cooldown; completed, one authored partner joins the fight.
+    ability(
+        57,
+        "Signal Horn",
+        AbilityUser::Creature,
+        1,
+        0,
+        CastTime::Cast(ticks_from_ms(2_500)),
+        ticks_from_ms(30_000),
+        AbilityRange::SelfCentred,
+        AbilityEffect::SignalCall,
+    ),
+    // The Druid's wolf form (#957, Atlas 5.2.i957): shift to close a gap 40% faster and land one
+    // savage bite, then shift back for Wrath and Roots; no other spell works in the shape.
+    // Tuning is provisional.
+    ability(
+        58,
+        "Wolf Form",
+        DRUID,
+        4,
+        0,
+        CastTime::Instant,
+        ticks_from_ms(1_500),
+        AbilityRange::SelfCentred,
+        AbilityEffect::Shapeshift {
+            speed: 40,
+            duration: ticks_from_ms(600_000),
+        },
+    ),
+    ability(
+        59,
+        "Savage Bite",
+        DRUID,
+        4,
+        20,
+        CastTime::Instant,
+        ticks_from_ms(6_000),
+        AbilityRange::Melee,
+        AbilityEffect::WeaponStrike {
+            numerator: 2,
+            denominator: 1,
+            bonus: 12,
+        },
+    ),
+];
