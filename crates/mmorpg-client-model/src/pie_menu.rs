@@ -10,6 +10,7 @@ use mmorpg_core::{
 };
 use strum::VariantArray;
 
+use crate::chat::emote_name;
 use crate::hud::{ACTION_BAR_SLOTS, class_kit};
 use crate::mouse_owner::{GESTURE_THRESHOLD_PX, MouseOwner};
 
@@ -144,16 +145,6 @@ const fn call_name(call: MinionCall) -> &'static str {
         MinionCall::Defend => "defend",
         MinionCall::Follow => "follow",
         MinionCall::Retreat => "retreat",
-    }
-}
-
-const fn emote_name(emote: Emote) -> &'static str {
-    match emote {
-        Emote::Wave => "wave",
-        Emote::Bow => "bow",
-        Emote::Cheer => "cheer",
-        Emote::Laugh => "laugh",
-        Emote::Point => "point",
     }
 }
 
