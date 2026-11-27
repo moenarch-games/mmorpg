@@ -109,7 +109,7 @@ Before #1058 the native client found each unit's next record with a linear searc
 #683 (world art separated from collision) was measured with `scripts/profile-browser.py` at its fixed locations. **Before** is `1593c054`, the parent of #683's first slice (#764). **After** is `b39cbca3` (main, 2026-11-24). Both builds ran with the current script on Chromium 159, headless, ANGLE Vulkan, on an RTX 3060 Ti at 1440×900 and pixel ratio 1:
 
 ```sh
-python3 scripts/profile-browser.py --no-sweep --out report.json   # GPU_ARGS with --use-angle=vulkan
+python3 scripts/profile-browser.py --no-sweep --out report.json   # ANGLE Vulkan, the script's default since 2026-11-27
 ```
 
 Two runs were made of each build, and the table shows their mean. For rAF p95, it shows the worse run. One "after" run hid `EXT_disjoint_timer_query_webgl2`, because the "before" page has no timer queries. The rAF interval is frame pacing. The main-thread frame is the page's `?profile` CPU time. GPU time per pass (#1106) exists only in the "after" build. The "before" build used today's rolling asset bundles, and its Ranger figure was copied from "after", because that commit's Ranger fetch no longer resolves.

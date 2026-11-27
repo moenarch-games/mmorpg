@@ -40,7 +40,8 @@ Prerequisites: build web/ (bun run build) and Playwright for Python (see smoke-b
 Run from the repository root:
     python scripts/profile-browser.py --out artifacts/profile/report.json --trace artifacts/profile
 Defaults: Playwright's full Chromium in new headless mode (`--channel chromium`) on the hardware GPU
-(ANGLE OpenGL), 1440x900 at pixel ratio 1, then a viewport/pixel-ratio sweep of `idle` and `overview`.
+(ANGLE on Vulkan; `--angle gl` for ANGLE OpenGL, which needs a display), 1440x900 at pixel ratio 1, then a
+viewport/pixel-ratio sweep of `idle` and `overview`. A software renderer (SwiftShader, llvmpipe) stops the run.
 Not the default headless shell: while the page holds Pointer Lock (mouse-look), the shell stalls
 WebGL for 100 to 500 ms every few frames, which headed and new-headless Chrome never do (#727).
 """
@@ -61,7 +62,14 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeout, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-GPU_ARGS = ["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"]
+ANGLE_ARGS = {
+    # Reaches the host GPU headless, as in review-shots.py.
+    "vulkan": ["--use-angle=vulkan", "--enable-features=Vulkan"],
+    # Falls back to SwiftShader without a display; for `--headed` runs.
+    "gl": ["--use-angle=gl"],
+}
+# Renderer strings of software rasterizers: their frame times say nothing about the game on a GPU.
+SOFTWARE_RENDERERS = re.compile(r"swiftshader|llvmpipe|softpipe|software", re.IGNORECASE)
 SWEEP = [(1280, 720, 1), (1920, 1080, 1), (1920, 1080, 2), (2560, 1440, 2)]
 TRACE_CATEGORIES = [
     "toplevel", "devtools.timeline", "disabled-by-default-devtools.timeline", "blink.user_timing",
@@ -149,6 +157,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, *_args):
         pass
+
+
+def webgl_renderer(browser):
+    """The WebGL 2 renderer string of a blank page in `browser`."""
+    page = browser.new_page()
+    try:
+        return page.evaluate("""() => { const gl = document.createElement('canvas').getContext('webgl2');
+          const d = gl && gl.getExtension('WEBGL_debug_renderer_info');
+          return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; }""")
+    finally:
+        page.close()
 
 
 def pct(values, p):
@@ -612,7 +631,10 @@ def main():
                         help=f"also profile idle, move-rotate, dense-woods and dense-hub at pixel ratio {FILL_RATIO}, per GPU pass")
     parser.add_argument("--activity", choices=["battle-royale"],
                         help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
+    parser.add_argument("--angle", choices=sorted(ANGLE_ARGS), default="vulkan",
+                        help="ANGLE backend (default vulkan; gl needs a display, headless it falls back to software)")
     args = parser.parse_args()
+    gpu_args = ["--enable-gpu", *ANGLE_ARGS[args.angle], "--ignore-gpu-blocklist"]
     # The arena's overview: the whole fortress from above its south side.
     overview = ((0, 70, -150), (0, 0, 0)) if args.activity else "vale"
 
@@ -626,9 +648,14 @@ def main():
     report = {"source": "scripts/profile-browser.py", "cpus": os.cpu_count(), "loadAverageAtStart": [round(x, 1) for x in os.getloadavg()],
               "scenarios": {}, "sweep": []}
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=GPU_ARGS)
+        browser = playwright.chromium.launch(headless=not args.headed, channel=args.channel, args=gpu_args)
         report["browser"] = {"version": browser.version, "channel": args.channel,
-                             "headless": not args.headed, "args": GPU_ARGS}
+                             "headless": not args.headed, "args": gpu_args}
+        # Before the game loads: on a software rasterizer the page alone takes minutes.
+        renderer = webgl_renderer(browser)
+        if SOFTWARE_RENDERERS.search(renderer or ""):
+            raise SystemExit(f"Chromium renders in software ({renderer}), not on the GPU: "
+                             f"try another --angle than {args.angle}, or --headed on a display.")
         report["activity"] = args.activity or "greyhaven"
         session = Session(browser, url, 1440, 900, 1, args.activity)
         report["coldSelectionSeconds"] = session.cold_selection_s
