@@ -139,7 +139,9 @@ describe("Action Lab experiments (#382)", () => {
 
   test("authored momentum carries a released running jump; landing edges compose (#413)", () => {
     const production = baseline();
-    expect(production.movement ?? []).toEqual([]);
+    // Production authors the basic strikes' movement (#1247).
+    expect((production.movement ?? []).map((rule) => `${rule.action}·${rule.phase} ${rule.conditions.join(",")}`))
+      .toEqual(["BasicMelee·Startup StandingStrike", "BasicMelee·Recovery RunningStrike", "Airborne·Active AttackedAirborne", "Landing·Recovery AttackedAirborne"]);
     const sample = traversalSample(copyConfig(production, "Traversal sample"));
     expect(check(sample)).toMatchObject({ baseline: false, error: null });
     expect(sample.edges.map((edge) => edge.id)).toEqual(["SlashToShieldBash", "CleaveToSlash", "LeapingSlash", "LandingToMelee", "LandingToShieldBash"]);
