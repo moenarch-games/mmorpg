@@ -35,6 +35,7 @@ use std::sync::Arc;
 use crate::creature::Life;
 use crate::events::push_event;
 use crate::physics::Vec3i;
+use crate::routine::distance;
 use crate::snapshot::CreatureAi;
 use crate::{
     CreatureId, EntityRef, ErrorCode, NpcId, QuestObjective, ZoneError, ZoneEvent, ZoneSimulation,
@@ -103,10 +104,6 @@ pub struct SupplyRun {
     pub marches: Vec<SupplyMarch>,
     /// Zero while it marches; once over, the tick it may be called again.
     pub rests_until: u64,
-}
-
-fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
-    i64::try_from(crate::trig::xz_length(a[0] - b[0], a[1] - b[1])).unwrap_or(i64::MAX)
 }
 
 impl ZoneSimulation {

@@ -111,29 +111,48 @@ pub struct NpcPlacement {
     pub velocity: [i8; 2],
 }
 
+/// One leg of a route: where it starts and ends, and its XZ length in units.
+pub(crate) type Leg = ([i32; 2], [i32; 2], i64);
+
+/// The XZ distance between two points in units: a leg's length (#1231, the one route metric
+/// routines, carts, crossings and supply patrols share).
+pub(crate) fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
+    i64::try_from(trig::xz_length(b[0] - a[0], b[1] - a[1])).unwrap_or(i64::MAX)
+}
+
+/// Each leg starting at `start` and running through `path`, without collecting them.
+pub(crate) fn leg_iter(
+    start: [i32; 2],
+    path: &[[i32; 2]],
+) -> impl Iterator<Item = Leg> + Clone + '_ {
+    std::iter::once(start)
+        .chain(path.iter().copied())
+        .zip(path.iter().copied())
+        .map(|(from, to)| (from, to, distance(from, to)))
+}
+
 /// `(from, to, length)` of each leg, starting at `start`.
-pub(crate) fn legs(start: [i32; 2], path: &[[i32; 2]]) -> Vec<([i32; 2], [i32; 2], i64)> {
-    let mut from = start;
-    path.iter()
-        .map(|&to| {
-            let length = i64::try_from(trig::xz_length(to[0] - from[0], to[1] - from[1]))
-                .unwrap_or(i64::MAX);
-            let leg = (from, to, length);
-            from = to;
-            leg
-        })
-        .collect()
+pub(crate) fn legs(start: [i32; 2], path: &[[i32; 2]]) -> Vec<Leg> {
+    leg_iter(start, path).collect()
 }
 
 /// The point `distance` units along the legs, walking forward or backward, with its heading.
-pub(crate) fn along(
-    legs: &[([i32; 2], [i32; 2], i64)],
+pub(crate) fn along(legs: &[Leg], distance: i64, forward: bool) -> NpcPlacement {
+    along_legs(legs.iter().copied(), distance, forward)
+}
+
+/// [`along`] over legs not collected, such as [`leg_iter`]'s: the one route sampler (#1231).
+/// Zero-length legs are passed over; past either end the walker stands at the last point.
+pub(crate) fn along_legs(
+    legs: impl Iterator<Item = Leg> + Clone,
     distance: i64,
     forward: bool,
 ) -> NpcPlacement {
-    let total: i64 = legs.iter().map(|leg| leg.2).sum();
+    let total: i64 = legs.clone().map(|leg| leg.2).sum();
     let mut remaining = if forward { distance } else { total - distance };
-    for &(from, to, length) in legs {
+    let mut end = [0, 0];
+    for (from, to, length) in legs {
+        end = to;
         if remaining <= length && length > 0 {
             let lerp = |a: i32, b: i32| {
                 i32::try_from(i64::from(a) + (i64::from(b) - i64::from(a)) * remaining / length)
@@ -155,7 +174,6 @@ pub(crate) fn along(
         }
         remaining -= length;
     }
-    let end = legs.last().map_or([0, 0], |leg| leg.1);
     NpcPlacement {
         position: end,
         facing: 0,
@@ -374,6 +392,39 @@ mod tests {
             routine.errands[0].span([0, 0]),
             2 * walk + HOUR_TICKS,
             "{NPC_WALK_UNITS_PER_TICK}"
+        );
+    }
+
+    #[test]
+    fn a_crossing_samples_its_route_like_every_route() {
+        // An L: 3 m east, then 4 m north (#1231).
+        let crossing = crate::WagonCrossing {
+            npc: NpcId::new(1),
+            route: vec![[0, 0], [300, 0], [300, 400]],
+            health: 1,
+            raiders: Vec::new(),
+            radius: 100,
+        };
+        let east = crate::trig::yaw_from_vector(1, 0).unwrap();
+        let north = crate::trig::yaw_from_vector(0, 1).unwrap();
+        assert_eq!(crossing.length(), 700);
+        assert!(crossing.legs_have_length());
+        assert_eq!(crossing.point_at(0), ([0, 0], east));
+        assert_eq!(crossing.point_at(150), ([150, 0], east));
+        assert_eq!(
+            crossing.point_at(300),
+            ([300, 0], east),
+            "a corner ends its leg"
+        );
+        assert_eq!(crossing.point_at(500), ([300, 200], north));
+        assert_eq!(crossing.point_at(700), ([300, 400], north));
+        let stalled = crate::WagonCrossing {
+            route: vec![[0, 0], [0, 0], [300, 0]],
+            ..crossing
+        };
+        assert!(
+            !stalled.legs_have_length(),
+            "content refuses a zero-length leg"
         );
     }
 }
