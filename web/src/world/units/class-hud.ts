@@ -6,8 +6,8 @@ import { auraLabel, auraTimer, sortAuras } from "./aura-display";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
-import { COMBAT_TEXT_MS, INTERRUPT_FLASH_MS, cleaveCount, combatTexts, pierceShot, viewerInterrupted, type PierceShot } from "./combat-text";
-import { masteryUnlockText, unitName } from "./combat-hud";
+import { CombatTextFeed, INTERRUPT_FLASH_MS, combatTextMs, viewerInterrupted } from "./combat-text";
+import { unitName } from "./combat-hud";
 
 /** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
 const AIM_ROWS: readonly StrikeHeight[] = ["high", "middle", "low"];
@@ -102,12 +102,8 @@ export class ClassHud {
   #lastPointerType = "";
   #interruptUntil = 0;
   #tick = -1n;
-  /** Units the viewer's running swing has struck so far (#909). */
-  #cleaved = 0;
-  /** The sword mastery level last seen (#915); null before the first projection. */
-  #mastery: number | null = null;
-  /** The viewer's latest Piercing Shot and the units it struck (#932). */
-  #pierce: PierceShot | null = null;
+  /** The shared combat-text rules (#1234), made with the first projection, once Wasm is loaded. */
+  #feed: CombatTextFeed | null = null;
   #catalog: ContentCatalog | null = null;
   #latest: ZoneSnapshot | null = null;
   /** Labels of the directed-strike action's working bindings; empty when unbound. */
@@ -235,9 +231,7 @@ export class ClassHud {
     this.#barCatalog = null;
     this.#interruptUntil = 0;
     this.#tick = -1n;
-    this.#cleaved = 0;
-    this.#mastery = null;
-    this.#pierce = null;
+    this.#feed?.reset();
     this.#latest = null;
     this.#catalog = null;
     for (const entry of this.#floating.splice(0)) {
@@ -260,27 +254,10 @@ export class ClassHud {
     if (viewerInterrupted(snapshot)) {
       this.#interruptUntil = now + INTERRUPT_FLASH_MS;
     }
-    for (const text of combatTexts(snapshot)) {
+    this.#feed ??= new CombatTextFeed();
+    for (const text of this.#feed.observe(snapshot)) {
       this.#floatText(text.kind, text.text, now);
     }
-    const cleaved = cleaveCount(snapshot, this.#cleaved);
-    if (cleaved > this.#cleaved && cleaved > 1) {
-      this.#floatText("cleave", `Cleave \u00d7${cleaved}`, now);
-    }
-    this.#cleaved = cleaved;
-    // A Piercing Shot through several units floats the cleave's "×N" (#932).
-    const pierce = pierceShot(snapshot, this.#pierce);
-    const before = this.#pierce?.loosed === pierce?.loosed ? (this.#pierce?.struck ?? 0) : 0;
-    if (pierce !== null && pierce.struck > 1 && pierce.struck > before) {
-      this.#floatText("cleave", `Pierce \u00d7${pierce.struck}`, now);
-    }
-    this.#pierce = pierce;
-    // A mastery level gained in play floats its unlock (#915).
-    const mastery = snapshot.viewer.swordMastery;
-    if (this.#mastery !== null && mastery > this.#mastery) {
-      this.#floatText("mastery", masteryUnlockText(mastery), now);
-    }
-    this.#mastery = mastery;
   }
 
   /** Redraws the frames, bars and slots from the newest projection. */
@@ -624,7 +601,7 @@ export class ClassHud {
     element.textContent = text;
     element.style.setProperty("--drift", `${(this.#floating.length % 5 - 2) * 1.1}rem`);
     this.#text.append(element);
-    this.#floating.push({ element, until: now + COMBAT_TEXT_MS });
+    this.#floating.push({ element, until: now + combatTextMs() });
     while (this.#floating.length > MAX_FLOATING_TEXTS) {
       this.#floating.shift()?.element.remove();
     }
