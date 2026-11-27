@@ -57,9 +57,9 @@
 //!   ([`EdgeId::LandingToMelee`] and its siblings, anchored at touchdown)
 //!   win over the landing's hold, end its recovery and may carry an
 //!   [`Effect::Impulse`]: run → jump → aerial attack → landing → follow-up
-//!   composes from ordinary actions. The baseline authors no movement, so
-//!   today's movement is unchanged; its one landing edge is the sword
-//!   master's [`EdgeId::LeapingSlash`] (#915).
+//!   composes from ordinary actions. The baseline authors first values for the
+//!   basic strikes' wind-up, running recovery, air and landing (#1247); its
+//!   one landing edge is the sword master's [`EdgeId::LeapingSlash`] (#915).
 //! - **Swimming** (#413, Atlas 5.1.41–5.1.43). [`ActionId::Swim`] runs in
 //!   the movement region while a living player swims (at the surface or
 //!   under it), ahead of being airborne. Its phase can author movement like
@@ -345,6 +345,10 @@ pub enum Condition {
     /// The acting player wields a sword and has reached the sword mastery that unlocks
     /// the Leaping Slash (#915).
     SwordMastery,
+    /// The basic strike winding up or recovering is a standing chain strike (#1247).
+    StandingStrike,
+    /// The basic strike winding up or recovering is a running strike (#1247).
+    RunningStrike,
 }
 
 /// A typed effect an edge, or its precision window, applies when it wins
