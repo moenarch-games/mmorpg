@@ -85,11 +85,8 @@ export type SceneryContent = StaticSceneContent & {
   /** Review-only presentation; the host never calls this. */
   /** The shared unit presenter (#184) of one joined player. */
   UnitPresenter: new (player: number) => UnitPresenterHandle;
-  /** The shared walk-in building presenters (#158): door swing and interior look, one per building. */
-  BuildingPresenter: (new (index: number) => BuildingPresenterHandle) & {
-    count(): number;
-    mausoleum(descriptor: string, x: number, y: number, z: number, quarters: number): BuildingPresenterHandle;
-  };
+  /** The shared walk-in building presenters (#158, #1286): door swings and interior looks of every building at once. */
+  WalkInSet: new () => WalkInSetHandle;
   /** The Outpost kit buildings (#420): their entries (`<key>` or `<key>/<variant>`), and per placed module its entry and 16 model floats. */
   outpostKitEntries(): string[];
   outpostKitKeys(): string[];
@@ -139,22 +136,30 @@ export type SceneryContent = StaticSceneContent & {
   regionModels(): string;
 };
 
-/** A WASM walk-in building presenter (`mmorpg_presentation::buildings::WalkIn`). */
-export type BuildingPresenterHandle = {
-  /** The bundle directory under `buildings/`, its door and the door leaf's entry. */
-  bundle(): string;
-  door(): number;
-  doorEntry(): string;
+/**
+ * The WASM walk-in buildings (`mmorpg_presentation::buildings::WalkInSet`, #1286). Building facts are read once by index;
+ * each per-frame question answers for every building in one call.
+ */
+export type WalkInSetHandle = {
+  count(): number;
+  /** Building `index`'s bundle directory under `buildings/`, its door and the door leaf's entry. */
+  bundle(index: number): string;
+  door(index: number): number;
+  doorEntry(index: number): string;
+  /** Building `index`'s bundle entries, in `frame` order. */
+  entries(index: number): string[];
+  /** The walk-in cottage building `index` is, by its house collider (#843), or 0. */
+  cottage(index: number): number;
+  /** Every building's entries, building by building: 16 column-major model floats then 1 shown / 0 hidden each; `open` lists open doors, `viewer` is feet in metres or empty. */
+  frame(open: Uint32Array, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
+  /** The eye after every building's indoor boom. */
   camera(viewer: Float64Array, eye: Float64Array, target: Float64Array, dt: number, reduced: boolean): Float64Array;
+  /** The strongest interior look at the viewer's feet. */
   lighting(viewer: Float64Array): number;
-  pointLight(): Float64Array;
-  /** The bundle entries, in `frame` order. */
-  entries(): string[];
-  /** The walk-in cottage this building is, by its house collider (#843), or 0; and whether feet stand in its room. */
-  cottage(): number;
-  inside(viewer: Float64Array): boolean;
-  /** Per entry 16 column-major model floats then 1 shown / 0 hidden; `viewer` is feet in metres or empty. */
-  frame(open: boolean, viewer: Float64Array, dt: number, reducedMotion: boolean): Float32Array;
+  /** The lit buildings' lamps, eight floats each. */
+  pointLights(): Float64Array;
+  /** The walk-in cottages whose room feet at `viewer` stand in. */
+  cottagesInside(viewer: Float64Array): Uint32Array;
 };
 
 /** The shared presenter's ambient animal loops (`mmorpg_presentation::ambient`, #419). */
@@ -178,8 +183,8 @@ export type SceneryProvider = {
   readonly dressedProps?: () => Uint32Array;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
-  /** The walk-in buildings' presenters. */
-  readonly buildings: { presenters(): BuildingPresenterHandle[] };
+  /** The walk-in buildings' presenters, or null where there are none. */
+  readonly buildings: { set(): WalkInSetHandle | null };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
   readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array; wear?: number; cottage?: number }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
@@ -495,7 +500,7 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     staticScene: content,
     unitPresenter: (player) => new content.UnitPresenter(player),
     buildings: {
-      presenters: () => Array.from({ length: content.BuildingPresenter.count() }, (_, index) => new content.BuildingPresenter(index)),
+      set: () => new content.WalkInSet(),
     },
     outpost: (() => {
       const models = content.outpostKitModels();

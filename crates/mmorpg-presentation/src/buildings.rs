@@ -255,6 +255,86 @@ pub struct Part {
     pub visible: bool,
 }
 
+/// Every walk-in building on a scenery, asked together (#1286): each per-frame question (parts,
+/// camera, interior look, lamps, rooms stood in) is one call for all of them, so a client that
+/// crosses a boundary to ask, like the browser, does so a fixed handful of times a frame.
+#[derive(Clone, Debug)]
+pub struct WalkInSet {
+    buildings: Vec<WalkIn>,
+}
+
+impl WalkInSet {
+    /// Every walk-in building on `scenery`, in [`specs`] order.
+    #[must_use]
+    pub fn all(scenery: &Scenery) -> Self {
+        Self {
+            buildings: WalkIn::all(scenery),
+        }
+    }
+
+    /// The buildings, in [`specs`] order.
+    #[must_use]
+    pub fn buildings(&self) -> &[WalkIn] {
+        &self.buildings
+    }
+
+    /// Each building's parts this frame, in order, with the building's index: its door eased
+    /// toward whether `open` says its door is open; see [`WalkIn::frame`].
+    pub fn frame(
+        &mut self,
+        open: impl Fn(Option<DoorId>) -> bool,
+        viewer: Option<[f64; 3]>,
+        dt: f64,
+        reduced_motion: bool,
+    ) -> Vec<(usize, Part)> {
+        self.buildings
+            .iter_mut()
+            .enumerate()
+            .flat_map(|(index, building)| {
+                let open = open(building.spec.door);
+                building
+                    .frame(open, viewer, dt, reduced_motion)
+                    .into_iter()
+                    .map(move |part| (index, part))
+            })
+            .collect()
+    }
+
+    /// The eye after every building's indoor boom pulled it in; see [`WalkIn::camera`].
+    pub fn camera(
+        &mut self,
+        viewer: [f64; 3],
+        eye: [f64; 3],
+        target: [f64; 3],
+        dt: f64,
+        reduced: bool,
+    ) -> [f64; 3] {
+        self.buildings.iter_mut().fold(eye, |eye, building| {
+            building.camera(viewer, eye, target, dt, reduced)
+        })
+    }
+
+    /// The strongest interior look at `viewer`; see [`WalkIn::lighting`].
+    #[must_use]
+    pub fn lighting(&self, viewer: [f64; 3]) -> f32 {
+        self.buildings
+            .iter()
+            .fold(0., |value, building| value.max(building.lighting(viewer)))
+    }
+
+    /// The lit buildings' lamps, in building order; see [`WalkIn::light`].
+    pub fn lights(&self) -> impl Iterator<Item = crate::lights::PointLight> + '_ {
+        self.buildings.iter().filter_map(WalkIn::light)
+    }
+
+    /// The walk-in cottages (#843), by house collider, whose room feet at `viewer` stand in.
+    pub fn cottages_inside(&self, viewer: [f64; 3]) -> impl Iterator<Item = u32> + '_ {
+        self.buildings
+            .iter()
+            .filter_map(move |building| building.spec.cottage.filter(|_| building.inside(viewer)))
+    }
+}
+
 /// One building's presented door swing and interior state.
 #[derive(Clone, Debug)]
 pub struct WalkIn {

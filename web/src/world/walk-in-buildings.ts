@@ -3,14 +3,13 @@ import type { CameraView, Vec3 } from "./orbit-camera";
 import { BatchedRoots } from "./static-batches";
 import { loadStaticBundle } from "./static-bundle";
 import { freeHandle, retainedBundle } from "./zone-lifecycle";
-import type { BuildingPresenterHandle } from "./scenery";
+import type { WalkInSetHandle } from "./scenery";
 
 /** Where `scripts/fetch-bundles.sh` places the walk-in buildings' bundles in `web/public`. */
 const BUILDINGS = `${import.meta.env.BASE_URL}buildings/`;
 
-/** One walk-in building: its presenter and loaded roots. */
+/** One walk-in building: its facts and loaded roots; the shared set presents it. */
 type Building = {
-  presenter: BuildingPresenterHandle;
   bundle: string;
   door: number;
   doorEntry: string;
@@ -19,6 +18,7 @@ type Building = {
   roots: THREE.Object3D[];
   /** The roots batched per material (#615); null until loaded. */
   batched: BatchedRoots | null;
+  /** Its 17 floats per root within the set's frame. */
   frame: Float32Array | null;
   /** The frame the batches last followed, 17 floats per root (matrix and shown). */
   placed: Float32Array | null;
@@ -32,14 +32,22 @@ type Building = {
  */
 export class WalkInBuildings {
   readonly #buildings: Building[];
+  /** The shared presenter of every building (#1286), null without any. */
+  readonly #set: WalkInSetHandle | null;
+  /** Inputs reused every frame instead of a fresh array per call (#1286). */
+  readonly #feet = new Float64Array(3);
+  readonly #eye = new Float64Array(3);
+  readonly #target = new Float64Array(3);
+  readonly #none = new Float64Array(0);
   #loading: Promise<boolean> | null = null;
   #changed = false;
   #rootsRevision = 0;
   #disposed = false;
 
-  constructor(presenters: readonly BuildingPresenterHandle[]) {
-    this.#buildings = presenters.map((presenter) => ({
-      presenter, bundle: presenter.bundle(), door: presenter.door(), doorEntry: presenter.doorEntry(), entries: presenter.entries(),
+  constructor(set: WalkInSetHandle | null) {
+    this.#set = set;
+    this.#buildings = Array.from({ length: set?.count() ?? 0 }, (_, index) => ({
+      bundle: set!.bundle(index), door: set!.door(index), doorEntry: set!.doorEntry(index), entries: set!.entries(index),
       roots: [], batched: null, frame: null, placed: null,
     }));
   }
@@ -84,46 +92,60 @@ export class WalkInBuildings {
       building.batched?.dispose();
       building.batched = null;
       building.roots = [];
-      freeHandle(building.presenter);
     }
+    if (this.#set) { freeHandle(this.#set); }
     this.#changed = true;
     this.#rootsRevision += 1;
   }
 
   /** Eases each door toward its state in `doors` and hides roofs and ceilings while `viewer` (feet, metres) is inside. */
   update(doors: readonly { door: number; open: boolean }[], viewer: readonly [number, number, number] | null, dt: number, reducedMotion: boolean): void {
+    if (!this.#set) { return; }
+    const open = Uint32Array.from(doors.filter((door) => door.open).map((door) => door.door));
+    // One call for every building (#1286); each building's 17 floats per root follow the last's.
+    const frame = this.#set.frame(open, viewer ? this.#feetOf(viewer) : this.#none, dt, reducedMotion);
+    let start = 0;
     for (const building of this.#buildings) {
-      const open = doors.some((door) => door.door === building.door && door.open);
-      building.frame = building.presenter.frame(open, Float64Array.from(viewer ?? []), dt, reducedMotion);
+      const end = start + building.entries.length * 17;
+      building.frame = frame.subarray(start, end);
+      start = end;
       place(building);
     }
   }
 
   /** Shared adaptive boom; each presenter retains its smooth recovery outside the room. */
   camera(view: CameraView, viewer: Vec3, dt: number, reduced: boolean): CameraView {
-    let eye = view.eye;
-    for (const building of this.#buildings) {
-      const result = building.presenter.camera(Float64Array.from(viewer), Float64Array.from(eye), Float64Array.from(view.target), dt, reduced);
-      eye = [result[0]!, result[1]!, result[2]!];
-    }
-    return { eye, target: view.target };
+    if (!this.#set) { return view; }
+    this.#eye.set(view.eye);
+    this.#target.set(view.target);
+    const eye = this.#set.camera(this.#feetOf(viewer), this.#eye, this.#target, dt, reduced);
+    return { eye: [eye[0]!, eye[1]!, eye[2]!], target: view.target };
   }
 
   /** The walk-in cottages (#843), by house collider, whose room feet at `viewer` (metres) stand in. */
   cottagesInside(viewer: Vec3): Set<number> {
-    const feet = Float64Array.from(viewer);
-    return new Set(this.#buildings
-      .map((building) => building.presenter.cottage())
-      .filter((house, index) => house !== 0 && this.#buildings[index]!.presenter.inside(feet)));
+    return new Set(this.#set?.cottagesInside(this.#feetOf(viewer)) ?? []);
   }
 
   interior(viewer: Vec3): number {
-    return this.#buildings.reduce((value, building) => Math.max(value, building.presenter.lighting(Float64Array.from(viewer))), 0);
+    return this.#set?.lighting(this.#feetOf(viewer)) ?? 0;
   }
 
   pointLights(existing: Float32Array): Float32Array {
-    const lamps = this.#buildings.flatMap((building) => Array.from(building.presenter.pointLight()));
-    return lamps.length ? Float32Array.from([...existing, ...lamps]) : existing;
+    const lamps = this.#set?.pointLights();
+    if (!lamps?.length) { return existing; }
+    const all = new Float32Array(existing.length + lamps.length);
+    all.set(existing);
+    all.set(lamps, existing.length);
+    return all;
+  }
+
+  /** `viewer` in the reused feet array. */
+  #feetOf(viewer: readonly [number, number, number]): Float64Array {
+    this.#feet[0] = viewer[0];
+    this.#feet[1] = viewer[1];
+    this.#feet[2] = viewer[2];
+    return this.#feet;
   }
 
   /** The drawn roots, and whether the set changed since the last call. */

@@ -921,7 +921,7 @@ export class WorldView {
       ...this.#kits.map((kit, index) => ({ kit, source: world.scenery.kits[index]!, requested: false })),
     ];
     this.#restClip = (kind) => world.scenery.importedRestClip(kind);
-    this.#inn = zone.own(new WalkInBuildings(world.scenery.buildings.presenters()));
+    this.#inn = zone.own(new WalkInBuildings(world.scenery.buildings.set()));
     const fortEntry = (key: string) => key.startsWith("greyhaven.fort.");
     this.#outpost = zone.own(new KitModules(OUTPOST_BUNDLE, "Outpost kit", world.scenery.outpost.entries.filter((key) => !fortEntry(key)), world.scenery.outpost.placements.filter(({ key }) => !fortEntry(key)), { wear: true }));
     this.#fortifications = zone.own(new KitModules(`${import.meta.env.BASE_URL}authored/greyhaven-fort/`, "Greyhaven fortifications", world.scenery.outpost.entries.filter(fortEntry), world.scenery.outpost.placements.filter(({ key }) => fortEntry(key))));

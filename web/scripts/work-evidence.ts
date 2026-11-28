@@ -1,6 +1,6 @@
 /**
  * Work evidence for the browser operations of `.performance/contract.json` (#1120): `world-frame`, `scenery-frame`,
- * `static-batch-views`, `ambient-clips`, `sun-shadow-casters`, `entry-prebuild`, `scene-matrix-frame`, `projection-rules`, `hud-texts` and `panel-views`. Each is measured by the same helper in `tests/support/work/` that its bun test
+ * `static-batch-views`, `ambient-clips`, `sun-shadow-casters`, `entry-prebuild`, `scene-matrix-frame`, `projection-rules`, `hud-texts`, `panel-views` and `walk-in-frame`. Each is measured by the same helper in `tests/support/work/` that its bun test
  * asserts through, at every scale point the contract declares, and written as `{ "operations": [...] }` to the path
  * given as the first argument; `scripts/operation-work.py` merges it with the Rust examples' samples. Counters only;
  * nothing is timed.
@@ -20,6 +20,7 @@ const { shadowLodReady } = await import("../src/world/shadow-lod");
 const { largestClipsSampledPerFrame } = await import("../tests/support/work/ambient-clips");
 const { prebuildThenEnter } = await import("../tests/support/work/entry-prebuild");
 const { ingestedRuleReads } = await import("../tests/support/work/projection-rules");
+const { walkInFrames } = await import("../tests/support/work/walk-in-frame");
 const { sceneMatrixFrames } = await import("../tests/support/work/scene-matrix-frame");
 const { hudTextReadsPerProjection } = await import("../tests/support/work/hud-texts");
 const { panelViewReadsPerProjection } = await import("../tests/support/work/panel-views");
@@ -83,6 +84,7 @@ const MEASUREMENTS: Record<string, Measure> = {
     };
   },
   "projection-rules": (point) => ({ view_deserialisations: ingestedRuleReads(at(point, "ticks")).deserialisations }),
+  "walk-in-frame": async (point) => ({ largest_frame_presenter_calls: (await walkInFrames(at(point, "frames"))).largestFrameCalls }),
   "entry-prebuild": async (point) => {
     const { staticParts, prepares, frameStaticBuilds } = await prebuildThenEnter(at(point, "entries"));
     return { frame_static_builds: frameStaticBuilds, static_parts: staticParts, prepares };
