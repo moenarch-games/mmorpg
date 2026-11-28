@@ -2,13 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type EntityState, type ZoneEvent, type ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { abilitySlots, cancelCast, useAbilitySlot } from "../src/world/units/abilities";
-import { CombatHud, FEEDBACK_MS, combatStatus, eventText, unitName } from "../src/world/units/combat-hud";
+import { CombatHud, FEEDBACK_MS } from "../src/world/units/combat-hud";
+import { hudTexts } from "../src/world/units/hud-texts";
 import { CLICK_SLOP_PIXELS, TOUCH_CLICK_SLOP_PIXELS, PointerClick, SecondaryClick, combatFocus, nextTabTarget } from "../src/world/units/targeting";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
 
 const catalog = decodeCatalog(JSON.stringify(catalogJson()));
 const WOLF = { kind: "creature", id: 108 } as const;
+/** The combat HUD's status line and one event's line, from the shared texts (#1278). */
+const status = (snapshot: ZoneSnapshot) => hudTexts(snapshot).status;
+const line = (event: ZoneEvent, snapshot: ZoneSnapshot) => hudTexts({ ...snapshot, events: [event] }).feedback;
 
 function creature(entityId: number, x: number, z: number, flags: Partial<EntityState["flags"]> = {}): EntityState {
   return {
@@ -161,12 +165,12 @@ describe("ability input and HUD text", () => {
   });
 
   test("the status line shows the resource and cast progress", () => {
-    expect(combatStatus(caster({ ability: 9, elapsed: 3, total: 60, channel: false }), catalog))
+    expect(status(caster({ ability: 9, elapsed: 3, total: 60, channel: false })))
       .toBe("Health 50/50 · Rage 20/100 · Level 1 · Casting Firebolt 3/60");
     const snapshot = caster();
     const bolt = { kind: "cast-started", source: WOLF, target: { kind: "player", id: 1 }, ability: 13, ticks: 45 } as const;
-    expect(eventText(bolt, snapshot, catalog)).toBe("A creature begins Muck Bolt.");
-    expect(eventText({ kind: "error", code: "not-ready", target: null }, snapshot, catalog)).toBe("That ability is not ready yet.");
+    expect(line(bolt, snapshot)).toBe("A creature begins Muck Bolt.");
+    expect(line({ kind: "error", code: "not-ready", target: null }, snapshot)).toBe("That ability is not ready yet.");
   });
 });
 
@@ -250,22 +254,22 @@ describe("targeting input", () => {
 describe("combat HUD text", () => {
   test("shows health, combat state and the target, or how to release", () => {
     const wolf = creature(108, 300, 400, { inCombat: true, targetsViewer: true });
-    expect(combatStatus(view([wolf], { health: 38, inCombat: true, target: WOLF }), catalog))
+    expect(status(view([wolf], { health: 38, inCombat: true, target: WOLF })))
       .toBe("Health 38/50 · Level 1 · In combat · Target: Timber Wolf (level 2, 60%)");
-    expect(combatStatus(view([], { target: WOLF }), catalog)).toBe("Health 50/50 · Level 1 · Target: a creature (out of sight)");
-    expect(combatStatus(view([], { health: 0, dead: true }), catalog)).toContain("Press R to release");
+    expect(status(view([], { target: WOLF }))).toBe("Health 50/50 · Level 1 · Target: a creature (out of sight)");
+    expect(status(view([], { health: 0, dead: true }))).toContain("Press R to release");
     // A Warden's movement-dependent melee stance (#155) follows the level.
-    expect(combatStatus(view([], { stance: "charging" }), catalog)).toBe("Health 50/50 · Level 1 · Charging: +20% melee damage");
+    expect(status(view([], { stance: "charging" }))).toBe("Health 50/50 · Level 1 · Charging: +20% melee damage");
     // An open sword → Shield Bash follow-up (#157) is announced.
-    expect(combatStatus(view([], { combo: "open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: Shield Bash now");
-    expect(combatStatus(view([], { combo: "cleave-open" }), catalog)).toBe("Health 50/50 · Level 1 · Combo: cleave! Swing again or Shield Bash now");
+    expect(status(view([], { combo: "open" }))).toBe("Health 50/50 · Level 1 · Combo: Shield Bash now");
+    expect(status(view([], { combo: "cleave-open" }))).toBe("Health 50/50 · Level 1 · Combo: cleave! Swing again or Shield Bash now");
     // Sword mastery (#915) shows once practised.
-    expect(combatStatus(view([], { swordMastery: 1, swordPractice: 12, swordPracticeToNext: 80 }), catalog)).toBe("Health 50/50 · Level 1 · Sword mastery 1 (12/80)");
+    expect(status(view([], { swordMastery: 1, swordPractice: 12, swordPracticeToNext: 80 }))).toBe("Health 50/50 · Level 1 · Sword mastery 1 (12/80)");
     // Spent breath (#274) shows while it refills or runs down, and drowning at zero.
-    expect(combatStatus(view([], { breath: 15 * TICK_HZ }), catalog)).toBe("Health 50/50 · Level 1 · Breath 15 s");
-    expect(combatStatus(view([], { breath: 0 }), catalog)).toBe("Health 50/50 · Level 1 · Drowning!");
-    expect(unitName({ kind: "npc", id: 5 }, view([]), catalog)).toBe("Brother Aldous");
-    expect(unitName({ kind: "player", id: 7 }, view([]), catalog)).toBe("you");
+    expect(status(view([], { breath: 15 * TICK_HZ }))).toBe("Health 50/50 · Level 1 · Breath 15 s");
+    expect(status(view([], { breath: 0 }))).toBe("Health 50/50 · Level 1 · Drowning!");
+    expect(hudTexts(view([], { target: { kind: "npc", id: 5 } })).targetName).toBe("Brother Aldous");
+    expect(hudTexts(view([], { target: { kind: "player", id: 7 } })).targetName).toBe("you");
   });
 
   test("describes every event from the viewer's side", () => {
@@ -288,23 +292,22 @@ describe("combat HUD text", () => {
       { kind: "miss", source: MINION, target: WOLF },
       { kind: "aura-applied", source: self, target: WOLF, ability: 39, ticks: 360 },
       { kind: "aura-removed", source: self, target: WOLF, ability: 39 },
-    ] satisfies ZoneEvent[]).map((event) => eventText(event, snapshot, catalog));
+    ] satisfies ZoneEvent[]).map((event) => line(event, snapshot));
     expect(lines).toEqual([
-      "You hit Timber Wolf for 7 (critical).",
+      "You critically hit Timber Wolf for 7.",
       "Timber Wolf hits you for 3.",
       "You miss Timber Wolf.",
       "Timber Wolf misses you.",
       "Timber Wolf evades.",
       "Timber Wolf dies.",
-      "You die.",
+      "You died.",
       "Out of range.",
       "Too many actions at once.",
       "Skeleton hits Timber Wolf for 9.",
       "Timber Wolf hits Skeleton for 4.",
       "Skeleton misses Timber Wolf.",
-      // The test catalog names no Druid abilities.
-      "Timber Wolf is rooted by ability 39.",
-      "Timber Wolf breaks free of ability 39.",
+      "Timber Wolf is rooted by Entangling Roots.",
+      "Timber Wolf breaks free of Entangling Roots.",
     ]);
   });
 });
@@ -322,15 +325,15 @@ describe("combat HUD lines", () => {
     const missed: ZoneEvent = { kind: "miss", source: self, target: WOLF };
     const tick = (value: bigint, events: ZoneEvent[], health = 50) =>
       ({ ...view([creature(108, 300, 400)], { health }, events), tick: value });
-    hud.update(tick(5n, [missed, hit], 47), catalog, 1_000);
+    hud.update(tick(5n, [missed, hit], 47), 1_000);
     expect(status.textContent).toBe("Health 47/50 · Level 1");
     expect(feedback.textContent).toBe("Timber Wolf hits you for 3.");
     // Frames that show the same tick again do not restart the fade.
-    hud.update(tick(5n, [missed, hit], 47), catalog, 1_000 + FEEDBACK_MS - 1);
+    hud.update(tick(5n, [missed, hit], 47), 1_000 + FEEDBACK_MS - 1);
     expect(feedback.textContent).toBe("Timber Wolf hits you for 3.");
-    hud.update(tick(6n, [], 47), catalog, 1_000 + FEEDBACK_MS);
+    hud.update(tick(6n, [], 47), 1_000 + FEEDBACK_MS);
     expect(feedback.textContent).toBe("");
-    hud.update(tick(7n, [missed]), catalog, 5_000);
+    hud.update(tick(7n, [missed]), 5_000);
     expect([status.textContent, feedback.textContent]).toEqual(["Health 50/50 · Level 1", "You miss Timber Wolf."]);
   });
 });

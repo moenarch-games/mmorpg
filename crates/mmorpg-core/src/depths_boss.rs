@@ -840,8 +840,9 @@ impl ZoneSimulation {
                 }
                 return Ok(());
             }
-            player.inventory = bag;
-            player.inventory_revision = player.inventory_revision.wrapping_add(1);
+            if player.commit_bag(bag, None).is_err() {
+                return Ok(());
+            }
             player.depths.record_drop(run_id, bit);
         }
         if let Some(DropState::Awarded { delivered, .. }) = self

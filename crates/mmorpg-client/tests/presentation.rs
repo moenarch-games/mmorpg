@@ -47,6 +47,7 @@ fn facing_snapshot(tick: u64, position: [i32; 3], facing: u16) -> ZoneSnapshot {
             health: 50,
             max_health: 50,
             level: 1,
+            breath: mmorpg_core::water::BREATH_MAX_TICKS,
             ..ViewerState::default()
         },
         target_of_target: None,
@@ -288,7 +289,7 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
 
     assert_eq!(
         presentation.status().unwrap(),
-        "HP 38/50 · in combat · target Timber Wolf (L2, 43%)"
+        "Health 38/50 · Level 1 · In combat · Target: Timber Wolf (level 2, 43%)"
     );
     let mut caster = presentation.latest().unwrap().clone();
     caster.tick += 1;
@@ -306,7 +307,7 @@ fn creatures_and_npcs_render_by_size_disposition_and_state() {
     presentation.push(caster, now).unwrap();
     assert_eq!(
         presentation.status().unwrap(),
-        "HP 38/50 · mana 85/110 · casting Firebolt 40/120 · in combat · target Timber Wolf (L2, 43%)"
+        "Health 38/50 · Mana 85/110 · Level 1 · Casting Firebolt 40/120 · In combat · Target: Timber Wolf (level 2, 43%)"
     );
     assert_eq!(
         presentation.unit_name(EntityRef::Npc(NpcId::new(6))),

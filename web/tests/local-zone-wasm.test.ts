@@ -7,7 +7,7 @@ import { TICK_HZ, decodeSnapshot, ticksFromMs, wireCatalog, type EntityState, ty
 import { abilitySlots, useAbilitySlot } from "../src/world/units/abilities";
 import { undescribedAbilities } from "../src/world/units/ability-presentation";
 import { tooltipText } from "../src/world/units/ability-state";
-import { combatStatus } from "../src/world/units/combat-hud";
+import { hudTexts } from "../src/world/units/hud-texts";
 import { BagState } from "../src/world/units/bag-state";
 import { LootState } from "../src/world/units/loot-state";
 import { dialogNpc, dialogView, QuestState, trackerRows } from "../src/world/units/quest-state";
@@ -616,7 +616,7 @@ describe("WASM local zone combat intents", () => {
       "Firebolt", "Frost Nova", "Arcane Barrier", "Blizzard", "Fire Blast", "Frost Breath", "Lightning Beam", "Chain Lightning",
       "Ice Wall", "Earth Pillar", "Blink",
     ]);
-    expect(combatStatus(projection, catalog)).toBe("Health 50/50 · Mana 110/110 · Level 1");
+    expect(hudTexts(projection).status).toBe("Health 50/50 · Mana 110/110 · Level 1");
     // Firebolt without a target is cast along the facing (#289); Frost Nova is learned at level 2.
     for (const slot of [1, 2]) {
       source.sendCommand(useAbilitySlot(slot, projection, catalog)!);

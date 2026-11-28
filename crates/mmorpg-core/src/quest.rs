@@ -1201,13 +1201,8 @@ impl ZoneSimulation {
                     let mut bag = player.inventory.clone();
                     let mut hands = *player.equipment;
                     reclaim_supplies(definition, &mut bag, &mut hands, None);
-                    if (bag != player.inventory || hands != *player.equipment)
-                        && let Some(revision) = player.inventory_revision.checked_add(1)
-                    {
-                        player.inventory = bag;
-                        *player.equipment = hands;
-                        player.inventory_revision = revision;
-                    }
+                    // An exhausted bag revision keeps them where they are.
+                    player.commit_bag(bag, Some(hands)).ok();
                 }
                 // A load no active quest delivers any more is gone (#1077).
                 self.forget_loads(player_id);
@@ -1297,12 +1292,8 @@ impl ZoneSimulation {
                 return Ok(Some((ErrorCode::InventoryFull, target)));
             }
         }
-        if bag != player.inventory {
-            let Some(revision) = player.inventory_revision.checked_add(1) else {
-                return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
-            };
-            player.inventory = bag;
-            player.inventory_revision = revision;
+        if let Err(code) = player.commit_bag(bag, None) {
+            return Ok(Some((code, target)));
         }
         let at = player
             .quests
@@ -1409,22 +1400,10 @@ impl ZoneSimulation {
         else {
             return Ok(Some((ErrorCode::MoneyOverflow, target)));
         };
-        let revision = if bag == player.inventory && hands == *player.equipment {
-            None
-        } else {
-            match player.inventory_revision.checked_add(1) {
-                Some(revision) => Some(revision),
-                None => return Ok(Some((ErrorCode::InvalidInventoryMove, target))),
-            }
-        };
-        player.inventory = bag;
-        if hands != *player.equipment {
-            *player.equipment = hands;
+        if let Err(code) = player.commit_bag(bag, Some(hands)) {
+            return Ok(Some((code, target)));
         }
         player.copper = copper;
-        if let Some(revision) = revision {
-            player.inventory_revision = revision;
-        }
         player
             .quests
             .entries
@@ -1742,13 +1721,10 @@ impl ZoneSimulation {
             };
             // A full bag leaves the item at the altar until there is room.
             for (quest, index, item) in retrieved {
-                let Some(revision) = player.inventory_revision.checked_add(1) else {
-                    continue;
-                };
-                if player.inventory.insert(item, 1).is_err() {
+                let mut bag = player.inventory.clone();
+                if bag.insert(item, 1).is_err() || player.commit_bag(bag, None).is_err() {
                     continue;
                 }
-                player.inventory_revision = revision;
                 push_event(
                     &mut player.events,
                     ZoneEvent::QuestProgress {

@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { smokeRate } from "../src/world/raid-smoke";
 import { aftermathOpen, raidSiteAt, raidSites } from "../src/world/raid-aid";
-import { forewarningLine, prepSpots, raidNoticeText } from "../src/world/raid-prep";
+import { forewarningLine, prepSpots } from "../src/world/raid-prep";
+import { hudTexts } from "../src/world/units/hud-texts";
+import { testSnapshot } from "./support/snapshots";
+import type { RaidNotice } from "../src/replication";
 import { aftermathPlea, raidWarning } from "../src/world/units/quest-panel";
 
 /** A signal without forewarning (#532). */
 const quiet = { signs: false, warned: false, braced: [] as number[], scouted: false };
+
+/** What a raid notice event says in the combat HUD, from the shared texts (#1278). */
+function raidNoticeText(notice: RaidNotice): string | null {
+  return hudTexts(testSnapshot({ zoneId: 1, contentRevision: 1n, viewerId: 1, tick: 1n, acknowledgedSequence: 0,
+    entities: [], events: [{ kind: "raid", notice }] })).feedback;
+}
 
 describe("night raid signals (#530)", () => {
   test("smoke thickens as the barn loses integrity and stops once it is restored", () => {

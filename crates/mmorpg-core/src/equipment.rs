@@ -294,17 +294,17 @@ impl crate::ZoneSimulation {
             Err(InventoryError::NoCapacity) => Some(crate::ErrorCode::InventoryFull),
             Err(InventoryError::NotEquippable) => Some(crate::ErrorCode::NotEquippable),
             Err(_) => Some(crate::ErrorCode::InvalidInventoryMove),
-            Ok(()) => match player.inventory_revision.checked_add(1) {
-                None => Some(crate::ErrorCode::InvalidInventoryMove),
-                Some(revision) => {
-                    let old_max = player.max_health();
-                    *player.equipment = equipment;
-                    *player.inventory = bag;
-                    player.inventory_revision = revision;
-                    player.health = follow_max_health(player.health, old_max, player.max_health());
-                    None
+            Ok(()) => {
+                let old_max = player.max_health();
+                match player.commit_bag(bag.into(), Some(equipment)) {
+                    Err(code) => Some(code),
+                    Ok(()) => {
+                        player.health =
+                            follow_max_health(player.health, old_max, player.max_health());
+                        None
+                    }
                 }
-            },
+            }
         };
         Ok(refusal.map(|code| (code, None)))
     }

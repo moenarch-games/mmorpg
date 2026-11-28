@@ -3,7 +3,7 @@ import type { Profile } from "@moritzbrantner/input-bindings";
 import { actionBindingLabels } from "../src/input/binding-labels";
 import { GameControls, type HoldPhase } from "../src/input/game-controls";
 import { MouseOwnerInput } from "../src/world/units/mouse-owner";
-import { eventText } from "../src/world/units/combat-hud";
+import { hudTexts } from "../src/world/units/hud-texts";
 import { playerEntity, testSnapshot } from "./support/snapshots";
 
 class FakeTarget {
@@ -109,8 +109,7 @@ describe("directed Heroic Strike input", () => {
 describe("directed Heroic Strike presentation", () => {
   test("feedback names the aim and whether the sweep struck", () => {
     const snapshot = testSnapshot({ zoneId: 1, tick: 1n, contentRevision: 1n, acknowledgedSequence: 0, viewerId: 1, entities: [playerEntity(1, [0, 90, 0])] });
-    const catalog = { abilities: new Map([[1, { name: "Heroic Strike" }]]), creatureTemplates: new Map(), npcs: new Map(), quests: new Map() } as never;
-    const whiff = eventText({ kind: "strike-swept", source: { kind: "player", id: 1 }, target: null, ability: 1, aim: { side: "right", height: "high" } }, snapshot, catalog);
+    const whiff = hudTexts({ ...snapshot, events: [{ kind: "strike-swept", source: { kind: "player", id: 1 }, target: null, ability: 1, aim: { side: "right", height: "high" } }] }).feedback;
     expect(whiff).toBe("Your high-right Heroic Strike cuts only air.");
   });
 });

@@ -194,6 +194,32 @@ pub(crate) struct PlayerState {
 }
 
 impl PlayerState {
+    /// Commits a staged `bag`, and the equipment `hands` staged with it, all or nothing (#1269):
+    /// the bag revision clients address advances by one exactly when either changed. A
+    /// revision that cannot advance refuses with `InvalidInventoryMove` and changes nothing.
+    pub(crate) fn commit_bag(
+        &mut self,
+        bag: crate::revisioned::Revisioned<crate::Inventory>,
+        hands: Option<crate::Equipment>,
+    ) -> Result<(), crate::ErrorCode> {
+        let hands = hands.filter(|hands| *hands != *self.equipment);
+        if bag == self.inventory && hands.is_none() {
+            return Ok(());
+        }
+        let revision = self
+            .inventory_revision
+            .checked_add(1)
+            .ok_or(crate::ErrorCode::InvalidInventoryMove)?;
+        if bag != self.inventory {
+            self.inventory = bag;
+        }
+        if let Some(hands) = hands {
+            *self.equipment = hands;
+        }
+        self.inventory_revision = revision;
+        Ok(())
+    }
+
     pub(crate) fn new(spawn_slot: u16) -> Self {
         Self {
             facing: 0,

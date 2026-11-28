@@ -59,16 +59,11 @@ impl ZoneSimulation {
             return Ok(Eligibility::Refused(ErrorCode::InvalidLoot));
         }
         let tapper = creature.tapped_by == Some(player_id);
-        if !tapper && !creature.loot_party.contains(&player_id) {
+        if !creature.corpse_open_to(player_id) {
             return Ok(Eligibility::Refused(ErrorCode::NotLootOwner));
         }
         let from = self.player_position(player_id)?;
-        let distance: i128 = [from.x, from.y, from.z]
-            .into_iter()
-            .zip(position)
-            .map(|(a, b)| (i128::from(a) - i128::from(b)).pow(2))
-            .sum();
-        if distance > i128::from(LOOT_REACH_UNITS).pow(2) {
+        if !crate::reach::within_sphere([from.x, from.y, from.z], position, LOOT_REACH_UNITS) {
             return Ok(Eligibility::Refused(ErrorCode::OutOfRange));
         }
         let rewards = creature.loot.map(|mut rewards| {
@@ -163,24 +158,15 @@ impl ZoneSimulation {
             };
             return Ok(Some((code, target)));
         }
-        let revision = if bag != player.inventory {
-            let Some(revision) = player.inventory_revision.checked_add(1) else {
-                return Ok(Some((ErrorCode::InvalidInventoryMove, target)));
-            };
-            Some(revision)
-        } else {
-            None
-        };
         let creature = self
             .creatures
             .get_mut(&claim.creature)
             .ok_or_else(|| ZoneError::new("claimed corpse is absent"))?;
         // All checks precede the commit; refusals leave both player and corpse intact.
-        player.inventory = bag;
-        player.copper = copper;
-        if let Some(revision) = revision {
-            player.inventory_revision = revision;
+        if let Err(code) = player.commit_bag(bag, None) {
+            return Ok(Some((code, target)));
         }
+        player.copper = copper;
         creature.loot = None;
         let life = creature.generation;
         if view.rewards.money != 0 {

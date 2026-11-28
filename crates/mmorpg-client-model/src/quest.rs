@@ -325,6 +325,43 @@ pub struct ObjectiveView {
     pub done: bool,
 }
 
+/// Whether `objective` shows a count ("4/6") rather than only being done.
+#[must_use]
+pub const fn counted(objective: QuestObjective) -> bool {
+    match objective {
+        QuestObjective::Kill { .. }
+        | QuestObjective::Collect { .. }
+        | QuestObjective::Retrieve { .. }
+        | QuestObjective::DefeatWithLoan { .. }
+        | QuestObjective::Crush { .. }
+        | QuestObjective::Aid { .. }
+        | QuestObjective::Transcribe { .. }
+        | QuestObjective::WorkInOrder { .. }
+        | QuestObjective::Outflank { .. } => true,
+        QuestObjective::Talk { .. }
+        | QuestObjective::Explore { .. }
+        | QuestObjective::DefeatThorn
+        | QuestObjective::Inspect { .. }
+        | QuestObjective::UseItem { .. }
+        | QuestObjective::Escort { .. }
+        | QuestObjective::Interview { .. }
+        | QuestObjective::Demolish { .. }
+        | QuestObjective::DeliverLoad { .. }
+        | QuestObjective::Build { .. }
+        | QuestObjective::Defend { .. }
+        | QuestObjective::Unseal { .. }
+        | QuestObjective::Decide { .. }
+        | QuestObjective::Herd { .. }
+        | QuestObjective::Watch { .. }
+        | QuestObjective::Lay { .. }
+        | QuestObjective::EscortTo { .. }
+        | QuestObjective::Recruit { .. }
+        | QuestObjective::Sight { .. }
+        | QuestObjective::Ambush { .. }
+        | QuestObjective::Crossing { .. } => false,
+    }
+}
+
 /// `objective` at `current` progress.
 #[must_use]
 pub fn objective_view(
@@ -335,64 +372,12 @@ pub fn objective_view(
     let label = objective_label(objective, content);
     let required = objective.required();
     let done = current >= required;
-    let text = match objective {
-        QuestObjective::Kill { .. }
-        | QuestObjective::Collect { .. }
-        | QuestObjective::Retrieve { .. }
-        | QuestObjective::DefeatWithLoan { .. }
-        | QuestObjective::Crush { .. }
-        | QuestObjective::Aid { .. }
-        | QuestObjective::Transcribe { .. }
-        | QuestObjective::WorkInOrder { .. }
-        | QuestObjective::Outflank { .. } => {
-            format!("{label}: {}/{required}", current.min(required))
-        }
-        QuestObjective::Talk { .. }
-        | QuestObjective::Explore { .. }
-        | QuestObjective::DefeatThorn
-        | QuestObjective::Inspect { .. }
-        | QuestObjective::UseItem { .. }
-        | QuestObjective::Escort { .. }
-        | QuestObjective::Interview { .. }
-        | QuestObjective::Demolish { .. }
-        | QuestObjective::DeliverLoad { .. }
-        | QuestObjective::Build { .. }
-        | QuestObjective::Defend { .. }
-        | QuestObjective::Unseal { .. }
-        | QuestObjective::Decide { .. }
-        | QuestObjective::Herd { .. }
-        | QuestObjective::Watch { .. }
-        | QuestObjective::Lay { .. }
-        | QuestObjective::EscortTo { .. }
-        | QuestObjective::Recruit { .. }
-        | QuestObjective::Sight { .. }
-        | QuestObjective::Ambush { .. }
-        | QuestObjective::Crossing { .. }
-            if done =>
-        {
-            format!("{label} (done)")
-        }
-        QuestObjective::Talk { .. }
-        | QuestObjective::Explore { .. }
-        | QuestObjective::DefeatThorn
-        | QuestObjective::Inspect { .. }
-        | QuestObjective::UseItem { .. }
-        | QuestObjective::Escort { .. }
-        | QuestObjective::Interview { .. }
-        | QuestObjective::Demolish { .. }
-        | QuestObjective::DeliverLoad { .. }
-        | QuestObjective::Build { .. }
-        | QuestObjective::Defend { .. }
-        | QuestObjective::Unseal { .. }
-        | QuestObjective::Decide { .. }
-        | QuestObjective::Herd { .. }
-        | QuestObjective::Watch { .. }
-        | QuestObjective::Lay { .. }
-        | QuestObjective::EscortTo { .. }
-        | QuestObjective::Recruit { .. }
-        | QuestObjective::Sight { .. }
-        | QuestObjective::Ambush { .. }
-        | QuestObjective::Crossing { .. } => label.clone(),
+    let text = if counted(objective) {
+        format!("{label}: {}/{required}", current.min(required))
+    } else if done {
+        format!("{label} (done)")
+    } else {
+        label.clone()
     };
     ObjectiveView {
         label,
