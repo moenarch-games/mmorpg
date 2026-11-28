@@ -1322,7 +1322,7 @@ pub fn interact_press(
     snapshot: Ts<ZoneSnapshot>,
     #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
 ) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let entries = quest_entries(sheet)?;
     let press = match interaction::press(&snapshot, &hosted_content(), &entries) {
         interaction::Press::Interact(next) => next.into(),
@@ -1341,7 +1341,7 @@ pub fn next_interaction(
     snapshot: Ts<ZoneSnapshot>,
     #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
 ) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let entries = quest_entries(sheet)?;
     let next = interaction::next_interaction(&snapshot, &hosted_content(), &entries)
         .map_or(InteractPress::Nothing, Into::into);
