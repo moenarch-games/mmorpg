@@ -808,18 +808,6 @@ pub fn waystone_names() -> Vec<String> {
         .collect()
 }
 
-/// The destructible pieces (#305) feet at `(x, z)` units can repair, in ID order.
-#[wasm_bindgen(js_name = reachablePieces)]
-#[must_use]
-pub fn reachable_pieces(x: i32, z: i32) -> Vec<u32> {
-    host::hosted_content()
-        .pieces()
-        .iter()
-        .filter(|piece| piece.within_repair_reach([x, 0, z]))
-        .map(|piece| piece.id.get())
-        .collect()
-}
-
 /// Each raid site's approximate disturbance circle (#530) as `[x, z, radius]` in units, the
 /// night raid target first and then each quest defence site (#1019); empty without one.
 #[wasm_bindgen(js_name = raidArea)]
@@ -1642,26 +1630,6 @@ impl BuildingPresenter {
                     .chain([if part.visible { 1. } else { 0. }])
             })
             .collect()
-    }
-
-    /// The content door the zone would let feet at `(x, z)` units use, or 0.
-    #[wasm_bindgen(js_name = reachableDoor)]
-    #[must_use]
-    pub fn reachable_door(x: i32, z: i32) -> u32 {
-        host::hosted_content()
-            .doors()
-            .iter()
-            .find(|door| door.within_reach([x, 0, z]))
-            .map_or(0, |door| door.id.get())
-    }
-
-    /// The seat feet at `(x, z)` units reach, 0 for none (#619); the zone decides.
-    #[wasm_bindgen(js_name = reachableSeat)]
-    #[must_use]
-    pub fn reachable_seat(x: i32, z: i32) -> u32 {
-        host::hosted_content()
-            .seat_in_reach([x, z])
-            .map_or(0, |seat| seat.id.get())
     }
 }
 

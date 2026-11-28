@@ -9,7 +9,7 @@ use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
     combat_text, exploration,
     hud::{self, CooldownKind},
-    manual_aim, mouse_owner,
+    interaction, manual_aim, mouse_owner,
     outbox::{self, MovementCommands},
     pie_menu,
     power_draw::{self, DrawRelease},
@@ -1224,6 +1224,128 @@ pub fn shrine_status(snapshot: Ts<ZoneSnapshot>) -> Result<Vec<String>, JsError>
         snapshot.tick,
         &hosted_content(),
     ))
+}
+
+/// What a press of Interact does (#1252), from `mmorpg-client-model`'s ladder, in the browser's
+/// shape.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+pub enum InteractPress {
+    /// Send `command`; `label` names it on a button ("Open", "Mine", "Skin").
+    Command {
+        command: WorldCommand,
+        label: String,
+    },
+    /// Talk to NPC `npc`: open its dialog or trade, selecting it first unless `selected`.
+    Talk {
+        npc: u32,
+        selected: bool,
+    },
+    /// The drawn weapon refuses it: show `text`.
+    SheatheFirst {
+        text: String,
+    },
+    Nothing,
+}
+
+/// The browser's wire form of a command the Interact ladder sends.
+fn interact_command(command: core::ZoneCommand) -> WorldCommand {
+    use core::ZoneCommand as C;
+    match command {
+        C::Operate { mechanism } => WorldCommand::Operate { mechanism },
+        C::RaidPrepare { prep } => WorldCommand::RaidPrepare {
+            step: match prep {
+                core::RaidPrep::Investigate => 0,
+                core::RaidPrep::Report => 1,
+                core::RaidPrep::Brace(brace) => brace.saturating_add(2),
+            },
+        },
+        C::Inspect { spot } => WorldCommand::Inspect { spot },
+        C::Lift { source } => WorldCommand::Lift {
+            source: source.map_or(0, core::LoadSpotId::get),
+        },
+        C::QuestAction { npc } => WorldCommand::QuestAction { npc_id: npc.get() },
+        C::Skin { creature } => WorldCommand::Skin {
+            creature_id: creature.get(),
+        },
+        C::SetDown => WorldCommand::SetDown,
+        C::UseDoor { door, open } => WorldCommand::UseDoor {
+            door: door.get(),
+            open,
+        },
+        C::Sit { seat } => WorldCommand::Sit {
+            seat: seat.map(core::SeatId::get),
+        },
+        C::Repair { piece } => WorldCommand::Repair {
+            piece: piece.map(core::PieceId::get),
+        },
+        C::RaidAid { task } => WorldCommand::RaidAid { task },
+        C::Gather { node } => WorldCommand::Gather { node },
+        other => unreachable!("the Interact ladder never sends {other:?}"),
+    }
+}
+
+impl From<interaction::Interaction> for InteractPress {
+    fn from(next: interaction::Interaction) -> Self {
+        let label = next.label().to_owned();
+        match next {
+            interaction::Interaction::Command(command) => Self::Command {
+                command: interact_command(command),
+                label,
+            },
+            interaction::Interaction::Talk { npc, selected } => Self::Talk {
+                npc: npc.get(),
+                selected,
+            },
+        }
+    }
+}
+
+/// The active quest entries of a sheet the browser may not have received yet.
+fn quest_entries(sheet: JsValue) -> Result<Vec<core::QuestEntry>, JsError> {
+    if sheet.is_null() || sheet.is_undefined() {
+        return Ok(Vec::new());
+    }
+    let sheet: QuestSheet = serde_wasm_bindgen::from_value(sheet)?;
+    Ok(core::QuestSheet::from(&sheet).entries)
+}
+
+/// What a press of Interact does now for the viewer of `snapshot` with the active quests of
+/// `sheet` (#1252): the hosted content's one ladder both clients and touch read; the zone checks
+/// everything again.
+#[wasm_bindgen(js_name = interactPress, unchecked_return_type = "InteractPress")]
+pub fn interact_press(
+    snapshot: Ts<ZoneSnapshot>,
+    #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
+) -> Result<JsValue, JsError> {
+    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let entries = quest_entries(sheet)?;
+    let press = match interaction::press(&snapshot, &hosted_content(), &entries) {
+        interaction::Press::Interact(next) => next.into(),
+        interaction::Press::SheatheFirst => InteractPress::SheatheFirst {
+            text: interaction::SHEATHE_FIRST.to_owned(),
+        },
+        interaction::Press::Nothing => InteractPress::Nothing,
+    };
+    to_js(&press)
+}
+
+/// What Interact would do with free hands (#1252), for a button that names it; never
+/// `sheathe-first`.
+#[wasm_bindgen(js_name = nextInteraction, unchecked_return_type = "InteractPress")]
+pub fn next_interaction(
+    snapshot: Ts<ZoneSnapshot>,
+    #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
+) -> Result<JsValue, JsError> {
+    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let entries = quest_entries(sheet)?;
+    let next = interaction::next_interaction(&snapshot, &hosted_content(), &entries)
+        .map_or(InteractPress::Nothing, Into::into);
+    to_js(&next)
 }
 
 #[cfg(test)]

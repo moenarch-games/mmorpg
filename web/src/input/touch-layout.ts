@@ -1,6 +1,7 @@
 import type { Axis } from "../command-wire";
 import { sameEntity, type EntityRef } from "../entity-ref";
 import type { ZoneSnapshot } from "../replication";
+import type { InteractPress } from "../world/interaction";
 import type { HeldIntent } from "../world/orbit-camera";
 import { zoneConstants } from "../zone-constants";
 import { isReleasedAction, type GameAction, type HoldPhase, type ReleasedAction } from "./game-controls";
@@ -119,8 +120,8 @@ export function mergeHeld(keys: HeldIntent, touch: HeldIntent): HeldIntent {
   };
 }
 
-/** What the context interact button does here; `null` hides it. */
-export type InteractKind = "loot" | "vendor" | "talk" | "open" | "repair";
+/** What the context interact button does here; `null` hides it. `use` is any other step of the Interact ladder. */
+export type InteractKind = "loot" | "vendor" | "talk" | "use";
 
 export type TouchContext = {
   /** A living attackable opponent is selected or near: show target and attack. */
@@ -128,6 +129,8 @@ export type TouchContext = {
   dead: boolean;
   weaponDrawn: boolean;
   interact: InteractKind | null;
+  /** The interact button's text: "Loot", "Trade", "Talk", or the ladder's verb ("Open", "Mine", "Skin"). */
+  label: string;
   /** The NPC an interact talks to or trades with. */
   npc: EntityRef | null;
 };
@@ -138,21 +141,26 @@ export const COMBAT_NEAR_UNITS = 3_000;
 export type TouchContextInputs = {
   /** NPC ids that are vendors. */
   isVendor: (npc: number) => boolean;
-  doorInReach: boolean;
-  repairInReach: boolean;
+  /** What Interact would do here with free hands (#1252): the shared client model's ladder, null without one. */
+  next: InteractPress | null;
   /** A Battle Royale arena (#551): every moment is a fight, so target and attack always show. */
   arena: boolean;
 };
 
+const INTERACT_LABELS: Readonly<Record<Exclude<InteractKind, "use">, string>> = {
+  loot: "Loot",
+  vendor: "Trade",
+  talk: "Talk",
+};
+
 /**
- * Which context buttons to show from the received projection: loot before an NPC before a door
- * before a repair, and combat whenever an opponent is selected, near, or the viewer is fighting,
- * and always in an arena.
+ * Which context buttons to show from the received projection: loot before whatever the Interact ladder (#1252) does,
+ * and combat whenever an opponent is selected, near, or the viewer is fighting, and always in an arena.
  */
 export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContextInputs): TouchContext {
   const viewer = snapshot?.entities[0];
   if (!snapshot || !viewer) {
-    return { combat: false, dead: false, weaponDrawn: false, interact: null, npc: null };
+    return { combat: false, dead: false, weaponDrawn: false, interact: null, label: "", npc: null };
   }
   const distance = (position: readonly number[]) =>
     Math.hypot((position[0] ?? 0) - viewer.position[0], (position[2] ?? 0) - viewer.position[2]);
@@ -162,27 +170,22 @@ export function touchContext(snapshot: ZoneSnapshot | null, inputs: TouchContext
     || opponents.some((entity) => sameEntity(snapshot.viewer.target, { kind: entity.kind, id: entity.entityId }))
     || opponents.some((entity) => (entity.flags.hostile || entity.flags.targetsViewer) && distance(entity.position) <= COMBAT_NEAR_UNITS);
   if (snapshot.viewer.dead) {
-    return { combat: false, dead: true, weaponDrawn: snapshot.viewer.weaponDrawn, interact: null, npc: null };
+    return { combat: false, dead: true, weaponDrawn: snapshot.viewer.weaponDrawn, interact: null, label: "", npc: null };
   }
-  // The zone's reaches (#1159): looting, and talking to or trading with an NPC; the zone checks every intent.
-  const reach = zoneConstants();
-  const npcReach = Math.max(reach.questReachUnits, reach.vendorReachUnits);
+  // The zone's loot reach (#1159); the zone checks every intent.
   const corpse = others.some((entity) => entity.kind === "creature" && entity.flags.lootable && !entity.flags.tappedByOther
-    && distance(entity.position) <= reach.lootReachUnits);
-  const npc = others
-    .filter((entity) => entity.kind === "npc" && distance(entity.position) <= npcReach)
-    .sort((left, right) => distance(left.position) - distance(right.position) || left.entityId - right.entityId)[0];
-  const npcRef: EntityRef | null = npc ? { kind: "npc", id: npc.entityId } : null;
-  const interact: InteractKind | null = corpse ? "loot"
-    : npc ? (inputs.isVendor(npc.entityId) ? "vendor" : "talk")
-      : inputs.doorInReach ? "open" : inputs.repairInReach ? "repair" : null;
-  return { combat, dead: false, weaponDrawn: snapshot.viewer.weaponDrawn, interact, npc: npcRef };
+    && distance(entity.position) <= zoneConstants().lootReachUnits);
+  const next = inputs.next;
+  const talk = next?.kind === "talk" ? next.npc : null;
+  const weaponDrawn = snapshot.viewer.weaponDrawn;
+  if (corpse) {
+    return { combat, dead: false, weaponDrawn, interact: "loot", label: INTERACT_LABELS.loot, npc: null };
+  }
+  if (talk !== null) {
+    const interact = inputs.isVendor(talk) ? "vendor" : "talk";
+    return { combat, dead: false, weaponDrawn, interact, label: INTERACT_LABELS[interact], npc: { kind: "npc", id: talk } };
+  }
+  return next?.kind === "command"
+    ? { combat, dead: false, weaponDrawn, interact: "use", label: next.label, npc: null }
+    : { combat, dead: false, weaponDrawn, interact: null, label: "", npc: null };
 }
-
-export const INTERACT_LABELS: Readonly<Record<InteractKind, string>> = {
-  loot: "Loot",
-  vendor: "Trade",
-  talk: "Talk",
-  open: "Open",
-  repair: "Repair",
-};

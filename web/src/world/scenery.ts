@@ -90,8 +90,6 @@ export type SceneryContent = StaticSceneContent & {
   BuildingPresenter: (new (index: number) => BuildingPresenterHandle) & {
     count(): number;
     mausoleum(descriptor: string, x: number, y: number, z: number, quarters: number): BuildingPresenterHandle;
-    reachableDoor(x: number, z: number): number;
-    reachableSeat(x: number, z: number): number;
   };
   /** The Outpost kit buildings (#420): their entries (`<key>` or `<key>/<variant>`), and per placed module its entry and 16 model floats. */
   outpostKitEntries(): string[];
@@ -127,8 +125,6 @@ export type SceneryContent = StaticSceneContent & {
   /** The rest clip an imported unit model is measured in. */
   importedRestClip(kind: string): string | undefined;
   areaAt(x: number, z: number): number | undefined;
-  /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
-  reachablePieces(x: number, z: number): Uint32Array;
   /** Each raid site's disturbance circle (#530, #1019): `[x, z, radius]` units per site, the night raid target first. */
   raidArea(): Int32Array;
   /** Each raid site's aftermath aid tasks (#531, #1019): `[site, x, z, npc]` units per task, npc 0 for a breach. */
@@ -187,8 +183,8 @@ export type SceneryProvider = {
   readonly dressedProps?: () => Uint32Array;
   /** A fresh shared unit presenter for `player`. */
   unitPresenter(player: number): UnitPresenterHandle;
-  /** The walk-in buildings' presenters, and the door feet at `(x, z)` units reach (0 none). */
-  readonly buildings: { presenters(): BuildingPresenterHandle[]; reachableDoor(x: number, z: number): number; reachableSeat(x: number, z: number): number };
+  /** The walk-in buildings' presenters. */
+  readonly buildings: { presenters(): BuildingPresenterHandle[] };
   /** The Outpost kit buildings' entries and placed modules (#420), column-major matrices in metres. */
   readonly outpost: { entries: readonly string[]; placements: readonly { key: string; matrix: Float32Array; wear?: number; cottage?: number }[] };
   /** The market square's settlement-prop entries and placed props (#421), column-major matrices in metres. */
@@ -217,8 +213,6 @@ export type SceneryProvider = {
   importedRestClip(kind: string): string;
   /** The named core area at `(x, z)` in units, if any. */
   areaAt(x: number, z: number): Area | null;
-  /** Destructible pieces (#305) feet at `(x, z)` units can repair, in ID order. */
-  reachablePieces(x: number, z: number): readonly number[];
   /**
    * The raid sites (#530, #1019), the night raid target first: each one's approximate disturbance circle and its aftermath
    * aid task spots in units (#531), in task order; `npc` is the injured guard or wounded civilian to tend, 0 for a breach
@@ -511,8 +505,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     unitPresenter: (player) => new content.UnitPresenter(player),
     buildings: {
       presenters: () => Array.from({ length: content.BuildingPresenter.count() }, (_, index) => new content.BuildingPresenter(index)),
-      reachableDoor: (x, z) => content.BuildingPresenter.reachableDoor(Math.round(x), Math.round(z)),
-      reachableSeat: (x, z) => content.BuildingPresenter.reachableSeat(Math.round(x), Math.round(z)),
     },
     outpost: (() => {
       const models = content.outpostKitModels();
@@ -566,9 +558,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
         throw new Error(`No imported unit model ${kind}.`);
       }
       return clip;
-    },
-    reachablePieces(x, z) {
-      return [...content.reachablePieces(Math.round(x), Math.round(z))];
     },
     raidSites: raidSites(content.raidArea(), content.raidAid()),
     raidPrep: prepSpots(content.raidPrep()),
