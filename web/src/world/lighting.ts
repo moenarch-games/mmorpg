@@ -64,6 +64,17 @@ export const CASCADE_UPDATE_INTERVALS: readonly number[] = [1, 2, 2];
  * under the Gaussian filter it would leave a faint smudge of a few texels (three-lighting `minCasterTexels`).
  */
 export const MIN_CASTER_TEXELS = 2;
+
+/**
+ * How far the sun or moon may turn and the camera move or turn before the atmosphere's sky-view and aerial-view LUTs
+ * are drawn again (#1289, three-lighting `skyReuse`): radians, metres, radians. render-engine #171 measured 1.2–3 ms
+ * of GPU a frame on the Greyhaven views at these tolerances with no visible change; the sky lags by at most them.
+ */
+export const SKY_REUSE = {
+  lightTurn: THREE.MathUtils.degToRad(0.05),
+  cameraMove: 1,
+  cameraTurn: THREE.MathUtils.degToRad(0.25),
+} as const;
 /** The presentation materials' surface (`standard_material`). */
 const ROUGHNESS = 0.86;
 const METALLIC = 0.02;
@@ -180,6 +191,7 @@ export class GreyhavenLighting {
       lighting.shadowFilter = "gaussian";
       lighting.cascadeUpdateIntervals = [...CASCADE_UPDATE_INTERVALS];
       lighting.minCasterTexels = MIN_CASTER_TEXELS;
+      lighting.skyReuse = { ...SKY_REUSE };
       const shared = lightingTables();
       this.#dayCycle = new DayCycle({ noonElevation: THREE.MathUtils.degToRad(shared.noonElevationDegrees), moonLagHours: shared.moonLagHours });
       this.#lighting = lighting;
