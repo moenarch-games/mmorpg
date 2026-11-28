@@ -49,31 +49,10 @@ pub fn segment_distance(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> i64 {
     root(segment_squared(point, a, b))
 }
 
-/// The squared distance [`segment_distance`] takes the root of, rounded down to whole units².
+/// The squared distance [`segment_distance`] takes the root of, rounded down to whole units²: the
+/// core's one segment metric (#1281).
 fn segment_squared(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> u128 {
-    let direction = [
-        i64::from(b[0]) - i64::from(a[0]),
-        i64::from(b[1]) - i64::from(a[1]),
-    ];
-    let offset = [
-        i64::from(point[0]) - i64::from(a[0]),
-        i64::from(point[1]) - i64::from(a[1]),
-    ];
-    let length_squared = direction[0] * direction[0] + direction[1] * direction[1];
-    let along = offset[0] * direction[0] + offset[1] * direction[1];
-    if length_squared == 0 || along <= 0 {
-        return (offset[0] * offset[0] + offset[1] * offset[1])
-            .unsigned_abs()
-            .into();
-    }
-    if along >= length_squared {
-        let dx = i64::from(point[0]) - i64::from(b[0]);
-        let dz = i64::from(point[1]) - i64::from(b[1]);
-        return (dx * dx + dz * dz).unsigned_abs().into();
-    }
-    let cross = i128::from(direction[0]) * i128::from(offset[1])
-        - i128::from(direction[1]) * i128::from(offset[0]);
-    (cross * cross / i128::from(length_squared)).unsigned_abs()
+    mmorpg_core::reach::segment_distance_squared(point, a, b)
 }
 
 /// The root of a squared distance, rounded down to whole units.
@@ -162,14 +141,8 @@ pub fn isqrt(value: i64) -> i64 {
     i64::try_from(value.unsigned_abs().isqrt()).unwrap_or(i64::MAX)
 }
 
-/// SplitMix64: a fixed integer hash, identical on every platform.
-#[must_use]
-pub const fn splitmix64(value: u64) -> u64 {
-    let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    z ^ (z >> 31)
-}
+/// SplitMix64: a fixed integer hash, identical on every platform (one owner, #1281).
+pub use mmorpg_core::rng::splitmix64;
 
 /// Hash of a seed and an integer lattice point.
 #[must_use]

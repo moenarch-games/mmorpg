@@ -30,7 +30,7 @@ impl ZoneRng {
     #[must_use]
     pub const fn seeded(content_seed: u64, zone_id: ZoneId) -> Self {
         Self {
-            state: mix(content_seed ^ mix(zone_id.get() as u64)),
+            state: splitmix64_finish(content_seed ^ splitmix64_finish(zone_id.get() as u64)),
         }
     }
 
@@ -46,7 +46,9 @@ impl ZoneRng {
     ) -> Self {
         let zone = Self::seeded(content_seed, zone_id).state;
         Self {
-            state: mix(zone ^ mix(unit ^ mix(generation ^ GAMMA))),
+            state: splitmix64_finish(
+                zone ^ splitmix64_finish(unit ^ splitmix64_finish(generation ^ GAMMA)),
+            ),
         }
     }
 
@@ -58,7 +60,7 @@ impl ZoneRng {
 
     pub const fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(GAMMA);
-        mix(self.state)
+        splitmix64_finish(self.state)
     }
 
     /// Uniform-ish in `0..bound` by multiply-shift on the high 32 bits. There
@@ -75,12 +77,21 @@ impl ZoneRng {
     }
 }
 
-/// SplitMix64 finaliser.
-const fn mix(value: u64) -> u64 {
+/// The SplitMix64 finaliser: a fixed integer mix, identical on every platform (#1281). Streams
+/// that advance their own state call it on each new state.
+#[must_use]
+pub const fn splitmix64_finish(value: u64) -> u64 {
     let mut z = value;
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     z ^ (z >> 31)
+}
+
+/// SplitMix64 of one value: its golden-ratio step, then [`splitmix64_finish`] (#1281). Content,
+/// raids and scenery hash seeds and lattice cells with it.
+#[must_use]
+pub const fn splitmix64(value: u64) -> u64 {
+    splitmix64_finish(value.wrapping_add(GAMMA))
 }
 
 #[cfg(test)]
