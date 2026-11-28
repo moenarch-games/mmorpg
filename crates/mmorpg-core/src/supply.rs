@@ -350,25 +350,6 @@ impl ZoneSimulation {
         Ok(())
     }
 
-    /// Completes `objective` for each player within `radius` of `at` that has it ready.
-    fn credit_near(
-        &mut self,
-        at: [i32; 2],
-        radius: i32,
-        objective: QuestObjective,
-    ) -> Result<(), ZoneError> {
-        for entity in self.interest.near(at[0], at[1], radius) {
-            let EntityRef::Player(player) = entity else {
-                continue;
-            };
-            let feet = self.player_position(player)?;
-            if xz_distance([feet.x, feet.z], at) <= i64::from(radius) {
-                self.complete_ready(player, objective);
-            }
-        }
-        Ok(())
-    }
-
     /// The patrol of lookout `npc` reached its camp (#1019): each player with a sight or ambush of
     /// it ready hears so.
     fn supply_arrived(&mut self, npc: NpcId) {

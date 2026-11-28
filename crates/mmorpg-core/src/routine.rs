@@ -34,6 +34,70 @@ pub const fn time_of_day(tick: u64) -> u32 {
     ((tick + ZONE_START_TIME as u64) % DAY_TICKS as u64) as u32
 }
 
+/// The zone day containing `tick`, from 0.
+#[must_use]
+pub const fn zone_day(tick: u64) -> u64 {
+    (tick + ZONE_START_TIME as u64) / DAY_TICKS as u64
+}
+
+/// Whether the zone day containing `tick` wins a seeded roll of `odds[0]` in `odds[1]` (#1273):
+/// ambushes, confrontations, raid nights and false alarms each roll under their own `salt`.
+#[must_use]
+pub const fn day_roll(seed: u64, tick: u64, salt: u64, odds: [u64; 2]) -> bool {
+    crate::raid::mix(seed ^ zone_day(tick) ^ salt) % odds[1] < odds[0]
+}
+
+/// The tick an incident began whose daily arrival time is `arrival` (ticks since midnight),
+/// seen at `now` on the same day; `None` before it arrived.
+#[must_use]
+pub fn incident_start(now: u64, arrival: u32) -> Option<u64> {
+    time_of_day(now)
+        .checked_sub(arrival)
+        .and_then(|since| now.checked_sub(u64::from(since)))
+}
+
+/// Where an NPC limping home along `legs` is `since` ticks after it turned back: half the
+/// ground and half the speed of a walk (hurt hunters, robbed merchants).
+pub(crate) fn limp_along(legs: &[Leg], since: i64) -> NpcPlacement {
+    let mut limp = along(legs, since * NPC_WALK_UNITS_PER_TICK / 2, false);
+    limp.velocity = limp.velocity.map(|axis| axis / 2);
+    limp
+}
+
+/// The post `npc`'s daily outing leaves from at `leave` (ticks since midnight) along `path`
+/// (#1273), once the parts every outing shares hold: `npc` is an NPC with a routine, every
+/// point of `path` lies in the content range, it leaves no earlier than dawn and its routine's
+/// errands are done by then. `outing` names it in the error; the outing checks its own end,
+/// shape and creatures.
+pub(crate) fn outing_post(
+    content: &crate::ZoneContent,
+    npc: NpcId,
+    leave: u32,
+    path: &[[i32; 2]],
+    outing: &str,
+) -> Result<[i32; 2], ZoneError> {
+    let Some(definition) = content.npc(npc) else {
+        return Err(ZoneError::new(format!("{outing}: its npc is not an npc")));
+    };
+    let Some(routine) = content.routine(npc) else {
+        return Err(ZoneError::new(format!("{outing}: its npc has no routine")));
+    };
+    let work = definition.position;
+    let in_range = |point: &[i32; 2]| {
+        point
+            .iter()
+            .all(|value| crate::content::within_content_range(*value))
+    };
+    let errands_done = routine
+        .errands
+        .iter()
+        .all(|errand| errand.leave.saturating_add(errand.span(work)) <= leave);
+    if !path.iter().all(in_range) || leave < DAWN || !errands_done {
+        return Err(ZoneError::new(format!("invalid {outing}")));
+    }
+    Ok(work)
+}
+
 /// Whether `time` (ticks since midnight) is between dusk and dawn.
 #[must_use]
 pub const fn is_night(time: u32) -> bool {

@@ -235,6 +235,17 @@ impl CreatureState {
         matches!(self.ai, CreatureAi::Idle { .. }) && self.combat_timer == 0
     }
 
+    /// The tick it died if that falls inside `window` (#1273): a cart's hold or a hunt's stalk
+    /// is decided by whether its foes fell in it.
+    pub(crate) fn died_within(&self, window: &std::ops::Range<u64>) -> Option<u64> {
+        match self.life {
+            Life::Corpse { died_at, .. } | Life::Despawned { died_at } => {
+                window.contains(&died_at).then_some(died_at)
+            }
+            Life::Alive => None,
+        }
+    }
+
     /// Whether its corpse is open to `player_id` (#404, Atlas 5.3.6): the tapper, or a party
     /// member who shared the tap when it died. Looting and skinning ask the same (#1269).
     pub(crate) fn corpse_open_to(&self, player_id: crate::PlayerId) -> bool {

@@ -479,6 +479,31 @@ pub(crate) fn record(
     Ok(())
 }
 impl crate::ZoneSimulation {
+    /// Pays `payout` under `key` to `player_id` once per incident (#1273): `paid` selects the
+    /// incident's sorted list of paid players, capped at [`MAX_PLAYERS_PER_ZONE`]. A player
+    /// already paid, absent from the zone or whose receipt is spent gets nothing.
+    pub(crate) fn pay_incident_once(
+        &mut self,
+        paid: fn(&mut Self) -> &mut Vec<PlayerId>,
+        player_id: PlayerId,
+        key: RewardKey,
+        payout: RewardPayout,
+    ) -> Result<(), ZoneError> {
+        let eligible =
+            allowed(&self.rewards, player_id, key) && self.players.contains_key(&player_id);
+        let list = paid(self);
+        let Err(at) = list.binary_search(&player_id) else {
+            return Ok(());
+        };
+        if list.len() >= MAX_PLAYERS_PER_ZONE || !eligible {
+            return Ok(());
+        }
+        list.insert(at, player_id);
+        self.pay_zone_reward(player_id, key, payout)
+    }
+}
+
+impl crate::ZoneSimulation {
     /// Pays a reward the zone grants on its own (kill credit, raid and cart payouts) whose
     /// receipt the caller found unconsumed. Without room this tick, or behind older waiting
     /// payouts, it joins the deferred backlog instead (#1112); it never fails on capacity.

@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use crate::creature::Life;
-use crate::routine::{DAWN, DUSK, HOUR_TICKS, NpcPlacement, along, legs, time_of_day, walk_ticks};
+use crate::routine::{DUSK, HOUR_TICKS, NpcPlacement, along, legs, time_of_day, walk_ticks};
 use crate::{CreatureId, NpcId, PostureView, ZoneError, ZoneSimulation};
 
 /// One of two days the game turns on the hunter.
@@ -61,9 +61,7 @@ pub enum HuntOutcome {
 /// Whether the day containing `tick` is a confrontation day.
 #[must_use]
 pub const fn confrontation_day(seed: u64, tick: u64) -> bool {
-    let day = (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64;
-    crate::raid::mix(seed ^ day ^ CONFRONTATION_SALT) % CONFRONTATION_DAYS[1]
-        < CONFRONTATION_DAYS[0]
+    crate::routine::day_roll(seed, tick, CONFRONTATION_SALT, CONFRONTATION_DAYS)
 }
 
 impl HuntOuting {
@@ -125,41 +123,25 @@ impl HuntOuting {
             }
             // Limping, it covers half the ground a tick.
             HuntOutcome::Injured if since < 2 * walk => {
-                let mut limp = along(&legs, since * speed / 2, false);
-                limp.velocity = limp.velocity.map(|axis| axis / 2);
-                Some((limp, PostureView::Hurt))
+                Some((crate::routine::limp_along(&legs, since), PostureView::Hurt))
             }
             HuntOutcome::Injured => (time < DUSK).then_some((at_work, PostureView::Hurt)),
         }
     }
 
     pub(crate) fn validate(&self, content: &crate::ZoneContent) -> Result<(), ZoneError> {
-        let in_range = |point: &[i32; 2]| {
-            point
-                .iter()
-                .all(|value| crate::content::within_content_range(*value))
-        };
-        let Some(npc) = content.npc(self.hunter) else {
-            return Err(ZoneError::new("a hunt's hunter is not an npc"));
-        };
-        let Some(routine) = content.routine(self.hunter) else {
-            return Err(ZoneError::new("a hunt's hunter has no routine"));
-        };
-        let walk = self.walk(npc.position);
-        // The day's errands are done before it leaves, and the limp home ends before dusk.
-        let errands_done = routine
-            .errands
-            .iter()
-            .all(|errand| errand.leave.saturating_add(errand.span(npc.position)) <= self.leave);
+        let work = crate::routine::outing_post(
+            content,
+            self.hunter,
+            self.leave,
+            &self.path,
+            "hunt outing",
+        )?;
+        // The limp home ends before dusk.
+        let walk = self.walk(work);
         if self.path.is_empty()
-            || !self.path.iter().all(in_range)
             || self.stalk == 0
-            || self.leave < DAWN
-            || self
-                .end(npc.position)
-                .saturating_add(walk.saturating_mul(2))
-                >= DUSK
-            || !errands_done
+            || self.end(work).saturating_add(walk.saturating_mul(2)) >= DUSK
             || content.creature_spawn(self.beast).is_none()
             || content.is_raider(self.beast)
             || content.is_depths_creature(self.beast)
@@ -177,23 +159,14 @@ impl ZoneSimulation {
         if !confrontation_day(self.rng_seed(), now) {
             return HuntOutcome::Catch;
         }
-        let arrival = hunt.arrival(work);
-        let Some(start) = time_of_day(now)
-            .checked_sub(arrival)
-            .and_then(|since| now.checked_sub(u64::from(since)))
-        else {
+        let Some(start) = crate::routine::incident_start(now, hunt.arrival(work)) else {
             return HuntOutcome::Injured;
         };
         let stalk = start..start + u64::from(hunt.stalk);
         let slain = self
             .creatures
             .get(&hunt.beast)
-            .is_some_and(|state| match state.life {
-                Life::Corpse { died_at, .. } | Life::Despawned { died_at } => {
-                    stalk.contains(&died_at)
-                }
-                Life::Alive => false,
-            });
+            .is_some_and(|state| state.died_within(&stalk).is_some());
         if slain {
             HuntOutcome::Catch
         } else {

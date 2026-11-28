@@ -616,6 +616,26 @@ impl ZoneSimulation {
     }
 
     /// Completes `objective` for `player` once if it is ready ([`Self::ready_objective`]).
+    /// Completes `objective` for each player within `radius` of `at` that has it ready (#1273):
+    /// escorts and patrols credit the players standing by when they arrive.
+    pub(crate) fn credit_near(
+        &mut self,
+        at: [i32; 2],
+        radius: i32,
+        objective: QuestObjective,
+    ) -> Result<(), ZoneError> {
+        for entity in self.interest.near(at[0], at[1], radius) {
+            let EntityRef::Player(player) = entity else {
+                continue;
+            };
+            let feet = self.player_position(player)?;
+            if xz_distance([feet.x, feet.z], at) <= i64::from(radius) {
+                self.complete_ready(player, objective);
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn complete_ready(&mut self, player: PlayerId, objective: QuestObjective) {
         if self.ready_objective(player, objective) {
             self.complete_objectives(player, |candidate| candidate == objective);

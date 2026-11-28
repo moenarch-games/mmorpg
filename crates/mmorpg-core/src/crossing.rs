@@ -366,16 +366,7 @@ impl ZoneSimulation {
         let objective = QuestObjective::Crossing { npc: crossing.npc };
         if arrived {
             let (at, _) = crossing.point_at(run.progress);
-            for entity in self.interest.near(at[0], at[1], crossing.radius) {
-                let EntityRef::Player(player) = entity else {
-                    continue;
-                };
-                let feet = self.player_position(player)?;
-                if xz_distance([feet.x, feet.z], at) <= i64::from(crossing.radius) {
-                    self.complete_ready(player, objective);
-                }
-            }
-            return Ok(());
+            return self.credit_near(at, crossing.radius, objective);
         }
         let waiting: Vec<_> = self
             .players

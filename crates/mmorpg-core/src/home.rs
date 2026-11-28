@@ -53,7 +53,7 @@ pub struct NpcWake {
 
 fn walk_ticks(legs: &[([i32; 2], [i32; 2], i64)]) -> u64 {
     let total: i64 = legs.iter().map(|leg| leg.2).sum();
-    u64::try_from(total.div_euclid(crate::NPC_WALK_UNITS_PER_TICK) + 1).unwrap_or(u64::MAX)
+    u64::try_from(crate::routine::walk_ticks(total)).unwrap_or(u64::MAX)
 }
 
 impl NpcWake {
