@@ -26,6 +26,7 @@ use mmorpg_core::{
     CreatureFamily, CreatureTemplateId, EntityKind, EntityRef, EntitySnapshot, NpcRole,
     PLAYER_HALF_EXTENTS_UNITS, TICK_HZ, UNITS_PER_METRE, ZoneContent, ZoneSnapshot,
 };
+use mmorpg_presentation::geometry::{metres_f32, metres_of, position_f32};
 use mmorpg_presentation::units::{
     FrameInput, SampledUnit, UnitPresenter, Viewer, imported::Kind, player,
 };
@@ -387,7 +388,7 @@ impl Presentation {
     fn placed(&self, pose: &Pose) -> PlayerPose {
         let [x, y, z] = pose.position;
         let relief = self.scenery.height_at(x.round() as i32, z.round() as i32);
-        let metres = |value: f64| (value / f64::from(UNITS_PER_METRE)) as f32;
+        let metres = |value: f64| metres_of(value) as f32;
         PlayerPose {
             position: [metres(x), metres(y + f64::from(relief)), metres(z)],
             yaw: pose.yaw_radians() as f32,
@@ -782,18 +783,15 @@ impl Presentation {
             view.field_of_view_degrees,
             viewer,
         );
-        // The sun, moon and sky follow the zone's time of day; flames flicker on the client
-        // clock.
-        if let Some(mut tick) = self.latest().map(|snapshot| snapshot.tick) {
-            // Reduced motion steps the sky once per zone hour instead of drifting.
-            if self.reduced_motion {
-                let hour = u64::from(mmorpg_core::HOUR_TICKS);
-                tick -= (tick + u64::from(mmorpg_core::ZONE_START_TIME)) % hour;
-            }
+        // The sun, moon and sky follow the zone's time of day, with reduced motion stepping once
+        // per zone hour instead of drifting; flames flicker on the client clock.
+        if let Some(tick) = self.latest().map(|snapshot| snapshot.tick) {
             let interior = frame.lighting.interior;
             let lights = std::mem::take(&mut frame.lighting.point_lights);
-            frame.lighting =
-                crate::world::Lighting::at(mmorpg_presentation::clock::zone_hour(tick));
+            frame.lighting = crate::world::Lighting::at(mmorpg_presentation::clock::sky_hour(
+                tick,
+                !self.reduced_motion,
+            ));
             frame.lighting.point_lights = lights;
             frame.lighting.interior = interior;
         }
@@ -1264,8 +1262,8 @@ impl Presentation {
                         (0..3).all(|axis| {
                             let point =
                                 view.target[axis] + (view.eye[axis] - view.target[axis]) * t;
-                            let centre = c.position[axis] as f32 / 100.0;
-                            let half = c.half_extents[axis] as f32 / 100.0;
+                            let centre = metres_f32(c.position[axis]);
+                            let half = metres_f32(c.half_extents[axis]);
                             let low = centre - half - if axis == 1 { 0.0 } else { 0.4 };
                             let high = centre + half + 0.4;
                             point >= low && point <= high
@@ -1439,7 +1437,7 @@ impl Presentation {
 
     /// Colour and half extents in metres of a unit.
     fn unit_look(&self, entity: EntityRef, record: &EntitySnapshot) -> ([f32; 3], [f32; 3]) {
-        let character = metres(PLAYER_HALF_EXTENTS_UNITS);
+        let character = position_f32(PLAYER_HALF_EXTENTS_UNITS);
         match entity {
             EntityRef::Player(id) if id == self.player_id => (SELF_COLOR, character),
             EntityRef::Player(_) => (PLAYER_COLOR, character),
@@ -1450,7 +1448,10 @@ impl Presentation {
                 } else {
                     MINION_COLOR
                 };
-                (color, metres(mmorpg_core::minion_half_extents(ability)))
+                (
+                    color,
+                    position_f32(mmorpg_core::minion_half_extents(ability)),
+                )
             }
             EntityRef::Npc(id) => {
                 let guard = self
@@ -1463,7 +1464,8 @@ impl Presentation {
                 let template = self
                     .content
                     .creature_template(CreatureTemplateId::new(record.appearance));
-                let half = template.map_or(character, |template| metres(template.half_extents));
+                let half =
+                    template.map_or(character, |template| position_f32(template.half_extents));
                 let family = template.map_or(CreatureFamily::Wolf, |template| template.family);
                 let color = if record.flags.tapped_by_other {
                     TAPPED_COLOR
@@ -1478,8 +1480,8 @@ impl Presentation {
     /// Metres, lifted by the presentation relief under the unit.
     pub fn rendered(&self, position: [i32; 3]) -> [f32; 3] {
         let relief = self.scenery.height_at(position[0], position[2]);
-        let [x, y, z] = metres(position);
-        [x, y + relief as f32 / UNITS_PER_METRE as f32, z]
+        let [x, y, z] = position_f32(position);
+        [x, y + metres_f32(relief), z]
     }
 }
 
@@ -1534,10 +1536,6 @@ fn creature_color(family: CreatureFamily, hostile: bool) -> [f32; 3] {
     } else {
         [0.8 - shade * 0.5, 0.68 - shade, 0.2]
     }
-}
-
-fn metres(value: [i32; 3]) -> [f32; 3] {
-    value.map(|component| component as f32 / UNITS_PER_METRE as f32)
 }
 
 /// A Ranger player in their class starter outfit and chosen headwear, or the plain imported

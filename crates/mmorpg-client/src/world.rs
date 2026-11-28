@@ -238,34 +238,13 @@ impl WorldFrame {
     }
 }
 use crate::presentation::SceneBox;
-use mmorpg_core::UNITS_PER_METRE;
 use mmorpg_presentation::StaticScene;
+use mmorpg_presentation::geometry::metres_f32 as metres;
 use mmorpg_scenery::{Prop, PropKind, RockSize, Scenery, TreeVariant};
-
-/// Terrain vertices are two metres apart over the scenery's ±200 m grid.
-pub const TERRAIN_STEP_UNITS: i32 = 200;
-const WATER_RIM_VERTICES: u32 = 64;
-
-/// One lit, vertex-coloured mesh vertex in metres; colours are linear RGB.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MeshVertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub color: [f32; 3],
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Mesh {
-    pub vertices: Vec<MeshVertex>,
-    /// Counter-clockwise triangles seen from above.
-    pub indices: Vec<u32>,
-}
 
 /// Everything static the renderer uploads once per zone.
 #[derive(Clone, Debug)]
 pub struct WorldScene {
-    pub terrain: Mesh,
-    pub water: Mesh,
     pub props: Vec<SceneBox>,
     /// Additional caller-authored presentation geometry, rendered and picked with the world.
     pub additional_draws: Vec<SceneDraw>,
@@ -581,8 +560,6 @@ impl WorldScene {
             statics,
             water_draws,
             animated,
-            terrain: terrain_mesh(scenery),
-            water: water_mesh(scenery),
             props,
             scene,
         }
@@ -668,7 +645,7 @@ impl WorldScene {
             .iter()
             .map(|light| crate::environment::PointLight {
                 position: light.position.map(|v| v as f32),
-                color: crate::environment::rgb(light.color),
+                color: mmorpg_presentation::colour::rgb(light.color),
                 lumens: light.lumens_at(seconds, animate) as f32,
                 range: light.range as f32,
             })
@@ -736,108 +713,6 @@ impl WorldScene {
             }
         }
         draws
-    }
-}
-
-fn metres(units: i32) -> f32 {
-    units as f32 / UNITS_PER_METRE as f32
-}
-
-/// sRGB channel to linear light.
-fn linear(color: [u8; 3]) -> [f32; 3] {
-    color.map(|channel| {
-        let value = f32::from(channel) / 255.0;
-        if value <= 0.04045 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
-        }
-    })
-}
-
-fn terrain_mesh(scenery: &Scenery) -> Mesh {
-    let grid = scenery.terrain_grid(TERRAIN_STEP_UNITS);
-    let step = metres(grid.step);
-    let height = |column: usize, row: usize| {
-        let column = column.min(grid.columns - 1);
-        let row = row.min(grid.rows - 1);
-        metres(grid.heights[row * grid.columns + column])
-    };
-    let mut vertices = Vec::with_capacity(grid.columns * grid.rows);
-    for row in 0..grid.rows {
-        for column in 0..grid.columns {
-            let index = row * grid.columns + column;
-            // Central differences give a smooth, deterministic normal.
-            let dx = height(column + 1, row) - height(column.saturating_sub(1), row);
-            let dz = height(column, row + 1) - height(column, row.saturating_sub(1));
-            let normal = normalize([-dx, 2.0 * step, -dz]);
-            vertices.push(MeshVertex {
-                position: [
-                    metres(grid.origin[0]) + column as f32 * step,
-                    metres(grid.heights[index]),
-                    metres(grid.origin[1]) + row as f32 * step,
-                ],
-                normal,
-                color: linear(grid.colors[index]),
-            });
-        }
-    }
-    let columns = u32::try_from(grid.columns).unwrap_or(0);
-    let rows = u32::try_from(grid.rows).unwrap_or(0);
-    let mut indices = Vec::new();
-    for row in 0..rows.saturating_sub(1) {
-        for column in 0..columns.saturating_sub(1) {
-            let near = row * columns + column;
-            let far = near + columns;
-            indices.extend_from_slice(&[near, far, near + 1, near + 1, far, far + 1]);
-        }
-    }
-    Mesh { vertices, indices }
-}
-
-fn water_mesh(scenery: &Scenery) -> Mesh {
-    let mut mesh = Mesh::default();
-    let color = [0.05, 0.16, 0.26];
-    for water in &scenery.water {
-        let centre = [
-            metres(water.centre[0]),
-            metres(water.surface),
-            metres(water.centre[1]),
-        ];
-        let first = u32::try_from(mesh.vertices.len()).unwrap_or(0);
-        let up = [0.0, 1.0, 0.0];
-        mesh.vertices.push(MeshVertex {
-            position: centre,
-            normal: up,
-            color,
-        });
-        for step in 0..WATER_RIM_VERTICES {
-            let angle = step as f32 / WATER_RIM_VERTICES as f32 * std::f32::consts::TAU;
-            mesh.vertices.push(MeshVertex {
-                position: [
-                    centre[0] + metres(water.radii[0]) * angle.sin(),
-                    centre[1],
-                    centre[2] + metres(water.radii[1]) * angle.cos(),
-                ],
-                normal: up,
-                color,
-            });
-        }
-        for step in 0..WATER_RIM_VERTICES {
-            let next = (step + 1) % WATER_RIM_VERTICES;
-            mesh.indices
-                .extend_from_slice(&[first, first + 1 + next, first + 1 + step]);
-        }
-    }
-    mesh
-}
-
-fn normalize(value: [f32; 3]) -> [f32; 3] {
-    let length = value.iter().map(|axis| axis * axis).sum::<f32>().sqrt();
-    if length > 0.0 {
-        value.map(|axis| axis / length)
-    } else {
-        [0.0, 1.0, 0.0]
     }
 }
 
