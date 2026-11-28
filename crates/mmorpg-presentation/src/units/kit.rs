@@ -1,5 +1,5 @@
 //! Unit joint frames and shared geometry; contains no gameplay or GPU state.
-use crate::{Draw, Material, geometry::*};
+use crate::{Draw, Material, colour::rgb, geometry::*};
 use std::{
     collections::BTreeMap,
     f64::consts::{PI, TAU},
@@ -17,7 +17,9 @@ pub fn qa(axis: usize, a: f64) -> Q {
     q[axis] = (a / 2.).sin();
     q
 }
-pub fn qm(a: Q, b: Q) -> Q {
+/// The quaternion product `a × b` (`b` applied first) in `[x, y, z, w]` order, in either
+/// precision: the native skinning composes its single-precision joints with it too.
+pub fn qm<T: Real>(a: [T; 4], b: [T; 4]) -> [T; 4] {
     let [x, y, z, w] = a;
     let [u, v, t, s] = b;
     [
@@ -26,6 +28,69 @@ pub fn qm(a: Q, b: Q) -> Q {
         w * t + x * v - y * u + z * s,
         w * s - x * u - y * v - z * t,
     ]
+}
+/// The rotation taking the unit axes X, Y and Z onto the orthonormal `x`, `y` and `z` (a
+/// rotation matrix's columns), as a quaternion.
+pub fn from_axes<T: Real>(x: [T; 3], y: [T; 3], z: [T; 3]) -> [T; 4] {
+    let (one, two, quarter) = (T::from(1.), T::from(2.), T::from(0.25));
+    let trace = x[0] + y[1] + z[2];
+    if trace > T::from(0.) {
+        let s = (trace + one).sqrt() * two;
+        [
+            (y[2] - z[1]) / s,
+            (z[0] - x[2]) / s,
+            (x[1] - y[0]) / s,
+            quarter * s,
+        ]
+    } else if x[0] > y[1] && x[0] > z[2] {
+        let s = (one + x[0] - y[1] - z[2]).sqrt() * two;
+        [
+            quarter * s,
+            (y[0] + x[1]) / s,
+            (z[0] + x[2]) / s,
+            (y[2] - z[1]) / s,
+        ]
+    } else if y[1] > z[2] {
+        let s = (one + y[1] - x[0] - z[2]).sqrt() * two;
+        [
+            (y[0] + x[1]) / s,
+            quarter * s,
+            (z[1] + y[2]) / s,
+            (z[0] - x[2]) / s,
+        ]
+    } else {
+        let s = (one + z[2] - x[0] - y[1]).sqrt() * two;
+        [
+            (z[0] + x[2]) / s,
+            (z[1] + y[2]) / s,
+            quarter * s,
+            (x[1] - y[0]) / s,
+        ]
+    }
+}
+/// The float types the quaternion helpers take: the units' double and the native skinning's
+/// single precision.
+pub trait Real:
+    Copy
+    + PartialOrd
+    + From<f32>
+    + std::ops::Add<Output = Self>
+    + std::ops::Sub<Output = Self>
+    + std::ops::Mul<Output = Self>
+    + std::ops::Div<Output = Self>
+{
+    #[must_use]
+    fn sqrt(self) -> Self;
+}
+impl Real for f32 {
+    fn sqrt(self) -> Self {
+        f32::sqrt(self)
+    }
+}
+impl Real for f64 {
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
 }
 pub fn qr(q: Q, v: V) -> V {
     let [x, y, z, w] = q;
@@ -67,43 +132,7 @@ pub fn model(f: Frame, s: V) -> [f32; 16] {
         ],
         t: f.p,
     };
-    let a = compose(&[a, scale(s[0], s[1], s[2])]);
-    let m = a.m;
-    {
-        [
-            m[0] as f32,
-            m[3] as f32,
-            m[6] as f32,
-            0.,
-            m[1] as f32,
-            m[4] as f32,
-            m[7] as f32,
-            0.,
-            m[2] as f32,
-            m[5] as f32,
-            m[8] as f32,
-            0.,
-            a.t[0] as f32,
-            a.t[1] as f32,
-            a.t[2] as f32,
-            1.,
-        ]
-    }
-}
-pub fn rgb(c: u32) -> [f32; 3] {
-    [16, 8, 0].map(|s| ((c >> s) & 255) as f32 / 255.)
-}
-pub fn shade(c: u32, f: f64) -> u32 {
-    [16, 8, 0].into_iter().fold(0, |o, s| {
-        o | (((f64::from((c >> s) & 255) * f).round().clamp(0., 255.) as u32) << s)
-    })
-}
-pub fn mix(c: u32, d: u32, t: f64) -> u32 {
-    [16, 8, 0].into_iter().fold(0, |o, s| {
-        let a = f64::from((c >> s) & 255);
-        let b = f64::from((d >> s) & 255);
-        o | (((a + (b - a) * t).round() as u32) << s)
-    })
+    matrix(compose(&[a, scale(s[0], s[1], s[2])]))
 }
 #[derive(Default)]
 pub struct Resources {

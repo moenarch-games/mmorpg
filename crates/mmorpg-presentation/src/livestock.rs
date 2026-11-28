@@ -11,7 +11,7 @@ use mmorpg_core::{EntityKind, EntityRef, NpcId, ZoneContent};
 use mmorpg_scenery::Scenery;
 
 use crate::ambient::Pose;
-use crate::batching::matrix;
+use crate::geometry::matrix;
 use crate::geometry::{compose, ry, rz, translate};
 use crate::units::SampledUnit;
 

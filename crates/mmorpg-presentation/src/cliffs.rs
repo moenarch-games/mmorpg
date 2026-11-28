@@ -9,10 +9,12 @@ use mmorpg_scenery::{Prop, PropKind, Scenery};
 
 use crate::{
     Draw, Group,
-    batching::{Cull, material, matrix, mix, rgb, shade},
+    batching::{Cull, material},
+    colour::{mix, rgb, shade},
+    geometry::matrix,
+    geometry::metres,
     geometry::{Geometry, ID, V, hash, norm},
     ground::{self, Ground, Layer},
-    terrain::metres,
 };
 
 fn colored_face(g: &mut Geometry, points: &[V], color: u32) {

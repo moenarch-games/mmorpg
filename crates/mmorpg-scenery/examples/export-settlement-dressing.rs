@@ -134,15 +134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }));
         }
     }
-    println!("{{\n  \"version\": 1,\n  \"area\": \"settlements\",\n  \"placements\": [");
-    for (index, placement) in placements.iter().enumerate() {
-        let comma = if index + 1 == placements.len() {
-            ""
-        } else {
-            ","
-        };
-        println!("    {}{comma}", serde_json::to_string(placement)?);
-    }
-    println!("  ]\n}}");
+    println!(
+        "{}",
+        mmorpg_scenery::layout::dressing_json("settlements", &placements)?
+    );
     Ok(())
 }

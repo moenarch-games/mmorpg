@@ -11,13 +11,15 @@
 //! a random order, so any prefix of them is an even thinning that a client can draw at a
 //! distance. [`Grass::far_cell`] lays out a [`FAR_CELL_METRES`] square the same way on a lattice
 //! [`FAR_SPACING`] apart, for the sparse, wide clumps a client draws beyond the near field.
+use crate::geometry::metres_of;
 use mmorpg_scenery::{Rect, Scenery, TerrainGrid};
 
 use crate::{
     StaticScene,
-    batching::mix,
+    colour::mix,
     geometry::hash,
-    terrain::{ground_biomes, metres, noise, surface, tone},
+    geometry::metres,
+    terrain::{self, ground_biomes, noise, surface, tone},
 };
 
 /// The side of one grass cell, in metres.
@@ -47,10 +49,7 @@ fn fields(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> (Vec<f32>, Vec<u32>) {
     let mut density = vec![0.; count];
     let mut tint = vec![0; count];
     for i in 0..count {
-        let (ux, uz) = (
-            g.origin[0] + (i % g.columns) as i32 * g.step,
-            g.origin[1] + (i / g.columns) as i32 * g.step,
-        );
+        let [ux, uz] = g.index_xz(i);
         let (x, z) = (metres(ux), metres(uz));
         let thick = match biomes[i].name() {
             "meadow" | "foothills" => 1.,
@@ -77,7 +76,7 @@ fn fields(s: &Scenery, g: &TerrainGrid, cover: &[f64]) -> (Vec<f32>, Vec<u32>) {
             if distance == i64::MAX {
                 1.
             } else {
-                ((distance as f64 / 100. - 0.4) / 1.6).clamp(0., 1.)
+                ((metres_of(distance as f64) - 0.4) / 1.6).clamp(0., 1.)
             }
         };
         density[i] = if bare {
@@ -176,8 +175,9 @@ impl Grass {
     /// Bilinear `field` at `(x, z)` metres.
     fn sample<T: Copy>(&self, field: &[T], x: f64, z: f64, lerp: impl Fn(T, T, f64) -> T) -> T {
         let g = &self.grid;
-        let gx = ((x - metres(g.origin[0])) / metres(g.step)).clamp(0., (g.columns - 1) as f64);
-        let gz = ((z - metres(g.origin[1])) / metres(g.step)).clamp(0., (g.rows - 1) as f64);
+        let [gx, gz] = terrain::grid_at(g, x, z);
+        let gx = gx.clamp(0., (g.columns - 1) as f64);
+        let gz = gz.clamp(0., (g.rows - 1) as f64);
         let (c, r) = (
             (gx.floor() as usize).min(g.columns - 2),
             (gz.floor() as usize).min(g.rows - 2),
@@ -223,13 +223,8 @@ impl Grass {
             })
             .collect();
         let g = &self.grid;
-        let (lo, hi) = (
-            [metres(g.origin[0]), metres(g.origin[1])],
-            [
-                metres(g.origin[0] + (g.columns as i32 - 1) * g.step),
-                metres(g.origin[1] + (g.rows as i32 - 1) * g.step),
-            ],
-        );
+        let extent = terrain::extent(g);
+        let (lo, hi) = ([extent[0], extent[1]], [extent[2], extent[3]]);
         let step = size / f64::from(side);
         let mut clumps: Vec<(f64, [f32; CLUMP_FLOATS])> = Vec::new();
         for j in 0..side {

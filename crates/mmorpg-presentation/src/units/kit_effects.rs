@@ -16,6 +16,7 @@ use super::{
     kit::{Frame, IQ, model, qa, qm},
 };
 use crate::geometry::V;
+use crate::geometry::metres;
 use mmorpg_core::{
     AbilityId, ComboPhase, EntityRef, ProjectileKind, StrikeSide, StrikeVariant, TICK_HZ,
     WeaponFamily, ZoneEvent, ZoneSnapshot, ability::ids,
@@ -356,7 +357,7 @@ impl KitEffects {
                         key: strike_key(family, variant),
                         backhand: variant == StrikeVariant::Second,
                         slam: variant == StrikeVariant::Jumping,
-                        tip: f64::from(mmorpg_core::blade_sweep(family, variant).tip_units) / 100.,
+                        tip: metres(mmorpg_core::blade_sweep(family, variant).tip_units),
                         at: now + f64::from(contact) / f64::from(TICK_HZ),
                     });
                 }

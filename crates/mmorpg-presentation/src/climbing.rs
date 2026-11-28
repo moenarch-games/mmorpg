@@ -17,16 +17,12 @@
 //! The shared [`Lods`] picks each part's level from the descriptor's `lodSelection`. While a
 //! client does not draw the kit, the static scene draws the procedural ladders and ropes
 //! ([`crate::Kit::Climbing`] fallback groups) and no ivy. Presentation only.
-use mmorpg_core::{
-    UNITS_PER_METRE,
-    greyhaven_vale::{self, ids},
-};
+use mmorpg_core::greyhaven_vale::{self, ids};
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid};
 
 use crate::{
     Cull,
-    batching::matrix,
-    geometry::{Affine, V, compose, ry, translate},
+    geometry::{Affine, V, compose, matrix, metres, on_face, ry, slope_out, translate},
     terrain::surface,
 };
 
@@ -87,10 +83,6 @@ pub const COVERS: [Cover; 2] = [
 /// Each boundary climbing route on the terrain wears three strips up its middle.
 const ROUTE_STRIPS: [f64; 3] = [-1., 0., 1.];
 
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
-}
-
 /// The turn about +Y (radians) that faces a ladder's or rope's local +Z out of the face it
 /// climbs: every ladder stands on a tower's +Z face, a rope on its content's face
 /// ([`greyhaven_vale::Rope::out`]).
@@ -109,19 +101,6 @@ pub fn face_yaw(p: &Prop) -> f64 {
 #[must_use]
 pub const fn draws(p: &Prop) -> bool {
     matches!(p.kind, PropKind::Ladder | PropKind::Rope)
-}
-
-/// Part placed with its back-base-centre at `base` on a face, its +Z out along `out` and its
-/// +Y up along `up` (unit vectors), stretched by `height` along +Y.
-fn on_face(base: V, up: V, out: V, height: f64) -> Affine {
-    let side = cross(up, out);
-    Affine {
-        m: std::array::from_fn(|i| {
-            let (r, c) = (i / 3, i % 3);
-            [side, up, out][c][r] * if c == 1 { height } else { 1. }
-        }),
-        t: base,
-    }
 }
 
 fn placement(entry: &'static str, frame: Affine, largest: f64) -> Placement {
@@ -199,18 +178,18 @@ fn vertical_cover(base: [f64; 2], out: V, ground: f64, top: f64, parts: &mut Vec
         let stretch = height / 3.;
         parts.push(placement(
             VINE_3M,
-            on_face(at(ground), up, out, stretch),
+            on_face(at(ground), up, out, [1., stretch, 1.]),
             stretch.max(1.),
         ));
         return;
     }
     let cap = top - VINE_BELOW_TOP - VINE_TOP_HEIGHT;
-    parts.push(placement(VINE_TOP, on_face(at(cap), up, out, 1.), 1.));
+    parts.push(placement(VINE_TOP, on_face(at(cap), up, out, [1.; 3]), 1.));
     let strips = ((cap - ground) / VINE_PITCH).ceil().max(0.) as usize;
     for k in 1..=strips {
         parts.push(placement(
             VINE_STRIP,
-            on_face(at(cap - VINE_PITCH * k as f64), up, out, 1.),
+            on_face(at(cap - VINE_PITCH * k as f64), up, out, [1.; 3]),
             1.,
         ));
     }
@@ -311,13 +290,10 @@ fn terrain_column(
             let (p, q) = (at(s), at((s + span).min(length)));
             let chord = distance(p, q).max(1e-6);
             let up: V = std::array::from_fn(|i| (q[i] - p[i]) / chord);
-            let mut out = norm(cross(across_axis, up));
-            if out[1] < 0. {
-                out = out.map(|v| -v);
-            }
+            let out = slope_out(across_axis, up);
             parts.push(placement(
                 entry,
-                on_face(p, up, out, chord / nominal),
+                on_face(p, up, out, [1., chord / nominal, 1.]),
                 (chord / nominal).max(1.),
             ));
             s += span;
@@ -418,19 +394,6 @@ pub fn descriptor_lods(json: &str) -> Result<Vec<EntryLods>, String> {
 
 fn distance(a: V, b: V) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
-}
-
-fn norm(v: V) -> V {
-    let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
-    v.map(|c| c / length)
-}
-
-fn cross(a: V, b: V) -> V {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 #[cfg(test)]

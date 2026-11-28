@@ -45,6 +45,16 @@ pub struct EntryLods {
     pub bounds: Option<[[f64; 3]; 2]>,
 }
 
+/// A JSON array of exactly `N` numbers, as the bundles' descriptors write points and spans.
+pub(crate) fn numbers<const N: usize>(value: &Value) -> Option<[f64; N]> {
+    let value = value.as_array().filter(|c| c.len() == N)?;
+    let mut out = [0.; N];
+    for (axis, coordinate) in value.iter().enumerate() {
+        out[axis] = coordinate.as_f64()?;
+    }
+    Some(out)
+}
+
 /// Every asset's levels in a descriptor with `lodSelection`, or, in a descriptor without it (a
 /// kit that ships only `default`, like the settlement props and the sandstone kit), each asset's
 /// one level ([`single_level_lods`]).
@@ -63,21 +73,13 @@ pub fn descriptor_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
     let assets = descriptor["assets"]
         .as_array()
         .ok_or("the descriptor lists no assets")?;
-    let point = |value: &Value| -> Option<[f64; 3]> {
-        let value = value.as_array().filter(|c| c.len() == 3)?;
-        let mut out = [0.; 3];
-        for (axis, coordinate) in value.iter().enumerate() {
-            out[axis] = coordinate.as_f64()?;
-        }
-        Some(out)
-    };
     assets
         .iter()
         .map(|asset| {
             let entry = asset["key"].as_str().ok_or("an asset without key")?;
             let lods = &asset["lods"];
             let sphere = &lods["boundingSphere"];
-            let centre = point(&sphere["center"])
+            let centre = numbers::<3>(&sphere["center"])
                 .ok_or_else(|| format!("{entry} has no bounding sphere"))?;
             let radius = sphere["radius"]
                 .as_f64()
@@ -95,8 +97,8 @@ pub fn descriptor_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
                 .collect::<Option<Vec<_>>>()
                 .filter(|levels| !levels.is_empty())
                 .ok_or_else(|| format!("{entry} has malformed levels"))?;
-            let bounds = point(&asset["bounds"]["min"])
-                .zip(point(&asset["bounds"]["max"]))
+            let bounds = numbers::<3>(&asset["bounds"]["min"])
+                .zip(numbers::<3>(&asset["bounds"]["max"]))
                 .map(|(min, max)| [min, max]);
             Ok(EntryLods {
                 entry: entry.to_owned(),
@@ -116,22 +118,14 @@ pub fn descriptor_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
 ///
 /// When the descriptor lists no assets or an asset lacks a key or bounds.
 pub fn single_level_lods(descriptor: &Value) -> Result<Vec<EntryLods>, String> {
-    let point = |value: &Value| -> Option<[f64; 3]> {
-        let value = value.as_array().filter(|c| c.len() == 3)?;
-        let mut out = [0.; 3];
-        for (axis, coordinate) in value.iter().enumerate() {
-            out[axis] = coordinate.as_f64()?;
-        }
-        Some(out)
-    };
     descriptor["assets"]
         .as_array()
         .ok_or("the descriptor lists no assets")?
         .iter()
         .map(|asset| {
             let entry = asset["key"].as_str().ok_or("an asset without key")?;
-            let (min, max) = point(&asset["bounds"]["min"])
-                .zip(point(&asset["bounds"]["max"]))
+            let (min, max) = numbers::<3>(&asset["bounds"]["min"])
+                .zip(numbers::<3>(&asset["bounds"]["max"]))
                 .ok_or_else(|| format!("{entry} has no bounds"))?;
             let centre = std::array::from_fn(|axis| (min[axis] + max[axis]) / 2.);
             let radius = (0..3)

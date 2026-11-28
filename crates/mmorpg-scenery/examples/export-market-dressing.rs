@@ -1,5 +1,4 @@
 //! Offline layout + market art data → committed world dressing (#683).
-use mmorpg_core::greyhaven_vale;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -23,12 +22,7 @@ struct Placement {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = match std::env::args().nth(1) {
-        Some(path) => std::fs::read_to_string(path)?,
-        None => greyhaven_vale::layout::SOURCE.to_owned(),
-    };
-    let definition = greyhaven_vale::layout::compile(&source)?;
-    let scenery = mmorpg_scenery::layout::compose(&source, &definition)?;
+    let (definition, scenery) = mmorpg_scenery::layout::exporter_input(std::env::args().nth(1))?;
     let market: Market = serde_json::from_str(include_str!(
         "../../../content/greyhaven/authoring/market-props.json"
     ))?;
@@ -55,14 +49,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             placed.push(p);
         }
     }
-    println!("{{\n  \"version\": 1,\n  \"area\": \"outpost-market\",\n  \"placements\": [");
-    for (index, p) in placed.iter().enumerate() {
-        println!(
-            "    {}{}",
-            serde_json::to_string(p)?,
-            if index + 1 == placed.len() { "" } else { "," }
-        );
-    }
-    println!("  ]\n}}");
+    println!(
+        "{}",
+        mmorpg_scenery::layout::dressing_json("outpost-market", &placed)?
+    );
     Ok(())
 }

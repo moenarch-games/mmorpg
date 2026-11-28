@@ -196,3 +196,44 @@ pub fn compose(source: &str, definition: &ZoneDefinition) -> Result<Scenery, Str
         .revision();
     Ok(scenery)
 }
+
+/// An offline dressing exporter's input: the layout file at `path`, or the committed layout,
+/// compiled by core and composed into scenery.
+///
+/// # Errors
+///
+/// When the file cannot be read or the layout does not compile or compose.
+pub fn exporter_input(
+    path: Option<String>,
+) -> Result<(ZoneDefinition, Scenery), Box<dyn std::error::Error>> {
+    let source = match path {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => core_layout::SOURCE.to_owned(),
+    };
+    let definition = core_layout::compile(&source)?;
+    let scenery = compose(&source, &definition)?;
+    Ok((definition, scenery))
+}
+
+/// A committed world-dressing file (`content/greyhaven/dressing/<area>.json`): its version,
+/// area and one placement per line, so a re-export diffs placement by placement.
+///
+/// # Errors
+///
+/// When a placement does not serialize.
+pub fn dressing_json<T: serde::Serialize>(
+    area: &str,
+    placements: &[T],
+) -> serde_json::Result<String> {
+    let mut out = format!("{{\n  \"version\": 1,\n  \"area\": \"{area}\",\n  \"placements\": [\n");
+    for (index, placement) in placements.iter().enumerate() {
+        let comma = if index + 1 == placements.len() {
+            ""
+        } else {
+            ","
+        };
+        out += &format!("    {}{comma}\n", serde_json::to_string(placement)?);
+    }
+    out += "  ]\n}";
+    Ok(out)
+}

@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Cull, Kit,
-    batching::matrix,
+    geometry::matrix,
     geometry::{Affine, compose, ry, scale, translate},
     lod::Placement,
 };

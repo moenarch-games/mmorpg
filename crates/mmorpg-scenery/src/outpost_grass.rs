@@ -56,8 +56,9 @@ mod tests {
         // of #889, the Eastdown meadow (#872), Trapper Sela's hunting bear (#991), the forest lynxes (#989), the
         // river crayfish (#996), the Southwood stags (#997), the highland crags' outcrop
         // groups (#1195), the Redbrand Hollow's re-modelled cliffs (#1195) and its quarry (#1195), the
-        // Sunken Shrine's sealed vault (#1019) and the village basin rim's rock band (#1195).
-        assert_eq!(before.stable_hash(), 0xd23b_8977_996a_5e03);
+        // Sunken Shrine's sealed vault (#1019), the village basin rim's rock band (#1195) and the
+        // one biome palette the clients draw (#1268).
+        assert_eq!(before.stable_hash(), 0x8b4e_9321_328b_5559);
         let original: Vec<_> = before
             .props
             .iter()

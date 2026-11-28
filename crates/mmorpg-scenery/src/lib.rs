@@ -345,22 +345,23 @@ impl Biome {
         }
     }
 
-    /// sRGB colour before the per-vertex tint.
+    /// sRGB colour before the per-vertex tint: the one palette both clients draw the ground
+    /// in (`mmorpg_presentation`'s terrain tone starts from it, #1268).
     #[must_use]
     pub const fn base_color(self) -> [u8; 3] {
         match self {
-            Self::Meadow => [92, 132, 62],
-            Self::Hub => [104, 128, 68],
-            Self::Woods => [62, 80, 44],
+            Self::Meadow => [90, 118, 64],
+            Self::Hub => [102, 124, 71],
+            Self::Woods => [77, 101, 59],
             Self::Hollow => [102, 115, 72],
-            Self::Farmland => [112, 84, 54],
+            Self::Farmland => [122, 88, 54],
             Self::Road => ROAD_COLOR,
             Self::Plaza => PLAZA_COLOR,
-            Self::Shore => [196, 180, 132],
+            Self::Shore => [205, 187, 136],
             Self::LakeBed => LAKE_BED_COLOR,
-            Self::Foothills => [72, 104, 56],
-            Self::Highland => [88, 98, 70],
-            Self::Rock => [124, 120, 112],
+            Self::Foothills => [90, 114, 68],
+            Self::Highland => [111, 125, 82],
+            Self::Rock => [139, 135, 126],
             Self::Snow => SNOW_COLOR,
         }
     }
@@ -420,6 +421,37 @@ pub struct TerrainGrid {
 }
 
 impl TerrainGrid {
+    /// XZ position (units) of the sample at `column`, `row`; it may lie past the last one.
+    #[must_use]
+    pub fn sample_xz(&self, column: usize, row: usize) -> [i32; 2] {
+        [
+            self.origin[0] + column as i32 * self.step,
+            self.origin[1] + row as i32 * self.step,
+        ]
+    }
+
+    /// XZ position (units) of the sample at index `sample` (row by row).
+    #[must_use]
+    pub fn index_xz(&self, sample: usize) -> [i32; 2] {
+        self.sample_xz(sample % self.columns, sample / self.columns)
+    }
+
+    /// The rectangle `[min x, min z, max x, max z]` (units) of the cell whose first sample is
+    /// at `column`, `row`.
+    #[must_use]
+    pub fn cell_rect(&self, column: usize, row: usize) -> [i32; 4] {
+        let [x0, z0] = self.sample_xz(column, row);
+        let [x1, z1] = self.sample_xz(column + 1, row + 1);
+        [x0, z0, x1, z1]
+    }
+
+    /// The rectangle `[min x, min z, max x, max z]` (units) the grid's samples span.
+    #[must_use]
+    pub fn extent(&self) -> [i32; 4] {
+        let [x1, z1] = self.sample_xz(self.columns - 1, self.rows - 1);
+        [self.origin[0], self.origin[1], x1, z1]
+    }
+
     #[must_use]
     pub fn vertex(&self, column: usize, row: usize) -> Option<([i32; 3], [u8; 3])> {
         if column >= self.columns || row >= self.rows {
@@ -1464,13 +1496,13 @@ fn biome_color(biome: Biome, x: i32, z: i32) -> [u8; 3] {
 }
 
 /// Packed dirt of every road surface.
-pub const ROAD_COLOR: [u8; 3] = [140, 112, 76];
+pub const ROAD_COLOR: [u8; 3] = [164, 134, 92];
 /// Trampled earth of the hub plaza.
-pub const PLAZA_COLOR: [u8; 3] = [150, 136, 110];
+pub const PLAZA_COLOR: [u8; 3] = [142, 126, 97];
 /// The lake bed under the water surface.
-pub const LAKE_BED_COLOR: [u8; 3] = [120, 112, 88];
+pub const LAKE_BED_COLOR: [u8; 3] = [94, 90, 68];
 /// Snow caps above [`SNOW_LINE_UNITS`].
-pub const SNOW_COLOR: [u8; 3] = [236, 238, 242];
+pub const SNOW_COLOR: [u8; 3] = [238, 241, 245];
 
 fn clamp_channel(value: i32) -> u8 {
     u8::try_from(value.clamp(0, 255)).unwrap_or(u8::MAX)

@@ -74,6 +74,7 @@ pub fn compose(ts: &[Affine]) -> Affine {
 pub fn at(x: f64, y: f64, z: f64, sx: f64, sy: f64, sz: f64) -> Affine {
     compose(&[translate(x, y, z), scale(sx, sy, sz)])
 }
+/// `p` scaled to unit length; a zero vector is up (+Y).
 pub fn norm(p: V) -> V {
     let l = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
     if l > 0. {
@@ -81,6 +82,98 @@ pub fn norm(p: V) -> V {
     } else {
         [0., 1., 0.]
     }
+}
+#[must_use]
+pub fn add(a: V, b: V) -> V {
+    std::array::from_fn(|i| a[i] + b[i])
+}
+#[must_use]
+pub fn sub(a: V, b: V) -> V {
+    std::array::from_fn(|i| a[i] - b[i])
+}
+#[must_use]
+pub fn dot(a: V, b: V) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+#[must_use]
+pub fn length(v: V) -> f64 {
+    dot(v, v).sqrt()
+}
+#[must_use]
+pub fn cross(a: V, b: V) -> V {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+/// The frame whose +X, +Y and +Z are `cross(up, out)`, `up` and `out` (unit vectors), each
+/// stretched by `scale`, its origin at `base`: a part laid on a face.
+#[must_use]
+pub fn on_face(base: V, up: V, out: V, scale: V) -> Affine {
+    let side = cross(up, out);
+    Affine {
+        m: std::array::from_fn(|i| {
+            let (r, c) = (i / 3, i % 3);
+            [side, up, out][c][r] * scale[c]
+        }),
+        t: base,
+    }
+}
+/// The outward normal of a strip running `up` a slope (a unit vector) across the level
+/// `across` axis, turned to face the sky.
+#[must_use]
+pub fn slope_out(across: V, up: V) -> V {
+    let out = norm(cross(across, up));
+    if out[1] < 0. { out.map(|v| -v) } else { out }
+}
+/// Whether the open rectangles `a` and `b` (`[min x, min z, max x, max z]`) overlap.
+#[must_use]
+pub fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
+    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+/// `a` as a column-major 4×4 model matrix.
+#[must_use]
+pub fn matrix(a: Affine) -> [f32; 16] {
+    let m = a.m;
+    [
+        m[0] as f32,
+        m[3] as f32,
+        m[6] as f32,
+        0.,
+        m[1] as f32,
+        m[4] as f32,
+        m[7] as f32,
+        0.,
+        m[2] as f32,
+        m[5] as f32,
+        m[8] as f32,
+        0.,
+        a.t[0] as f32,
+        a.t[1] as f32,
+        a.t[2] as f32,
+        1.,
+    ]
+}
+/// Metres of `units` zone units ([`mmorpg_core::UNITS_PER_METRE`]).
+#[must_use]
+pub const fn metres(units: i32) -> f64 {
+    units as f64 / mmorpg_core::UNITS_PER_METRE as f64
+}
+/// [`metres`] of a fractional or wide unit count.
+#[must_use]
+pub const fn metres_of(units: f64) -> f64 {
+    units / mmorpg_core::UNITS_PER_METRE as f64
+}
+/// [`metres`] in single precision, as the renderers take positions.
+#[must_use]
+pub const fn metres_f32(units: i32) -> f32 {
+    units as f32 / mmorpg_core::UNITS_PER_METRE as f32
+}
+/// A zone position in metres, single precision.
+#[must_use]
+pub fn position_f32(units: [i32; 3]) -> [f32; 3] {
+    units.map(metres_f32)
 }
 impl Geometry {
     pub fn add(&mut self, s: &Self, a: Affine) {

@@ -10,11 +10,12 @@ use mmorpg_scenery::{Scenery, TerrainGrid};
 
 use crate::{
     Cull,
-    batching::matrix,
     brook::{village_drawn, water_course},
+    geometry::matrix,
+    geometry::metres,
     geometry::{compose, ry, scale, translate},
     lod::Placement,
-    terrain::{metres, noise, surface},
+    terrain::{noise, surface},
 };
 
 const BED: [&str; 2] = ["river-stones.kit.bed-1", "river-stones.kit.bed-2"];

@@ -4,6 +4,7 @@
 //! on the line; a hand winch over an old shaft on the east rim above the adit; and a wooden
 //! derrick crane by the south wall reaching over stacked cut blocks. Presentation only: nothing
 //! here collides. The adit's timbering and its first rails are the mine entrance's prop.
+use crate::geometry::metres;
 use mmorpg_scenery::Scenery;
 
 use crate::batching::Batcher;
@@ -50,7 +51,7 @@ const DERRICK_REACH: [f64; 2] = [4.0, -98.5];
 
 /// The drawn ground at `(x, z)` metres.
 fn floor(scenery: &Scenery, x: f64, z: f64) -> f64 {
-    f64::from(scenery.surface_at((x * 100.).round() as i32, (z * 100.).round() as i32)) / 100.
+    metres(scenery.surface_at((x * 100.).round() as i32, (z * 100.).round() as i32))
 }
 
 /// The highest upward face of the authored rock over `(x, z)` metres, if any: there, the
@@ -62,7 +63,7 @@ fn rock_top(scenery: &Scenery, x: f64, z: f64) -> Option<f64> {
         .flat_map(|mesh| {
             let point = |i: u32| {
                 let v = mesh.vertices[i as usize];
-                std::array::from_fn::<f64, 3, _>(|a| f64::from(v[a] + mesh.position[a]) / 100.)
+                std::array::from_fn::<f64, 3, _>(|a| metres(v[a] + mesh.position[a]))
             };
             mesh.triangles.iter().filter_map(move |&[a, b, c]| {
                 let [a, b, c] = [point(a), point(b), point(c)];
