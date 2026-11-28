@@ -1853,31 +1853,9 @@ impl ZoneSimulation {
     pub(crate) fn retire_raider(&mut self, id: CreatureId, now: u64) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(id);
         self.world.remove_body(body_id(entity));
-        if self.interest.remove(entity) {
-            self.interest_work.bucket_removes += 1;
-        }
-        for player in self.players.values_mut() {
-            if player.target == Some(entity) {
-                player.target = None;
-            }
-        }
+        self.withdraw(entity);
         if let Some(state) = self.creatures.get_mut(&id) {
-            state.life = Life::Despawned { died_at: now };
-            state.health = 0;
-            state.ai = CreatureAi::Idle {
-                timer: 0,
-                destination: None,
-            };
-            state.threat.clear();
-            state.swing_timer = 0;
-            state.combat_timer = 0;
-            state.tapped_by = None;
-            state.loot = None;
-            state.cast = None;
-            state.auras.clear();
-            state.encounter = None;
-            state.raid = None;
-            state.reset_abilities();
+            state.retire(now);
         }
         Ok(())
     }

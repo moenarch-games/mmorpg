@@ -10,10 +10,8 @@
 //! barrel explodes like Fire Blast as it breaks, hurting and knocking back nearby players,
 //! creatures and other props, so barrels chain-react.
 
-use crate::creature::Life;
 use crate::entity::{EntityRef, body_id, is_unit_body};
 use crate::physics::{Aabb, DebrisBody, Vec3i};
-use crate::snapshot::CreatureAi;
 use crate::{CreatureId, PlayerId, PropKind, ZoneError, ZoneEvent, ZoneSimulation};
 
 /// A piece of debris lives this long (5 s), flying and then lying where it settled.
@@ -191,29 +189,11 @@ impl ZoneSimulation {
         let centre = body.position();
         let facing = self.creatures.get(&id).map_or(0, |prop| prop.facing);
         if let Some(prop) = self.creatures.get_mut(&id) {
-            prop.health = 0;
-            prop.life = Life::Despawned { died_at: now };
-            prop.ai = CreatureAi::Idle {
-                timer: 0,
-                destination: None,
-            };
-            prop.threat.clear();
-            prop.swing_timer = 0;
-            prop.combat_timer = 0;
-            prop.tapped_by = None;
-            prop.loot = None;
-            prop.reset_abilities();
+            prop.retire(now);
         }
         self.forced.remove(&entity);
         self.prop_motion.remove(&id);
-        if self.interest.remove(entity) {
-            self.interest_work.bucket_removes += 1;
-        }
-        for player in self.players.values_mut() {
-            if player.target == Some(entity) {
-                player.target = None;
-            }
-        }
+        self.withdraw(entity);
         if let EntityRef::Player(player_id) = killer {
             self.notify(
                 player_id,

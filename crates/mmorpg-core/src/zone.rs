@@ -782,10 +782,7 @@ impl ZoneSimulation {
         // Only the creatures it concerns change (#1086).
         self.creatures.update_where(
             |creature| {
-                creature.threat.iter().any(|entry| entry.entity == entity)
-                    || creature
-                        .cast
-                        .is_some_and(|cast| cast.target == Some(entity))
+                creature.concerns(entity)
                     || creature.tapped_by == Some(player_id)
                     || creature.loot_party.contains(&player_id)
             },
@@ -1605,6 +1602,19 @@ impl ZoneSimulation {
             .body(body_id(EntityRef::Player(player_id)))
             .ok_or_else(|| ZoneError::new("player physics body is missing"))?
             .position())
+    }
+
+    /// Takes `entity` out of view (#1261): off the interest index and no player's target. Its
+    /// body, if any, is the caller's to remove.
+    pub(crate) fn withdraw(&mut self, entity: EntityRef) {
+        if self.interest.remove(entity) {
+            self.interest_work.bucket_removes += 1;
+        }
+        for player in self.players.values_mut() {
+            if player.target == Some(entity) {
+                player.target = None;
+            }
+        }
     }
 
     /// Where `player_id`'s feet stand (units): the bottom centre of its body.

@@ -807,11 +807,11 @@ impl ZoneSimulation {
         for index in 0..self.content.confrontations().len() {
             let confrontation = self.content.confrontations()[index];
             self.tick_work.confrontations_checked += 1;
-            if self.creatures.get(&confrontation.foe).is_some_and(|foe| {
-                foe.is_alive()
-                    && foe.ai != crate::snapshot::CreatureAi::Engaged
-                    && foe.combat_timer == 0
-            }) {
+            if self
+                .creatures
+                .get(&confrontation.foe)
+                .is_some_and(|foe| foe.is_alive() && foe.out_of_fight())
+            {
                 self.retire_raider(confrontation.foe, now)?;
             }
         }

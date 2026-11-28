@@ -32,7 +32,6 @@ use std::sync::Arc;
 
 use crate::creature::Life;
 use crate::routine::{DAWN, DUSK, NpcPlacement, along, legs, time_of_day, walk_ticks};
-use crate::snapshot::CreatureAi;
 use crate::{CreatureId, EntityRef, NpcId, PlayerId, PostureView, ZoneError, ZoneSimulation};
 
 /// One of two days the bandits wait on the road.
@@ -340,7 +339,7 @@ impl ZoneSimulation {
                     EntityRef::Player(player) if entry.threat > 0 => Some(player),
                     _ => None,
                 }));
-            } else if !standing && state.ai != CreatureAi::Engaged && state.combat_timer == 0 {
+            } else if !standing && state.out_of_fight() {
                 self.retire_raider(bandit, now)?;
             }
         }
