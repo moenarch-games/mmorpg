@@ -1,4 +1,5 @@
 import type { WorldCommand } from "../../command-wire";
+import { GUARD_LANE_RULE } from "../../input/game-controls";
 import type { GuardState, StrikeHeight, ZoneSnapshot } from "../../replication";
 
 /**
@@ -9,11 +10,14 @@ import type { GuardState, StrikeHeight, ZoneSnapshot } from "../../replication";
  * (grounded, not broken) and what it blocks.
  */
 
-/** Right-stick deflection past which a pad-held guard aims high or low. */
-export const GUARD_STICK_DEFLECTION = 0.5;
-/** Standard-mapping left trigger and right stick vertical axis. */
-const LEFT_TRIGGER = 6;
-const RIGHT_STICK_Y = 3;
+/**
+ * Right-stick deflection past which a pad-held guard aims high or low, the standard-mapping left
+ * trigger and right stick vertical axis: the shared catalog's guard rule, as the native client's.
+ */
+export const GUARD_STICK_DEFLECTION = GUARD_LANE_RULE.deflection / 100;
+const LEFT_TRIGGER = GUARD_LANE_RULE.triggerButton;
+const TRIGGER_PRESSED = GUARD_LANE_RULE.triggerThreshold / 100;
+const RIGHT_STICK_Y = GUARD_LANE_RULE.stickAxis;
 
 /** The parts of a standard-mapping pad the guard reads. */
 export type GuardPad = { readonly buttons: readonly { readonly value: number }[]; readonly axes: readonly number[] };
@@ -26,7 +30,7 @@ export function padGuardLane(pads: readonly (GuardPad | null)[]): StrikeHeight |
   let lane: StrikeHeight | null = null;
   let deflection = -1;
   for (const pad of pads) {
-    if (!pad || (pad.buttons[LEFT_TRIGGER]?.value ?? 0) < 0.5) {
+    if (!pad || (pad.buttons[LEFT_TRIGGER]?.value ?? 0) < TRIGGER_PRESSED) {
       continue;
     }
     const y = Number.isFinite(pad.axes[RIGHT_STICK_Y]) ? (pad.axes[RIGHT_STICK_Y] as number) : 0;

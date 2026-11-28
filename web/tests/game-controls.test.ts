@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { GamepadLike } from "@moritzbrantner/input-bindings-web";
+import sharedCatalog from "../../content/settings/input-actions.json";
 import {
   contextStack,
+  GAME_ACTION_REGISTRY,
+  GAME_ACTION_REGISTRY_VERSION,
+  GAME_ACTIONS,
   GameControls,
   type ControlScreen,
   type GameAction,
@@ -137,6 +141,28 @@ describe("MMORPG semantic controls", () => {
     expect([...gamepad.actions].sort()).toEqual([...keyboard.actions].sort());
     gamepad.unplug();
     expect(gamepad.controls.heldIntent().steering).toBe(false);
+  });
+
+  test("the browser binds the shared catalog unchanged and adds only its screen and menu actions (#1284)", () => {
+    const shared = sharedCatalog.actions as unknown as typeof GAME_ACTION_REGISTRY.actions;
+    const ids = GAME_ACTION_REGISTRY.actions.map((action) => action.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(GAME_ACTION_REGISTRY.actions.slice(0, shared.length)).toEqual(shared);
+    expect([...ids].sort()).toEqual([...GAME_ACTIONS].sort());
+    expect(ids.slice(shared.length).sort()).toEqual(
+      ["ui.cancelCreation", "ui.closePanel", "ui.enterWorld", "ui.gameMenu", "ui.leaveWorld", "ui.talk", "ui.toggleDebug", "ui.toggleVendor"],
+    );
+    expect(GAME_ACTION_REGISTRY_VERSION).toBe(sharedCatalog.registryVersion);
+    // Saved profiles name default bindings by id: the browser's `{action}.{index}` ids stay.
+    expect(shared.find((action) => action.id === "move.jump")?.defaults?.map((binding) => binding.id)).toEqual(["move.jump.0", "move.jump.1"]);
+  });
+
+  test("L3 and RT open the character pane and the quest log, as natively (#1284)", () => {
+    const app = harness();
+    app.pad([0, 0], [10]);
+    app.pad([0, 0], []);
+    app.pad([0, 0], [7]);
+    expect(app.actions).toEqual(["ui.toggleCharacter", "ui.toggleQuestLog"]);
   });
 
   test("Shift+digit reaches the second action-bar row (#294)", () => {
