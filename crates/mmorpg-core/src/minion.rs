@@ -31,9 +31,10 @@
 use std::collections::BTreeSet;
 
 use crate::ability::{AbilityEffect, AbilityId, scaled};
-use crate::ai::{distance_squared, offset, steer};
+use crate::ai::{offset, steer};
 use crate::entity::body_id;
 use crate::physics::{RigidBody, Vec3i};
+use crate::reach::xz_distance_squared;
 use crate::snapshot::CreatureAi;
 use crate::trig::{self, yaw_from_vector};
 use crate::unit::{COMBAT_LINGER_TICKS, CREATURE_REACH_UNITS, Swing, roll_swing};
@@ -389,12 +390,12 @@ impl ZoneSimulation {
                     return Ok(Some((ErrorCode::InvalidTarget, Some(target))));
                 }
                 let at = self.unit_position(target)?;
-                if distance_squared(here, [at[0], at[2]]) > reach {
+                if xz_distance_squared(here, [at[0], at[2]]) > reach {
                     return Ok(Some((ErrorCode::OutOfRange, Some(target))));
                 }
             }
             MinionOrder::Defend(point) => {
-                if distance_squared(here, point) > reach {
+                if xz_distance_squared(here, point) > reach {
                     return Ok(Some((ErrorCode::OutOfRange, None)));
                 }
             }
@@ -462,7 +463,7 @@ impl ZoneSimulation {
         let leader = self.player_position(minion.summoner)?;
         let leader_at = [leader.x, leader.z];
         // Lost far behind (a fall, a door, a long run): gathered back beside the summoner.
-        if distance_squared(here, leader_at) > i64::from(MINION_GATHER_RADIUS_UNITS).pow(2) {
+        if !crate::reach::within_xz(here, leader_at, MINION_GATHER_RADIUS_UNITS) {
             let spot = point_along(
                 leader_at,
                 facing.wrapping_add(0x8000),
@@ -484,8 +485,11 @@ impl ZoneSimulation {
         }
         let leashed = |zone: &Self, unit: EntityRef| -> Result<bool, ZoneError> {
             let at = zone.unit_position(unit)?;
-            Ok(distance_squared(leader_at, [at[0], at[2]])
-                > i64::from(MINION_LEASH_RADIUS_UNITS).pow(2))
+            Ok(!crate::reach::within_xz(
+                leader_at,
+                [at[0], at[2]],
+                MINION_LEASH_RADIUS_UNITS,
+            ))
         };
         // The fight: an ordered target, the current one while it lasts, or a new enemy.
         let mut order = minion.order;
@@ -531,7 +535,7 @@ impl ZoneSimulation {
                 let reach = self.minion_reach(unit)?;
                 let waypoint = self.route_waypoint(centre, half, to, reach)?;
                 let (dx, dz) = offset(here, waypoint.unwrap_or(to));
-                let inside = distance_squared(here, to) <= i64::from(reach).pow(2);
+                let inside = crate::reach::within_xz(here, to, reach);
                 let velocity = if inside && waypoint.is_none() {
                     [0, 0]
                 } else {
@@ -541,7 +545,7 @@ impl ZoneSimulation {
                 (velocity, yaw_from_vector(fx, fz))
             }
             None => {
-                let distance = distance_squared(here, goal);
+                let distance = xz_distance_squared(here, goal);
                 if distance <= i64::from(FORMATION_SLACK_UNITS).pow(2) {
                     if order == MinionOrder::Retreat {
                         order = MinionOrder::Follow;
@@ -575,7 +579,7 @@ impl ZoneSimulation {
             };
             let there = other_body.position();
             let (dx, dz) = offset([there.x, there.z], here);
-            if distance_squared([0, 0], [dx, dz]) > i64::from(SEPARATION_RADIUS_UNITS).pow(2) {
+            if !crate::reach::within_xz([0, 0], [dx, dz], SEPARATION_RADIUS_UNITS) {
                 continue;
             }
             // Two minions on one spot part along their IDs.
@@ -676,7 +680,7 @@ impl ZoneSimulation {
                 continue;
             }
             let at = self.unit_position(unit)?;
-            let distance = distance_squared(centre, [at[0], at[2]]);
+            let distance = xz_distance_squared(centre, [at[0], at[2]]);
             if distance <= i64::from(radius).pow(2)
                 && best.is_none_or(|best| (distance, unit) < best)
             {
@@ -708,7 +712,7 @@ impl ZoneSimulation {
             let from = self.unit_position(source)?;
             let to = self.unit_position(target)?;
             let reach = i64::from(self.minion_reach(target)?);
-            if distance_squared([from[0], from[2]], [to[0], to[2]]) > reach * reach {
+            if xz_distance_squared([from[0], from[2]], [to[0], to[2]]) > reach * reach {
                 continue;
             }
             let summoner = minion.summoner;

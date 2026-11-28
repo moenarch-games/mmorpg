@@ -33,6 +33,7 @@ use std::sync::Arc;
 use crate::creature::Life;
 use crate::events::push_event;
 use crate::physics::Vec3i;
+use crate::reach::xz_distance;
 use crate::snapshot::CreatureAi;
 use crate::{
     CreatureId, EntityRef, ErrorCode, NpcId, PlayerId, QuestObjective, ZoneError, ZoneEvent,
@@ -168,10 +169,6 @@ impl WatchState {
     }
 }
 
-fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
-    i64::try_from(crate::trig::xz_length(a[0] - b[0], a[1] - b[1])).unwrap_or(i64::MAX)
-}
-
 /// One step of `length` units along `yaw`.
 fn step_along(yaw: u16, length: i32) -> [i32; 2] {
     let (x, z) = crate::trig::direction(yaw);
@@ -293,7 +290,7 @@ impl ZoneSimulation {
                 None => return Ok(Some(([0, 0], None))),
             }
         };
-        if distance(here, goal) <= i64::from(stop) {
+        if xz_distance(here, goal) <= i64::from(stop) {
             let (dx, dz) = crate::ai::offset(here, goal);
             return Ok(Some(([0, 0], crate::trig::yaw_from_vector(dx, dz))));
         }
@@ -325,7 +322,7 @@ impl ZoneSimulation {
             let at = self
                 .npc_feet(sheep)
                 .ok_or_else(|| ZoneError::new("watched sheep has no placement"))?;
-            let far = distance(here, at);
+            let far = xz_distance(here, at);
             if nearest.is_none_or(|(best, ..)| far < best) {
                 nearest = Some((far, index, at));
             }
@@ -448,7 +445,7 @@ impl ZoneSimulation {
             }
             let at = self.player_position(player)?;
             let at = [at.x, at.z];
-            let far = distance(here, at);
+            let far = xz_distance(here, at);
             if far <= i64::from(SHY_RADIUS_UNITS) && nearest.is_none_or(|(best, ..)| far < best) {
                 nearest = Some((far, player, at));
             }
@@ -481,16 +478,8 @@ impl ZoneSimulation {
         if self.players.contains_key(&driver) {
             self.complete_ready(driver, herd);
         }
-        for mate in self.party_mates(driver) {
-            if mate != driver
-                && self
-                    .players
-                    .get(&mate)
-                    .is_some_and(|state| state.is_alive())
-                && self.within_quest_reach(mate, npc)?
-            {
-                self.complete_ready(mate, herd);
-            }
+        for mate in self.party_mates_near(driver, npc)? {
+            self.complete_ready(mate, herd);
         }
         Ok(())
     }
@@ -531,7 +520,7 @@ impl ZoneSimulation {
             let at = self.unit_position(EntityRef::Creature(prowler.creature))?;
             let here = [at[0], at[2]];
             if state.held[index] < GAP_HOLD_TICKS {
-                if distance(here, prowler.gap) <= i64::from(GAP_REACH_UNITS) {
+                if xz_distance(here, prowler.gap) <= i64::from(GAP_REACH_UNITS) {
                     state.held[index] += 1;
                 }
                 continue;
@@ -542,7 +531,7 @@ impl ZoneSimulation {
             let Some((sheep, feet)) = self.nearest_sheep(&state.flock, here)? else {
                 continue;
             };
-            if distance(here, feet) > i64::from(BITE_REACH_UNITS) {
+            if xz_distance(here, feet) > i64::from(BITE_REACH_UNITS) {
                 continue;
             }
             let (_, template) = Self::creature_content(&content, prowler.creature)?;
@@ -590,7 +579,7 @@ impl ZoneSimulation {
                 continue;
             };
             let at = self.player_position(player)?;
-            if distance([at.x, at.z], watch.centre) > i64::from(watch.radius)
+            if xz_distance([at.x, at.z], watch.centre) > i64::from(watch.radius)
                 || !self.ready_objective(player, objective)
             {
                 continue;

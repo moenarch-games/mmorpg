@@ -9,6 +9,7 @@ pub mod collision;
 pub mod entity;
 pub mod physics;
 pub mod ramp;
+pub mod reach;
 pub mod rng;
 pub mod rock;
 pub mod static_mesh;

@@ -69,10 +69,11 @@ impl crate::ZoneSimulation {
             return Ok(false);
         }
         let player_position = self.player_position(player_id)?;
-        let dx = i128::from(player_position.x) - i128::from(position[0]);
-        let dz = i128::from(player_position.z) - i128::from(position[2]);
-        let radius = i128::from(crate::INTEREST_RADIUS_UNITS);
-        Ok(dx * dx + dz * dz <= radius * radius)
+        Ok(crate::reach::within_xz(
+            [player_position.x, player_position.z],
+            [position[0], position[2]],
+            crate::INTEREST_RADIUS_UNITS,
+        ))
     }
 
     /// Kill experience for an eligible tapper.

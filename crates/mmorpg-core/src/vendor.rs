@@ -311,9 +311,9 @@ impl ZoneSimulation {
         else {
             return refuse(ErrorCode::InvalidVendor);
         };
-        let Some(feet) = self.npc_feet(vendor.id) else {
+        if self.npc_feet(vendor.id).is_none() {
             return refuse(ErrorCode::InvalidVendor);
-        };
+        }
         let Some(stock) = self.content.vendor_stock(npc) else {
             return refuse(ErrorCode::InvalidVendor);
         };
@@ -324,15 +324,7 @@ impl ZoneSimulation {
             },
             Trade::Sell { .. } => None,
         };
-        let from = self.player_position(player_id)?;
-        // i128 keeps the squared distance exact for any recovered i32 position.
-        let [dx, dz] = [
-            i128::from(from.x) - i128::from(feet[0]),
-            i128::from(from.z) - i128::from(feet[1]),
-        ];
-        if dx * dx + dz * dz > i128::from(VENDOR_REACH_UNITS).pow(2)
-            || !self.npc_in_sight(player_id, npc)?
-        {
+        if !self.npc_within_reach(player_id, npc, VENDOR_REACH_UNITS)? {
             return refuse(ErrorCode::OutOfRange);
         }
         if !self.vendor_open(npc) {

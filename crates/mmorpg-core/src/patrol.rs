@@ -18,7 +18,8 @@
 //! player's repositioning is answered at once and replay and recovery need no new state. Routes
 //! around obstacles, casting and evading keep their ordinary behaviour.
 
-use crate::ai::{distance_squared, offset, steer};
+use crate::ai::{offset, steer};
+use crate::reach::xz_distance_squared;
 use crate::snapshot::CreatureAi;
 use crate::{CreatureId, EntityRef, ZoneError, ZoneSimulation, trig};
 
@@ -137,7 +138,7 @@ impl ZoneSimulation {
         match member.role {
             PatrolRole::Bruiser => Ok(None),
             PatrolRole::Marksman => {
-                let range = distance_squared(here, to);
+                let range = xz_distance_squared(here, to);
                 let sight = range <= i64::from(MARKSMAN_MAX_UNITS).pow(2)
                     && self.line_of_sight(EntityRef::Creature(id), target)?;
                 Ok(marksman_step(range, sight).map(|back| {
@@ -164,8 +165,7 @@ impl ZoneSimulation {
                     reach - 2 * crate::ARRIVAL_RADIUS_UNITS
                 };
                 let point = flank_point(to, anchor, here, standoff);
-                let velocity = if distance_squared(here, point)
-                    <= i64::from(crate::ARRIVAL_RADIUS_UNITS).pow(2)
+                let velocity = if crate::reach::within_xz(here, point, crate::ARRIVAL_RADIUS_UNITS)
                 {
                     [0, 0]
                 } else {

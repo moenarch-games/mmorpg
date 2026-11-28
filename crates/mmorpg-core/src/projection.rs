@@ -412,7 +412,7 @@ impl ZoneSimulation {
                     max_health,
                     level: viewer.level,
                     dead: !viewer.is_alive(),
-                    in_combat: viewer.combat_timer > 0 || threatened.contains(&player_id),
+                    in_combat: crate::threat_cache::in_combat(viewer, player_id, &threatened),
                     weapon_drawn: viewer.weapon_drawn,
                     target: viewer.target,
                     class: viewer.class,
@@ -630,7 +630,7 @@ impl ZoneSimulation {
                         attackable: self.players_are_hostile(viewer, player_id)
                             && player.is_alive(),
                         dead: !player.is_alive(),
-                        in_combat: player.combat_timer > 0 || threatened.contains(&player_id),
+                        in_combat: crate::threat_cache::in_combat(player, player_id, threatened),
                         weapon_drawn: player.weapon_drawn,
                         weapon: Some(crate::melee::weapon_family(player)),
                         named_weapon: player

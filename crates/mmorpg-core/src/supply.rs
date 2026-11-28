@@ -35,7 +35,7 @@ use std::sync::Arc;
 use crate::creature::Life;
 use crate::events::push_event;
 use crate::physics::Vec3i;
-use crate::routine::distance;
+use crate::reach::xz_distance;
 use crate::snapshot::CreatureAi;
 use crate::{
     CreatureId, EntityRef, ErrorCode, NpcId, QuestObjective, ZoneError, ZoneEvent, ZoneSimulation,
@@ -229,7 +229,7 @@ impl ZoneSimulation {
         };
         let mut waypoint = usize::from(march.waypoint);
         while let Some(&point) = patrol.route.get(waypoint)
-            && distance(here, point) <= i64::from(radius(waypoint))
+            && xz_distance(here, point) <= i64::from(radius(waypoint))
         {
             waypoint += 1;
         }
@@ -296,7 +296,7 @@ impl ZoneSimulation {
                     continue;
                 }
                 let at = self.unit_position(EntityRef::Creature(member))?;
-                in_sight |= distance([at[0], at[2]], lookout) <= i64::from(patrol.sight);
+                in_sight |= xz_distance([at[0], at[2]], lookout) <= i64::from(patrol.sight);
             }
             if in_sight {
                 self.credit_near(
@@ -362,7 +362,7 @@ impl ZoneSimulation {
                 continue;
             };
             let feet = self.player_position(player)?;
-            if distance([feet.x, feet.z], at) <= i64::from(radius) {
+            if xz_distance([feet.x, feet.z], at) <= i64::from(radius) {
                 self.complete_ready(player, objective);
             }
         }

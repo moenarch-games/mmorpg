@@ -171,11 +171,7 @@ impl ZoneSimulation {
         let Some(seat) = self.content.seat(id).copied() else {
             return refuse(ErrorCode::InvalidTarget);
         };
-        let [dx, dz] = [
-            i64::from(seat.stand[0]) - i64::from(centre.x),
-            i64::from(seat.stand[1]) - i64::from(centre.z),
-        ];
-        if dx * dx + dz * dz > i64::from(SEAT_REACH_UNITS).pow(2) {
+        if !crate::reach::within_xz(seat.stand, [centre.x, centre.z], SEAT_REACH_UNITS) {
             return refuse(ErrorCode::OutOfRange);
         }
         if self.seat_held(id, Some(player_id)) {
