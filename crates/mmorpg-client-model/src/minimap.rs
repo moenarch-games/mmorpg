@@ -199,13 +199,17 @@ mod tests {
 
     #[test]
     fn the_heading_points_up_and_north_up_keeps_the_world_axes() {
-        let close = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4;
+        let close =
+            |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4;
         // Facing +Z, a unit 10 m ahead is straight up and one 10 m toward +X is to the left.
         let heading = heading_of([0.0, 1.0]);
         assert!(close(offset(0.0, 10.0, heading, true, 2.0), [0.0, -20.0]));
         assert!(close(offset(10.0, 0.0, heading, true, 2.0), [-20.0, 0.0]));
         // Facing +X, a unit ahead is up too.
-        assert!(close(offset(10.0, 0.0, heading_of([1.0, 0.0]), true, 1.0), [0.0, -10.0]));
+        assert!(close(
+            offset(10.0, 0.0, heading_of([1.0, 0.0]), true, 1.0),
+            [0.0, -10.0]
+        ));
         // North up: +X right, +Z down, whatever the heading.
         assert!(close(offset(3.0, 4.0, heading, false, 1.0), [3.0, 4.0]));
         assert!(close(clamp_to_rim([30.0, 40.0], 10.0), [6.0, 8.0]));

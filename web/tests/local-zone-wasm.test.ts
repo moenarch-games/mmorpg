@@ -290,7 +290,7 @@ describe("WASM local zone host", () => {
   test("the real vendor sells and buys back at the inn's counter", async () => {
     const { source, catalog } = createLocalWorld(wasm, testCharacters());
     await source.join();
-    expect(catalog.vendors.get(3)?.offers[0]).toEqual({ item: 2, price: 5, materials: [] });
+    expect(catalog.vendors.get(3)?.offers[0]).toEqual({ item: 2, price: 5, materials: [], text: "Worn Dagger · 5 copper (+2 Strength, +2 Agility)" });
     expect(catalog.items.get(1)?.sellPrice).toBe(1);
     // Out of reach on the spawn plaza.
     source.sendCommand({ kind: "sell-item", npc: 3, bagSlot: 0, quantity: 3 });

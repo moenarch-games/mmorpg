@@ -107,9 +107,8 @@ impl MinimapLayers {
             viewer.position[2] as f32 / UNITS_PER_METRE,
         ];
         let heading = rules::heading_of(forward);
-        let to_offset = |p: [f32; 2]| {
-            rules::offset(p[0] - origin[0], p[1] - origin[1], heading, true, scale)
-        };
+        let to_offset =
+            |p: [f32; 2]| rules::offset(p[0] - origin[0], p[1] - origin[1], heading, true, scale);
         let to_screen = |p: [f32; 2]| {
             let [x, y] = to_offset(p);
             centre + Vec2::new(x, y)
@@ -305,7 +304,8 @@ impl MinimapLayers {
         ));
         painter.circle_stroke(centre, radius, Stroke::new(2.0, Color32::from_gray(30)));
         // North (−Z) marked on the rim, as in the browser.
-        let [nx, ny] = rules::clamp_to_rim(rules::offset(0.0, -1e6, heading, true, 1.0), radius - 9.0);
+        let [nx, ny] =
+            rules::clamp_to_rim(rules::offset(0.0, -1e6, heading, true, 1.0), radius - 9.0);
         painter.text(
             centre + Vec2::new(nx, ny),
             egui::Align2::CENTER_CENTER,

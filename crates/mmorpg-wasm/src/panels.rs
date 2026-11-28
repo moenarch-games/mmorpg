@@ -312,7 +312,13 @@ pub fn minimap_rules() -> Result<Ts<MinimapRules>, JsError> {
 /// projects each frame's dots itself; its test holds that projection to this one.
 #[wasm_bindgen(js_name = minimapOffset)]
 #[must_use]
-pub fn minimap_offset(dx: f32, dz: f32, heading: f32, heading_up: bool, pixels_per_metre: f32) -> Vec<f32> {
+pub fn minimap_offset(
+    dx: f32,
+    dz: f32,
+    heading: f32,
+    heading_up: bool,
+    pixels_per_metre: f32,
+) -> Vec<f32> {
     minimap::offset(dx, dz, heading, heading_up, pixels_per_metre).to_vec()
 }
 

@@ -1,7 +1,9 @@
 //! How both clients word items (#1280): an item's name and attributes, an equipment slot's
 //! title, a vendor offer and what selling a bag stack does. The zone settles every trade and
 //! equipment change itself.
-use mmorpg_core::{EquipmentSlot, ItemId, ItemStats, VendorOffer, find_text, item_template, sell_price};
+use mmorpg_core::{
+    EquipmentSlot, ItemId, ItemStats, VendorOffer, find_text, item_template, sell_price,
+};
 
 /// The attribute names in the order items and stat totals list them.
 pub const ATTRIBUTE_NAMES: [&str; 4] = ["Stamina", "Strength", "Agility", "Intellect"];
@@ -16,20 +18,26 @@ pub fn item_name(item: ItemId) -> &'static str {
 /// item adds none.
 #[must_use]
 pub fn stats_text(stats: ItemStats) -> String {
-    [stats.stamina, stats.strength, stats.agility, stats.intellect]
-        .into_iter()
-        .zip(ATTRIBUTE_NAMES)
-        .filter(|(value, _)| *value > 0)
-        .map(|(value, name)| format!("+{value} {name}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+    [
+        stats.stamina,
+        stats.strength,
+        stats.agility,
+        stats.intellect,
+    ]
+    .into_iter()
+    .zip(ATTRIBUTE_NAMES)
+    .filter(|(value, _)| *value > 0)
+    .map(|(value, name)| format!("+{value} {name}"))
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 /// An item's attributes and, for a find (#918), its quality, tactical trait and source, joined
 /// by ` · `; empty for a plain bag item.
 #[must_use]
 pub fn item_detail(item: ItemId) -> String {
-    let attributes = item_template(item).map_or_else(String::new, |template| stats_text(template.stats));
+    let attributes =
+        item_template(item).map_or_else(String::new, |template| stats_text(template.stats));
     match find_text(item) {
         Some(find) if attributes.is_empty() => find,
         Some(find) => format!("{attributes} · {find}"),

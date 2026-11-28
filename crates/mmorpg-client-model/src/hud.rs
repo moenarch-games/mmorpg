@@ -670,9 +670,18 @@ mod tests {
             total: t(900),
         };
         assert_eq!(cooldown(CooldownKind::Ability, t(59)).shown_seconds(), None);
-        assert_eq!(cooldown(CooldownKind::Ability, t(60)).shown_seconds(), Some(2));
-        assert_eq!(cooldown(CooldownKind::Ability, t(61)).shown_seconds(), Some(3));
-        assert_eq!(cooldown(CooldownKind::Ability, t(360)).shown_seconds(), Some(12));
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(60)).shown_seconds(),
+            Some(2)
+        );
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(61)).shown_seconds(),
+            Some(3)
+        );
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(360)).shown_seconds(),
+            Some(12)
+        );
         assert_eq!(cooldown(CooldownKind::Global, t(90)).shown_seconds(), None);
     }
 
@@ -703,12 +712,22 @@ mod tests {
         let ids = |rows: &[AuraRow]| rows.iter().map(|row| row.ability).collect::<Vec<_>>();
         assert_eq!(ids(&rows.buffs), [3, 11, 8]);
         assert_eq!(ids(&rows.debuffs), [6, 10]);
-        let label = |aura| aura_rows(&[aura]).buffs.into_iter().chain(aura_rows(&[aura]).debuffs).next().unwrap();
+        let label = |aura| {
+            aura_rows(&[aura])
+                .buffs
+                .into_iter()
+                .chain(aura_rows(&[aura]).debuffs)
+                .next()
+                .unwrap()
+        };
         assert_eq!(
             label(aura(11, AuraKind::Absorb, t(600), 60)).label,
             "Arcane Barrier: Absorbs 60 damage (20s)"
         );
-        assert_eq!(label(aura(10, AuraKind::Root, t(31), 0)).label, "Frost Nova: Rooted (2s)");
+        assert_eq!(
+            label(aura(10, AuraKind::Root, t(31), 0)).label,
+            "Frost Nova: Rooted (2s)"
+        );
         assert_eq!(
             label(aura(2, AuraKind::Snare, t(30), 50)).label,
             "Shield Bash: Slowed by 50% (1s)"
