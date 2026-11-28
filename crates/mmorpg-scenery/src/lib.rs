@@ -200,6 +200,30 @@ impl PropKind {
         &ALL
     }
 
+    /// Whether both clients' minimaps draw this kind as a building footprint (#1280): the
+    /// buildings, walls, fences, tents, the mine entrance, waystones and cliffs.
+    #[must_use]
+    pub const fn on_minimap(self) -> bool {
+        matches!(
+            self,
+            Self::Keep
+                | Self::Inn
+                | Self::House
+                | Self::Smithy
+                | Self::Barn
+                | Self::Farmhouse
+                | Self::Windmill
+                | Self::Well
+                | Self::PalisadeSegment
+                | Self::GatePost
+                | Self::MineEntrance
+                | Self::Waystone
+                | Self::Fence
+                | Self::Tent
+                | Self::Cliff
+        )
+    }
+
     /// Stable kebab-case name with the variant, independent of `Debug`
     /// output; clients key their models by it.
     #[must_use]
