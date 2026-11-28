@@ -1489,43 +1489,108 @@ impl UnitPresenter {
     }
 }
 
-/// One walk-in building's presented door and interior look (#158): the inn or Elden's house,
-/// shared with the native client; the page picks the door against the drawn leaf mesh.
+/// Every walk-in building's presented doors and interior looks (#158, #1286): the inn, Elden's
+/// house and the walk-in cottages, shared with the native client. Each per-frame question is one
+/// call for all of them, so the page crosses into the module a fixed handful of times a frame
+/// whatever the building count; the page picks doors against the drawn leaf meshes.
 #[wasm_bindgen]
-pub struct BuildingPresenter(mmorpg_presentation::buildings::WalkIn);
+pub struct WalkInSet(mmorpg_presentation::buildings::WalkInSet);
+
+impl Default for WalkInSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[wasm_bindgen]
-impl BuildingPresenter {
-    /// Building `index` of [`Self::count`].
+impl WalkInSet {
+    /// Every walk-in building of the hosted scenery.
     #[wasm_bindgen(constructor)]
-    pub fn new(index: usize) -> Result<Self, JsError> {
-        let spec = mmorpg_presentation::buildings::specs(scenery::hosted_scenery())
+    #[must_use]
+    pub fn new() -> Self {
+        Self(mmorpg_presentation::buildings::WalkInSet::all(
+            scenery::hosted_scenery(),
+        ))
+    }
+
+    fn spec(&self, index: usize) -> Option<&mmorpg_presentation::buildings::Spec> {
+        self.0
+            .buildings()
+            .get(index)
+            .map(|building| building.spec())
+    }
+
+    /// How many walk-in buildings there are.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        self.0.buildings().len()
+    }
+
+    /// Building `index`'s bundle directory under `buildings/`.
+    #[must_use]
+    pub fn bundle(&self, index: usize) -> String {
+        self.spec(index)
+            .map_or_else(String::new, |spec| spec.bundle.to_owned())
+    }
+
+    /// The content door building `index` presents, or 0.
+    #[must_use]
+    pub fn door(&self, index: usize) -> u32 {
+        self.spec(index)
+            .and_then(|spec| spec.door)
+            .map_or(0, |door| door.get())
+    }
+
+    /// Building `index`'s door leaf bundle entry.
+    #[wasm_bindgen(js_name = doorEntry)]
+    #[must_use]
+    pub fn door_entry(&self, index: usize) -> String {
+        self.spec(index)
+            .and_then(|spec| spec.door_entry())
+            .unwrap_or("")
+            .to_owned()
+    }
+
+    /// Building `index`'s bundle entries to draw, in [`Self::frame`] order.
+    #[must_use]
+    pub fn entries(&self, index: usize) -> Vec<String> {
+        self.spec(index).map_or_else(Vec::new, |spec| {
+            spec.entries.iter().map(|&key| key.to_owned()).collect()
+        })
+    }
+
+    /// The walk-in cottage (#843) building `index` is, by its house collider, or 0.
+    #[must_use]
+    pub fn cottage(&self, index: usize) -> u32 {
+        self.spec(index).and_then(|spec| spec.cottage).unwrap_or(0)
+    }
+
+    /// Every building's entries this frame, building by building: per entry 16 column-major
+    /// model floats then 1 (shown) or 0 (hidden). `open` lists the open content doors; `viewer`
+    /// holds the viewer's feet in metres, or is empty without one.
+    pub fn frame(
+        &mut self,
+        open: &[u32],
+        viewer: &[f64],
+        dt: f64,
+        #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
+    ) -> Vec<f32> {
+        let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
+        let is_open =
+            |door: Option<mmorpg_core::DoorId>| door.is_some_and(|door| open.contains(&door.get()));
+        self.0
+            .frame(is_open, viewer, dt, reduced_motion)
             .into_iter()
-            .nth(index)
-            .ok_or_else(|| JsError::new("no such walk-in building"))?;
-        Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
-            spec,
-            scenery::hosted_scenery(),
-        )))
+            .flat_map(|(_, part)| {
+                part.model
+                    .into_iter()
+                    .chain([if part.visible { 1. } else { 0. }])
+            })
+            .collect()
     }
 
-    /// A mausoleum at a caller-owned content placement (#683); descriptor is the kit attachment.
-    pub fn mausoleum(
-        descriptor: &str,
-        x: i32,
-        y: i32,
-        z: i32,
-        quarters: u8,
-    ) -> Result<Self, JsError> {
-        let spec = mmorpg_presentation::buildings::Spec::mausoleum(descriptor, [x, y, z], quarters)
-            .map_err(|e| JsError::new(&e))?;
-        Ok(Self(mmorpg_presentation::buildings::WalkIn::new(
-            spec,
-            scenery::hosted_scenery(),
-        )))
-    }
-
-    /// Same adaptive indoor boom as the native presenter. Vectors are metres.
+    /// The eye after every building's adaptive indoor boom, metres; the input eye for a malformed
+    /// vector.
     pub fn camera(
         &mut self,
         viewer: &[f64],
@@ -1542,94 +1607,41 @@ impl BuildingPresenter {
         self.0.camera(viewer, eye, target, dt, reduced).to_vec()
     }
 
+    /// The strongest interior look at the viewer's feet (metres).
     pub fn lighting(&self, viewer: &[f64]) -> f32 {
         viewer.try_into().map_or(0., |p| self.0.lighting(p))
     }
 
-    /// Eight floats, matching static scene lights: position, sRGB, lumens and range.
-    #[wasm_bindgen(js_name = pointLight)]
-    pub fn point_light(&self) -> Vec<f64> {
-        self.0.light().map_or_else(Vec::new, |light| {
-            vec![
-                light.position[0],
-                light.position[1],
-                light.position[2],
-                f64::from((light.color >> 16) & 255) / 255.,
-                f64::from((light.color >> 8) & 255) / 255.,
-                f64::from(light.color & 255) / 255.,
-                light.lumens,
-                light.range,
-            ]
-        })
-    }
-
-    /// How many walk-in buildings there are.
+    /// The lit buildings' lamps, eight floats each, matching static scene lights: position,
+    /// sRGB, lumens and range.
+    #[wasm_bindgen(js_name = pointLights)]
     #[must_use]
-    pub fn count() -> usize {
-        mmorpg_presentation::buildings::specs(scenery::hosted_scenery()).len()
-    }
-
-    /// The walk-in cottage (#843) this building is, by its house collider, or 0.
-    #[must_use]
-    pub fn cottage(&self) -> u32 {
-        self.0.spec().cottage.unwrap_or(0)
-    }
-
-    /// Whether feet at `viewer` (metres) stand in the room.
-    #[must_use]
-    pub fn inside(&self, viewer: &[f64]) -> bool {
-        viewer.try_into().is_ok_and(|p| self.0.inside(p))
-    }
-
-    /// The bundle directory under `buildings/`.
-    #[must_use]
-    pub fn bundle(&self) -> String {
-        self.0.spec().bundle.to_owned()
-    }
-
-    /// The content door the building presents.
-    #[must_use]
-    pub fn door(&self) -> u32 {
-        self.0.spec().door.map_or(0, |door| door.get())
-    }
-
-    /// The door leaf's bundle entry.
-    #[wasm_bindgen(js_name = doorEntry)]
-    #[must_use]
-    pub fn door_entry(&self) -> String {
-        self.0.spec().door_entry().unwrap_or("").to_owned()
-    }
-
-    /// The asset-tooling bundle entries to draw, in [`Self::frame`] order.
-    #[must_use]
-    pub fn entries(&self) -> Vec<String> {
+    pub fn point_lights(&self) -> Vec<f64> {
         self.0
-            .spec()
-            .entries
-            .iter()
-            .map(|&key| key.to_owned())
-            .collect()
-    }
-
-    /// Per entry 16 column-major model floats then 1 (shown) or 0 (hidden). `viewer` holds the
-    /// viewer's feet in metres, or is empty without one.
-    pub fn frame(
-        &mut self,
-        open: bool,
-        viewer: &[f64],
-        dt: f64,
-        #[wasm_bindgen(js_name = reducedMotion)] reduced_motion: bool,
-    ) -> Vec<f32> {
-        let viewer = (viewer.len() == 3).then(|| [viewer[0], viewer[1], viewer[2]]);
-        self.0
-            .frame(open, viewer, dt, reduced_motion)
-            .iter()
-            .flat_map(|part| {
-                part.model
-                    .into_iter()
-                    .chain([if part.visible { 1. } else { 0. }])
+            .lights()
+            .flat_map(|light| {
+                [
+                    light.position[0],
+                    light.position[1],
+                    light.position[2],
+                    f64::from((light.color >> 16) & 255) / 255.,
+                    f64::from((light.color >> 8) & 255) / 255.,
+                    f64::from(light.color & 255) / 255.,
+                    light.lumens,
+                    light.range,
+                ]
             })
             .collect()
+    }
+
+    /// The walk-in cottages (#843), by house collider, whose room feet at `viewer` (metres)
+    /// stand in.
+    #[wasm_bindgen(js_name = cottagesInside)]
+    #[must_use]
+    pub fn cottages_inside(&self, viewer: &[f64]) -> Vec<u32> {
+        viewer
+            .try_into()
+            .map_or_else(|_| Vec::new(), |p| self.0.cottages_inside(p).collect())
     }
 }
 

@@ -125,7 +125,7 @@ pub struct Presentation {
     /// The camera kick of the last presented frame's blow (#900), in metres.
     camera_kick: [f32; 3],
     /// The walk-in buildings' door swings and interior looks (#158).
-    buildings: Vec<mmorpg_presentation::buildings::WalkIn>,
+    buildings: mmorpg_presentation::buildings::WalkInSet,
     last_buildings: Instant,
     last_camera: Instant,
     /// The Outpost kit buildings' modules (#420), placed once, as picking tests them.
@@ -149,7 +149,7 @@ impl Presentation {
             return Err("scenery and zone content revisions differ".into());
         }
         mmorpg_presentation::units::archer::validate()?;
-        let buildings = mmorpg_presentation::buildings::WalkIn::all(&scenery);
+        let buildings = mmorpg_presentation::buildings::WalkInSet::all(&scenery);
         let outpost_parts = mmorpg_presentation::outpost_kit::parts(&scenery);
         let roofs: std::collections::BTreeMap<usize, u32> =
             mmorpg_presentation::outpost_kit::cottage_roofs(&scenery)
@@ -903,27 +903,35 @@ impl Presentation {
             .players(now)
             .get(&self.player_id)
             .map(|pose| pose.position.map(f64::from));
-        let opens: Vec<bool> = self
-            .buildings
-            .iter()
-            .map(|building| {
-                building
-                    .spec()
-                    .door
-                    .is_some_and(|door| self.door_open(door))
+        let open: Vec<mmorpg_core::DoorId> = self
+            .latest()
+            .map(|snapshot| {
+                snapshot
+                    .doors
+                    .iter()
+                    .filter(|view| view.open)
+                    .map(|view| view.door)
+                    .collect()
             })
-            .collect();
+            .unwrap_or_default();
         let reduced_motion = self.reduced_motion;
-        let mut inside = std::collections::BTreeSet::new();
-        for (building, open) in self.buildings.iter_mut().zip(opens) {
-            if let Some(house) = building.spec().cottage
-                && viewer.is_some_and(|feet| building.inside(feet))
-            {
-                inside.insert(house);
-            }
-            let entries = skinned::building_draws_of(building.spec().bundle);
-            let parts = building.frame(open, viewer, dt, reduced_motion);
-            for (part, (_, entry)) in parts.iter().zip(entries) {
+        let inside = viewer.map_or_else(std::collections::BTreeSet::new, |feet| {
+            self.buildings.cottages_inside(feet).collect()
+        });
+        let parts = self.buildings.frame(
+            |door| door.is_some_and(|door| open.contains(&door)),
+            viewer,
+            dt,
+            reduced_motion,
+        );
+        // Parts come building by building, each building's in its bundle entries' order.
+        for building in parts.chunk_by(|a, b| a.0 == b.0) {
+            let Some(&(index, _)) = building.first() else {
+                continue;
+            };
+            let bundle = self.buildings.buildings()[index].spec().bundle;
+            let entries = skinned::building_draws_of(bundle);
+            for ((_, part), (_, entry)) in building.iter().zip(entries) {
                 if !part.visible {
                     continue;
                 }
@@ -1033,17 +1041,16 @@ impl Presentation {
         // Wheel zoom eases toward its target (the shared camera, #1058).
         camera.update(dt, self.reduced_motion);
         let mut view = camera.view_above_ground(focus, ground);
-        for building in &mut self.buildings {
-            view.eye = building
-                .camera(
-                    focus.map(f64::from),
-                    view.eye.map(f64::from),
-                    view.target.map(f64::from),
-                    dt,
-                    self.reduced_motion,
-                )
-                .map(|v| v as f32);
-        }
+        view.eye = self
+            .buildings
+            .camera(
+                focus.map(f64::from),
+                view.eye.map(f64::from),
+                view.target.map(f64::from),
+                dt,
+                self.reduced_motion,
+            )
+            .map(|v| v as f32);
         // A blow the viewer struck or took kicks the camera a moment (#900).
         for axis in 0..3 {
             view.eye[axis] += self.camera_kick[axis];

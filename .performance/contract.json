@@ -1146,6 +1146,30 @@
       ]
     },
     {
+      "id": "walk-in-frame",
+      "description": "Browser walk-in buildings each frame (#1286): the page asks the shared walk-in presenter (every building at once: parts, camera, interior look, lamps, rooms stood in) a fixed number of times, instead of six calls into WASM per building with a fresh array each. Measured through the real WASM module by web/tests/support/work/walk-in-frame.ts: asserted by web/tests/walk-in-frame.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": {
+        "frames": {
+          "description": "frames the world view drives the Greyhaven walk-ins"
+        }
+      },
+      "scalePoints": [
+        { "frames": 1 },
+        { "frames": 8 },
+        { "frames": 32 }
+      ],
+      "metrics": [
+        {
+          "name": "largest_frame_presenter_calls",
+          "unit": "calls",
+          "signal": "operation-count",
+          "notes": "Calls into the shared presenter in the busiest frame: one per question, whatever the building count (six per building before #1286).",
+          "budget": { "max": 5 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        }
+      ]
+    },
+    {
       "id": "projection-rules",
       "description": "Browser client rules over a projection (#1257): the action bar, chat log, combat text, quest views and the other rules the page hands each tick's projection view read the decoded projection its session's store kept, instead of deserialising the page object again (thousands of calls into the page per rule and tick). Measured through the real WASM module by web/tests/support/work/projection-rules.ts: asserted by web/tests/projection-rules.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "ticks": { "description": "projections one session ingests, each view read by three rules" } },
