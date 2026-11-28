@@ -146,7 +146,7 @@ Controls:
 | Left click | Select at the centre reticle in captured free look, or under the visible cursor while focused (a focused click on empty world clears the focus); does nothing during a held strike or guard; when free look has been released, the first world click recaptures instead (#636) |
 | Right click | Cancel a held strike or guard without firing, otherwise cancel the cast (#636) |
 | N | Cycle visible NPCs |
-| E | Interact: open the selected NPC’s context (quest/vendor window); with no NPC selected, use the door or repair the structure in reach |
+| E | Interact: the shared ladder (`mmorpg-client-model`'s `interaction.rs`, #1252) also used by the browser and its touch button: work a glyph (even armed), take a raid preparation step, inspect evidence, lift a load, act on or talk to the selected NPC, skin the selected corpse, set a load down, use the door or seat, repair, help a raid's aftermath, mine a vein, else talk to the nearest NPC in reach |
 | Enter | Focus chat |
 | B / C / L | Toggle bags / character / quest log |
 | Chat field | Enter sends (`/s`, `/y`, `/wave`, `/bow`, `/cheer`, `/laugh`, `/point`), Escape returns to the world |

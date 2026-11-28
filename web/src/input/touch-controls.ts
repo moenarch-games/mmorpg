@@ -1,6 +1,6 @@
 import type { HeldIntent } from "../world/orbit-camera";
 import { isReleasedAction, type GameAction, type HoldPhase, type ReleasedAction } from "./game-controls";
-import { ChordState, FACE_BUTTONS, HeldFaces, INTERACT_LABELS, stickIntent, TOUCH_CHORD_PAGES, type TouchContext } from "./touch-layout";
+import { ChordState, FACE_BUTTONS, HeldFaces, stickIntent, TOUCH_CHORD_PAGES, type TouchContext } from "./touch-layout";
 
 /** One hotbar slot as the face buttons show it: its ability name and the action-bar button it mirrors. */
 export type SlotFace = { name: string; source: HTMLElement };
@@ -13,7 +13,7 @@ export type TouchControlsOptions = {
   onAction: (action: GameAction) => void;
   /** A face's ability slot let go (#485), exactly as its key-up (`release`) or a retirement (`cancel`). */
   onRelease?: (action: ReleasedAction, phase: Exclude<HoldPhase, "press">) => void;
-  /** The context interact button: loot, trade, talk, open or repair. */
+  /** The context interact button: loot, trade, talk, or the Interact ladder's step (#1252). */
   onInteract: () => void;
   onSettings: () => void;
   onChat: () => void;
@@ -227,8 +227,8 @@ export class TouchControls {
     this.#context.attack.hidden = !context.combat || !context.weaponDrawn;
     this.#context.release.hidden = !context.dead;
     this.#context.interact.hidden = context.interact === null;
-    if (context.interact !== null && this.#context.interact.textContent !== INTERACT_LABELS[context.interact]) {
-      this.#context.interact.textContent = INTERACT_LABELS[context.interact];
+    if (context.interact !== null && this.#context.interact.textContent !== context.label) {
+      this.#context.interact.textContent = context.label;
     }
     const page = this.#chord.page(now);
     const key = `${page}:${this.#options.facesKey()}`;
