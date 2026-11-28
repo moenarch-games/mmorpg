@@ -381,6 +381,8 @@ export class Grass {
 
   constructor(source: GrassSource, detail: WorldDetail = "medium") {
     this.root.name = "greyhaven.grass";
+    // The clumps are placed by their instance matrices; the root and its cells never move (#1257).
+    this.root.matrixAutoUpdate = false;
     const kind = (geometry: THREE.BufferGeometry, flower = false): Kind => ({ geometry, ...grassMaterial(this.#shared, flower) });
     this.#full = kind(clumpGeometry(15, [0, 0.4, 0.75], 1, [0.4, 1]));
     // The simplified blades retain the same per-clump colour gradient as the full blades during LOD overlap.
@@ -563,6 +565,7 @@ export class Grass {
     }
     for (const { mesh } of meshes) {
       mesh.name = `grass:${far ? "far:" : ""}${key}`;
+      mesh.matrixAutoUpdate = false;
       mesh.userData.notShadowCaster = true;
       mesh.visible = false;
       mesh.computeBoundingSphere();
