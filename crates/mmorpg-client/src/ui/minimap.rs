@@ -1,13 +1,27 @@
 //! The circular minimap, as in the browser's `minimap.ts`: roads, water and
 //! buildings from presentation scenery, projected units as dots and quest
 //! markers from the received sheet, rotated so the camera heading points up.
+//! Its rules (zoom radii, dot classes, the heading projection, the raid
+//! disturbance and the landmark range) are `mmorpg_client_model::minimap`'s (#1280).
 use egui::{Color32, Pos2, Shape, Stroke, Vec2, epaint::CircleShape};
-use mmorpg_core::{EntityKind, QuestMarker, QuestSheet, ZoneContent, ZoneSnapshot};
-use mmorpg_scenery::{PropKind, Scenery};
+use mmorpg_client_model::minimap::{self as rules, DotClass};
+use mmorpg_core::{QuestMarker, QuestSheet, ZoneContent, ZoneSnapshot};
+use mmorpg_scenery::Scenery;
 
-/// Zoom levels: metres from the centre to the rim, as in the browser.
-pub const RADII_METRES: [f32; 4] = [30.0, 45.0, 70.0, 100.0];
+pub use rules::RADII_METRES;
 const UNITS_PER_METRE: f32 = 100.0;
+
+/// Each dot class's colour, as the browser's `DOT_COLORS`.
+const fn dot_color(class: DotClass) -> Color32 {
+    match class {
+        DotClass::Player => Color32::from_rgb(0x4e, 0xa8, 0xff),
+        DotClass::Friendly => Color32::from_rgb(0x5c, 0xcf, 0x6c),
+        DotClass::Hostile => Color32::from_rgb(0xe5, 0x48, 0x3d),
+        DotClass::Neutral => Color32::from_rgb(0xf0, 0xcf, 0x4a),
+        DotClass::Minion => Color32::from_rgb(0xd8, 0xd0, 0xb4),
+        DotClass::Dead => Color32::from_rgb(0x6e, 0x6e, 0x6e),
+    }
+}
 
 /// Static map layers in metres, built once from scenery.
 pub struct MinimapLayers {
@@ -46,26 +60,7 @@ impl MinimapLayers {
         let buildings = scenery
             .props
             .iter()
-            .filter(|prop| {
-                matches!(
-                    prop.kind,
-                    PropKind::Keep
-                        | PropKind::Inn
-                        | PropKind::House
-                        | PropKind::Smithy
-                        | PropKind::Barn
-                        | PropKind::Farmhouse
-                        | PropKind::Windmill
-                        | PropKind::Well
-                        | PropKind::PalisadeSegment
-                        | PropKind::GatePost
-                        | PropKind::MineEntrance
-                        | PropKind::Waystone
-                        | PropKind::Fence
-                        | PropKind::Tent
-                        | PropKind::Cliff
-                )
-            })
+            .filter(|prop| prop.kind.on_minimap())
             .map(|prop| {
                 let [x, _, z] = prop.position.map(metres);
                 let [hx, _, hz] = prop.half_extents.map(metres);
@@ -103,7 +98,7 @@ impl MinimapLayers {
         let Some(viewer) = snapshot
             .entities
             .iter()
-            .find(|e| e.kind == EntityKind::Player && e.id == snapshot.viewer_id)
+            .find(|e| rules::is_viewer(snapshot, e))
         else {
             return;
         };
@@ -111,14 +106,17 @@ impl MinimapLayers {
             viewer.position[0] as f32 / UNITS_PER_METRE,
             viewer.position[2] as f32 / UNITS_PER_METRE,
         ];
-        let length = forward[0].hypot(forward[1]).max(1e-3);
-        let (fx, fz) = (forward[0] / length, forward[1] / length);
-        // Screen right is the heading turned clockwise seen from above.
+        let heading = rules::heading_of(forward);
+        let to_offset = |p: [f32; 2]| {
+            rules::offset(p[0] - origin[0], p[1] - origin[1], heading, true, scale)
+        };
         let to_screen = |p: [f32; 2]| {
-            let (dx, dz) = (p[0] - origin[0], p[1] - origin[1]);
-            let right = dx * -fz + dz * fx;
-            let up = dx * fx + dz * fz;
-            centre + Vec2::new(right, -up) * scale
+            let [x, y] = to_offset(p);
+            centre + Vec2::new(x, y)
+        };
+        let on_rim = |p: [f32; 2], inset: f32| {
+            let [x, y] = rules::clamp_to_rim(to_offset(p), radius - inset);
+            centre + Vec2::new(x, y)
         };
         let inside = |p: Pos2| (p - centre).length() <= radius;
         painter.add(CircleShape::filled(
@@ -164,15 +162,10 @@ impl MinimapLayers {
         }
         // A night raid's approximate disturbance area while its assault runs (#530): a soft
         // circle, or a pip on the rim pointing at it while it is off the map.
-        if snapshot.raid.as_ref().is_some_and(|raid| raid.phase > 0)
-            // The site whose signal reaches the viewer (#1019).
-            && let Some(([x, z], area)) = content
-                .raid_near([viewer.position[0], viewer.position[2]])
-                .map(|(_, site)| site.area())
-        {
+        if let Some(area) = rules::disturbance(snapshot, content) {
             let colour = Color32::from_rgb(255, 122, 61);
-            let at = to_screen([x as f32 / UNITS_PER_METRE, z as f32 / UNITS_PER_METRE]);
-            let size = area as f32 / UNITS_PER_METRE * scale;
+            let at = to_screen([area.x, area.z]);
+            let size = area.radius * scale;
             if (at - centre).length() - size < radius {
                 painter.add(CircleShape {
                     center: at,
@@ -215,7 +208,11 @@ impl MinimapLayers {
                 painter.circle(pip, 4.0, gold, Stroke::new(1.0, Color32::BLACK));
             }
         }
-        for area in exploration.areas.iter().filter(|area| area.discovered) {
+        for area in exploration
+            .areas
+            .iter()
+            .filter(|area| area.discovered && rules::landmark_in_range(area.center(), origin))
+        {
             let at = to_screen(area.center());
             if (at - centre).length() > radius - 6.0 {
                 continue;
@@ -241,51 +238,47 @@ impl MinimapLayers {
                 );
             }
         }
+        // Units beyond the rim sit on it, pointing at them.
         for entity in &snapshot.entities {
-            if entity.kind == EntityKind::Player && entity.id == snapshot.viewer_id {
+            if rules::is_viewer(snapshot, entity) {
                 continue;
             }
-            let at = to_screen([
-                entity.position[0] as f32 / UNITS_PER_METRE,
-                entity.position[2] as f32 / UNITS_PER_METRE,
-            ]);
-            if !inside(at) {
-                continue;
-            }
-            let color = match entity.kind {
-                _ if entity.flags.dead => Color32::from_gray(110),
-                EntityKind::Player => Color32::from_rgb(90, 160, 255),
-                EntityKind::Npc => Color32::from_rgb(240, 220, 120),
-                EntityKind::Creature if entity.flags.hostile => Color32::from_rgb(230, 70, 60),
-                EntityKind::Creature => Color32::from_rgb(235, 200, 60),
-                // Summoned skeletons (#295) in bone white.
-                EntityKind::Minion => Color32::from_rgb(216, 208, 180),
-            };
-            painter.circle_filled(at, 3.0, color);
+            let at = on_rim(
+                [
+                    entity.position[0] as f32 / UNITS_PER_METRE,
+                    entity.position[2] as f32 / UNITS_PER_METRE,
+                ],
+                5.0,
+            );
+            painter.circle(
+                at,
+                3.2,
+                dot_color(rules::dot_class(entity)),
+                Stroke::new(1.0, Color32::from_black_alpha(150)),
+            );
         }
         if let Some(sheet) = quests {
             for marker in &sheet.markers {
                 let Some(npc) = content.npc(marker.npc) else {
                     continue;
                 };
-                let at = to_screen([
-                    npc.position[0] as f32 / UNITS_PER_METRE,
-                    npc.position[1] as f32 / UNITS_PER_METRE,
-                ]);
-                let at = if inside(at) {
-                    at
-                } else {
-                    centre + (at - centre).normalized() * (radius - 6.0)
-                };
-                let (text, color) = match marker.marker {
-                    QuestMarker::Available => ("!", Color32::from_rgb(255, 210, 0)),
-                    QuestMarker::Complete => ("?", Color32::from_rgb(255, 210, 0)),
-                    QuestMarker::InProgress => ("?", Color32::from_gray(170)),
+                let at = on_rim(
+                    [
+                        npc.position[0] as f32 / UNITS_PER_METRE,
+                        npc.position[1] as f32 / UNITS_PER_METRE,
+                    ],
+                    6.0,
+                );
+                let color = match marker.marker {
+                    QuestMarker::Available | QuestMarker::Complete => {
+                        Color32::from_rgb(255, 210, 0)
+                    }
+                    QuestMarker::InProgress => Color32::from_gray(170),
                 };
                 painter.text(
                     at,
                     egui::Align2::CENTER_CENTER,
-                    text,
+                    mmorpg_client_model::quest::marker_glyph(marker.marker),
                     egui::FontId::proportional(15.0),
                     color,
                 );
@@ -293,8 +286,8 @@ impl MinimapLayers {
         }
         // The player's arrow points along their facing relative to the camera.
         let facing = f32::from(viewer.facing) / 65_536.0 * std::f32::consts::TAU;
-        let heading = [facing.sin(), facing.cos()];
-        let tip = to_screen([origin[0] + heading[0], origin[1] + heading[1]]) - centre;
+        let pointing = [facing.sin(), facing.cos()];
+        let tip = to_screen([origin[0] + pointing[0], origin[1] + pointing[1]]) - centre;
         let dir = if tip.length() > 0.0 {
             tip.normalized()
         } else {
@@ -311,18 +304,14 @@ impl MinimapLayers {
             Stroke::new(1.0, Color32::BLACK),
         ));
         painter.circle_stroke(centre, radius, Stroke::new(2.0, Color32::from_gray(30)));
+        // North (−Z) marked on the rim, as in the browser.
+        let [nx, ny] = rules::clamp_to_rim(rules::offset(0.0, -1e6, heading, true, 1.0), radius - 9.0);
         painter.text(
-            centre + Vec2::new(0.0, -radius + 8.0),
+            centre + Vec2::new(nx, ny),
             egui::Align2::CENTER_CENTER,
-            if fz.abs() >= fx.abs() {
-                if fz < 0.0 { "N" } else { "S" }
-            } else if fx > 0.0 {
-                "E"
-            } else {
-                "W"
-            },
+            "N",
             egui::FontId::proportional(11.0),
-            Color32::from_gray(230),
+            Color32::from_rgb(243, 230, 184),
         );
     }
 }
