@@ -145,17 +145,6 @@ fn imported_tint(dead: bool, companion: bool) -> Option<[f32; 3]> {
     }
 }
 
-/// The display name of a minion whose projected appearance is `appearance`: a Necromancer's
-/// skeleton (#295) or a Druid's companion (#296).
-#[must_use]
-pub fn minion_name(appearance: u32) -> &'static str {
-    if mmorpg_core::is_companion(mmorpg_core::minion_ability(appearance)) {
-        "Wolf Companion"
-    } else {
-        "Skeleton"
-    }
-}
-
 /// A unit as sampled for this frame: its record and interpolated rendered pose.
 #[derive(Clone, Debug)]
 pub struct SampledUnit {

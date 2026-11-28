@@ -1689,7 +1689,7 @@ mod tests {
                     amount: 12,
                 },
             ]);
-            ui.observe(&struck, &content, &names, now);
+            ui.observe(&struck, &content, now);
             let world_map_evidence =
                 std::env::var("MMORPG_NATIVE_WORLD_MAP_EVIDENCE").as_deref() == Ok("1");
             if world_map_evidence {

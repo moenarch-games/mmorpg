@@ -1081,78 +1081,25 @@ impl Presentation {
         candidates.get(next).map(|(_, entity)| *entity)
     }
 
-    /// A unit's display name from the zone content; "you" for the viewer.
+    /// A unit's display name from the zone content; "you" for the viewer
+    /// (`mmorpg_client_model::texts::unit_name`).
     #[must_use]
     pub fn unit_name(&self, entity: EntityRef) -> String {
-        match entity {
-            EntityRef::Player(id) if id == self.player_id => "you".into(),
-            EntityRef::Player(id) => format!("Player {id}"),
-            // A Necromancer's summoned minion (#295) or a Druid's companion (#296).
-            EntityRef::Minion(_) => self
-                .latest()
-                .and_then(|latest| latest.entities.iter().find(|unit| unit.entity() == entity))
-                .map_or("Skeleton", |unit| {
-                    mmorpg_presentation::units::minion_name(unit.appearance)
-                })
-                .into(),
-            EntityRef::Npc(id) => self
-                .content
-                .npc(id)
-                .map_or_else(|| format!("NPC {}", id.get()), |npc| npc.name.clone()),
-            EntityRef::Creature(_) => self
-                .latest()
-                .and_then(|latest| latest.entities.iter().find(|unit| unit.entity() == entity))
-                .and_then(|unit| {
-                    self.content
-                        .creature_template(CreatureTemplateId::new(unit.appearance))
-                })
-                .map_or_else(|| "a creature".into(), |template| template.name.clone()),
-        }
+        let unit = self
+            .latest()
+            .and_then(|latest| latest.entities.iter().find(|unit| unit.entity() == entity));
+        mmorpg_client_model::texts::unit_name(entity, self.player_id, unit, &self.content)
     }
 
-    /// The viewer's health, combat state and target, or how to release a
-    /// dead spirit; `None` before the first projection.
+    /// The viewer's status line (`mmorpg_client_model::texts::status_line`); `None` before the
+    /// first projection.
     #[must_use]
     pub fn status(&self) -> Option<String> {
         let latest = self.latest()?;
-        let viewer = &latest.viewer;
-        if viewer.dead {
-            return Some("dead — R releases your spirit".into());
-        }
-        let mut parts = vec![format!("HP {}/{}", viewer.health, viewer.max_health)];
-        if let Some(resource) = viewer.resource {
-            parts.push(format!(
-                "{} {}/{}",
-                resource.kind.name(),
-                resource.value,
-                resource.max
-            ));
-        }
-        if let Some(cast) = viewer.cast {
-            let name = mmorpg_core::ability_by_id(cast.ability).map_or("ability", |a| a.name);
-            parts.push(format!("casting {name} {}/{}", cast.elapsed, cast.total));
-        }
-        if viewer.in_combat {
-            parts.push("in combat".into());
-        }
-        if let Some(target) = viewer.target {
-            let detail = latest
-                .entities
-                .iter()
-                .find(|unit| unit.entity() == target)
-                .map_or_else(
-                    || "out of sight".into(),
-                    |unit| {
-                        if unit.flags.dead {
-                            format!("L{}, dead", unit.level)
-                        } else {
-                            format!("L{}, {}%", unit.level, unit.health_percent)
-                        }
-                    },
-                );
-            parts.push(format!("target {} ({detail})", self.unit_name(target)));
-        }
-        Some(parts.join(" · "))
+        Some(mmorpg_client_model::texts::status_line(
+            latest,
+            &self.content,
+        ))
     }
 
     /// The model a unit is drawn with, from the zone content.

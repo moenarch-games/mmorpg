@@ -1621,9 +1621,7 @@ impl App {
             self.abilities = class_kit(choice.class);
         }
         if let Some(snapshot) = latest {
-            let names = |entity| self.presentation.unit_name(entity);
-            self.ui
-                .observe(snapshot, self.presentation.content(), &names, now);
+            self.ui.observe(snapshot, self.presentation.content(), now);
             self.npc_context.observe(snapshot);
             if self.npc_context.npc.is_some()
                 && self.npc_context.npc.map(EntityRef::Npc) != snapshot.viewer.target

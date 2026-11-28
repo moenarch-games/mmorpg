@@ -27,6 +27,7 @@ use mmorpg_client_model::{
     chat::{self, LineKind, Logs},
     front_end::{self, MenuAction, Mode, Platform},
     hud::{self, CombatHud, CooldownKind},
+    texts,
 };
 use mmorpg_core::{
     EntityKind, EntityRef, Equipment, Inventory, LootClaim, PlayerClass, QuestSheet, ResourceKind,
@@ -296,19 +297,9 @@ impl GameUi {
     }
 
     /// Takes one received projection's sheets, chat and feedback.
-    pub fn observe(
-        &mut self,
-        snapshot: &ZoneSnapshot,
-        content: &ZoneContent,
-        names: &dyn Fn(EntityRef) -> String,
-        now: Instant,
-    ) {
+    pub fn observe(&mut self, snapshot: &ZoneSnapshot, content: &ZoneContent, now: Instant) {
         self.sheets.observe(snapshot);
-        let refusals = self.logs.receive(snapshot, names, |quest| {
-            content
-                .quest(quest)
-                .map_or_else(|| "A quest".into(), |q| q.name.clone())
-        });
+        let refusals = self.logs.receive(snapshot, content);
         if let Some(text) = refusals.last() {
             self.refusal = Some((text.clone(), now));
         }
@@ -850,15 +841,11 @@ impl GameUi {
                     }
                     // Breath (#274): shown only while it is spent; red once drowning.
                     let full = mmorpg_core::water::BREATH_MAX_TICKS;
-                    if viewer.breath < full {
-                        let seconds = viewer.breath.div_ceil(mmorpg_core::TICK_HZ);
-                        let (text, color) = if viewer.breath == 0 {
-                            ("Drowning!".to_owned(), Color32::from_rgb(220, 60, 50))
+                    if let Some(text) = texts::breath_text(viewer.breath) {
+                        let color = if viewer.breath == 0 {
+                            Color32::from_rgb(220, 60, 50)
                         } else {
-                            (
-                                format!("Breath {seconds} s"),
-                                Color32::from_rgb(90, 170, 230),
-                            )
+                            Color32::from_rgb(90, 170, 230)
                         };
                         bar(
                             ui,
@@ -892,7 +879,10 @@ impl GameUi {
                         ui.small("E interact · H draw · Q/1–20/G/Z fight mode");
                     }
                     if let Some(stance) = viewer.stance {
-                        ui.colored_label(Color32::from_rgb(230, 200, 120), stance_text(stance));
+                        ui.colored_label(
+                            Color32::from_rgb(230, 200, 120),
+                            texts::stance_text(stance),
+                        );
                     }
                     // The held shield guard (#156): its lane and whether it protects.
                     if let Some(lane) = viewer.guard.raised {
@@ -911,40 +901,18 @@ impl GameUi {
                         ui.colored_label(color, format!("Guard {lane} · {state}"));
                     }
                     // The sword → Shield Bash follow-up (#157), and the cleave's extra
-                    // swing (#910); the browser HUD says the same.
+                    // swing (#910).
                     if let Some(combo) = viewer.combo {
-                        let text = match combo {
-                            mmorpg_core::ComboPhase::Impact => {
-                                "Combo: slash landing, Shield Bash follows"
-                            }
-                            mmorpg_core::ComboPhase::Open => "Combo: Shield Bash now",
-                            mmorpg_core::ComboPhase::CleaveImpact => {
-                                "Combo: cleave landing, swing again or Shield Bash follows"
-                            }
-                            mmorpg_core::ComboPhase::CleaveOpen => {
-                                "Combo: cleave! Swing again or Shield Bash now"
-                            }
-                        };
                         let color = if combo.is_open() {
                             Color32::from_rgb(255, 210, 90)
                         } else {
                             Color32::from_rgb(200, 180, 120)
                         };
-                        ui.colored_label(color, text);
+                        ui.colored_label(color, texts::combo_text(combo));
                     }
-                    // Sword mastery (#915) once practised; the browser HUD says the same.
-                    let mastery = viewer.mastery;
-                    if mastery != mmorpg_core::Mastery::default() {
-                        let next = mmorpg_core::practice_to_next_level(mastery.level).unwrap_or(0);
-                        let progress = if next == 0 {
-                            "mastered".to_owned()
-                        } else {
-                            format!("{}/{next}", mastery.progress)
-                        };
-                        ui.colored_label(
-                            Color32::from_rgb(244, 217, 138),
-                            format!("Sword mastery {} ({progress})", mastery.level),
-                        );
+                    // Sword mastery (#915) once practised.
+                    if let Some(text) = texts::mastery_text(viewer.mastery) {
+                        ui.colored_label(Color32::from_rgb(244, 217, 138), text);
                     }
                     auras(ui, &snapshot.auras);
                 });
@@ -1260,17 +1228,6 @@ fn fraction(value: u32, max: u32) -> f32 {
         0.0
     } else {
         (value as f32 / max as f32).clamp(0.0, 1.0)
-    }
-}
-
-/// The Warden's melee stance and what it does (#155).
-const fn stance_text(stance: mmorpg_core::MeleeStance) -> &'static str {
-    match stance {
-        mmorpg_core::MeleeStance::Planted => "Planted · braced, −10% damage taken",
-        mmorpg_core::MeleeStance::Charging => "Charging · +20% melee damage",
-        mmorpg_core::MeleeStance::Moving => "Moving · −15% melee damage",
-        mmorpg_core::MeleeStance::Airborne => "Airborne · +35% melee damage, +25% taken",
-        mmorpg_core::MeleeStance::Landing => "Landing · melee waits",
     }
 }
 
