@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use crate::ai::{offset, steer};
+use crate::ai::{approach, offset, steer};
 use crate::entity::body_id;
 use crate::physics::Vec3i;
 use crate::reach::xz_distance_squared;
@@ -85,20 +85,6 @@ impl WildlifeDen {
 
 fn at(anchor: [i32; 2], slot: [i32; 2]) -> [i32; 2] {
     [anchor[0] + slot[0], anchor[1] + slot[1]]
-}
-
-/// A velocity toward `(dx, dz)` at `speed` that stops `stop` short and does not overshoot in
-/// the `ticks` it is held.
-fn approach(dx: i32, dz: i32, stop: i32, speed: i32, ticks: u16) -> [i32; 2] {
-    let length = i64::try_from(crate::trig::xz_length(dx, dz)).unwrap_or(i64::MAX);
-    let gap = length.saturating_sub(i64::from(stop)).max(0);
-    let reach =
-        gap.saturating_mul(i64::from(crate::physics::SUBUNITS_PER_UNIT)) / i64::from(ticks.max(1));
-    steer(
-        dx,
-        dz,
-        i32::try_from(i64::from(speed).min(reach)).unwrap_or(0),
-    )
 }
 
 impl ZoneSimulation {

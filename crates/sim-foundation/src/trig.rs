@@ -107,6 +107,20 @@ pub const fn isqrt(value: u64) -> u64 {
     value.isqrt()
 }
 
+/// The XZ point `distance` units from `anchor` along `yaw`, saturating at the `i32` range (an
+/// overflowing scale moves nothing): wander points, formation slots, flanks and herding steps.
+#[must_use]
+pub const fn point_along(anchor: [i32; 2], yaw: u16, distance: i32) -> [i32; 2] {
+    let (x, z) = direction(yaw);
+    let (dx, dz) = match (checked_scale(distance, x), checked_scale(distance, z)) {
+        (Some(dx), Some(dz)) => (dx, dz),
+        (Some(dx), None) => (dx, 0),
+        (None, Some(dz)) => (0, dz),
+        (None, None) => (0, 0),
+    };
+    [anchor[0].saturating_add(dx), anchor[1].saturating_add(dz)]
+}
+
 /// Floor of the XZ length of `(x, z)`; exact for every `i32` pair.
 #[must_use]
 pub const fn xz_length(x: i32, z: i32) -> u64 {

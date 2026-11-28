@@ -94,12 +94,7 @@ pub fn flank_point(target: [i32; 2], anchor: [i32; 2], here: [i32; 2], standoff:
     } else {
         front.wrapping_sub(FLANK_YAW)
     };
-    let (x, z) = trig::direction(yaw);
-    let scale = |unit| trig::checked_scale(standoff, unit).unwrap_or(0);
-    [
-        target[0].saturating_add(scale(x)),
-        target[1].saturating_add(scale(z)),
-    ]
+    trig::point_along(target, yaw, standoff)
 }
 
 /// A marksman's step against a target `distance` away: `Some(true)` backs away, `Some(false)`

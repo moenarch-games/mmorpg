@@ -84,6 +84,15 @@ pub(crate) fn has_kind(auras: &[Aura], kind: AuraKind) -> bool {
     auras.iter().any(|aura| aura.kind() == Some(kind))
 }
 
+/// Movement speed in percent of a unit with `auras` standing on `surface`: its auras' speed
+/// scaled by the surface's (tar, #294), the one product rolls and steering use (#1266).
+pub(crate) fn movement_percent(
+    auras: &[Aura],
+    surface: Option<crate::surface::SurfaceKind>,
+) -> i32 {
+    speed_percent(auras) * crate::surface::speed_percent(surface) / 100
+}
+
 /// Movement speed in percent: 0 while rooted or stunned, otherwise reduced
 /// by the strongest snare and raised by a wolf form (#957).
 pub(crate) fn speed_percent(auras: &[Aura]) -> i32 {

@@ -74,16 +74,6 @@ pub(crate) fn is_wander_point(home: [i32; 2], to: [i32; 2], radius: i32) -> bool
     xz_distance_squared(home, to) <= (i64::from(radius) + 1).pow(2)
 }
 
-/// The point `distance` units from `home` along `yaw`.
-fn wander_point(home: [i32; 2], yaw: u16, distance: i32) -> [i32; 2] {
-    let (x, z) = trig::direction(yaw);
-    let offset = |unit| trig::checked_scale(distance, unit).unwrap_or(0);
-    [
-        home[0].saturating_add(offset(x)),
-        home[1].saturating_add(offset(z)),
-    ]
-}
-
 /// Velocity of at most `speed` along `(dx, dz)` without overshooting it.
 /// Integer normalisation: each component is `delta · step / length` in subunits per tick,
 /// rounded toward zero; `speed` is in subunits per tick and `(dx, dz)` in units, and a step
@@ -988,12 +978,20 @@ fn wander_wait(rng: &mut ZoneRng) -> u16 {
 /// Walking velocity toward `(dx, dz)` that a creature may keep for `ticks` ticks without
 /// overshooting it (#814).
 fn walk(dx: i32, dz: i32, ticks: u16) -> [i32; 2] {
-    let reach = i64::try_from(xz_length(dx, dz))
-        .unwrap_or(i64::MAX)
-        .saturating_mul(SUBUNITS)
-        / i64::from(ticks.max(1));
-    let speed = i64::from(CREATURE_WALK_SPEED_SUBUNITS_PER_TICK).min(reach);
-    steer(dx, dz, i32::try_from(speed).unwrap_or(0))
+    approach(dx, dz, 0, CREATURE_WALK_SPEED_SUBUNITS_PER_TICK, ticks)
+}
+
+/// A velocity toward `(dx, dz)` at `speed` that stops `stop` short and does not overshoot in
+/// the `ticks` it is held: walking creatures and den wildlife step this way (#1266).
+pub(crate) fn approach(dx: i32, dz: i32, stop: i32, speed: i32, ticks: u16) -> [i32; 2] {
+    let length = i64::try_from(xz_length(dx, dz)).unwrap_or(i64::MAX);
+    let gap = length.saturating_sub(i64::from(stop)).max(0);
+    let reach = gap.saturating_mul(SUBUNITS) / i64::from(ticks.max(1));
+    steer(
+        dx,
+        dz,
+        i32::try_from(i64::from(speed).min(reach)).unwrap_or(0),
+    )
 }
 
 /// Idle behaviour: count down, pick a wander point, walk to it, repeat. `elapsed` ticks have
@@ -1031,7 +1029,7 @@ fn wander(
             // A random heading and distance around the spawn point.
             let yaw = u16::try_from(rng.below(1 << 16)).unwrap_or(0);
             let distance = i32::try_from(rng.inclusive(0, radius.unsigned_abs())).unwrap_or(0);
-            let to = wander_point(home, yaw, distance);
+            let to = trig::point_along(home, yaw, distance);
             *destination = Some(to);
             *timer = WANDER_WALK_TIMEOUT_TICKS;
             let (dx, dz) = offset(here, to);
@@ -1077,7 +1075,7 @@ mod tests {
         for radius in [0, 1, 7, 600, crate::MAX_WANDER_RADIUS_UNITS] {
             for yaw in 0..=u16::MAX {
                 for distance in [0, radius / 2, radius] {
-                    let to = wander_point(home, yaw, distance);
+                    let to = trig::point_along(home, yaw, distance);
                     assert!(
                         is_wander_point(home, to, radius),
                         "{radius} {yaw} {distance}"

@@ -217,16 +217,6 @@ impl Minion {
     }
 }
 
-/// The point `distance` units from `anchor` along `yaw`.
-fn point_along(anchor: [i32; 2], yaw: u16, distance: i32) -> [i32; 2] {
-    let (x, z) = trig::direction(yaw);
-    let step = |unit| trig::checked_scale(distance, unit).unwrap_or(0);
-    [
-        anchor[0].saturating_add(step(x)),
-        anchor[1].saturating_add(step(z)),
-    ]
-}
-
 /// Formation slot `slot` of `count`: an arc 40° apart behind a summoner facing `facing`, or an
 /// even ring round a defended point.
 fn slot_point(anchor: [i32; 2], facing: u16, slot: usize, count: usize, ring: bool) -> [i32; 2] {
@@ -242,7 +232,7 @@ fn slot_point(anchor: [i32; 2], facing: u16, slot: usize, count: usize, ring: bo
             .wrapping_add(0x8000)
             .wrapping_add_signed(i16::try_from(turn).unwrap_or(0))
     };
-    point_along(anchor, yaw, FORMATION_RADIUS_UNITS)
+    trig::point_along(anchor, yaw, FORMATION_RADIUS_UNITS)
 }
 
 impl ZoneSimulation {
@@ -464,7 +454,7 @@ impl ZoneSimulation {
         let leader_at = [leader.x, leader.z];
         // Lost far behind (a fall, a door, a long run): gathered back beside the summoner.
         if !crate::reach::within_xz(here, leader_at, MINION_GATHER_RADIUS_UNITS) {
-            let spot = point_along(
+            let spot = trig::point_along(
                 leader_at,
                 facing.wrapping_add(0x8000),
                 FORMATION_RADIUS_UNITS,

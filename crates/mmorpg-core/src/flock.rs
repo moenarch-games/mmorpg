@@ -169,15 +169,6 @@ impl WatchState {
     }
 }
 
-/// One step of `length` units along `yaw`.
-fn step_along(yaw: u16, length: i32) -> [i32; 2] {
-    let (x, z) = crate::trig::direction(yaw);
-    [
-        crate::trig::checked_scale(length, x).unwrap_or(0),
-        crate::trig::checked_scale(length, z).unwrap_or(0),
-    ]
-}
-
 impl ZoneSimulation {
     /// Where stray `npc` stands while it is driven or penned (#1019): feet, facing and velocity.
     pub(crate) fn stray_placement(&self, npc: NpcId) -> Option<crate::NpcPlacement> {
@@ -379,7 +370,7 @@ impl ZoneSimulation {
                 if !self.stray_way_clear(here, heading) {
                     continue;
                 }
-                let step = step_along(heading, STRAY_UNITS_PER_TICK);
+                let step = crate::trig::point_along([0, 0], heading, STRAY_UNITS_PER_TICK);
                 state.position = [here[0] + step[0], here[1] + step[1]];
                 state.velocity =
                     step.map(|axis| i8::try_from(axis.clamp(-127, 127)).unwrap_or_default());
@@ -455,7 +446,7 @@ impl ZoneSimulation {
 
     /// Whether a sheep at `here` trots clear toward `heading`.
     fn stray_way_clear(&self, here: [i32; 2], heading: u16) -> bool {
-        let ahead = step_along(heading, STRAY_LOOKAHEAD_UNITS);
+        let ahead = crate::trig::point_along([0, 0], heading, STRAY_LOOKAHEAD_UNITS);
         let half = Vec3i::new(
             STRAY_HALF_EXTENTS[0],
             STRAY_HALF_EXTENTS[1],
