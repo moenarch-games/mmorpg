@@ -418,34 +418,12 @@ impl ZoneSimulation {
     pub(crate) fn stand_down(&mut self, id: CreatureId, died_at: u64) -> Result<(), ZoneError> {
         let entity = EntityRef::Creature(id);
         self.world.remove_body(body_id(entity));
-        if self.interest.remove(entity) {
-            self.interest_work.bucket_removes += 1;
-        }
-        for player in self.players.values_mut() {
-            if player.target == Some(entity) {
-                player.target = None;
-            }
-        }
+        self.withdraw(entity);
         if !self.creatures.contains_key(&id) {
             self.reserve_raider(id)?;
         }
         if let Some(state) = self.creatures.get_mut(&id) {
-            state.life = Life::Despawned { died_at };
-            state.health = 0;
-            state.ai = CreatureAi::Idle {
-                timer: 0,
-                destination: None,
-            };
-            state.threat.clear();
-            state.swing_timer = 0;
-            state.combat_timer = 0;
-            state.tapped_by = None;
-            state.loot = None;
-            state.loot_party.clear();
-            state.cast = None;
-            state.auras.clear();
-            state.encounter = None;
-            state.reset_abilities();
+            state.retire(died_at);
         }
         Ok(())
     }
@@ -597,13 +575,7 @@ impl ZoneSimulation {
         self.place_in_interest(entity, position.x, position.z);
         if let Some(creature) = self.creatures.get_mut(&id) {
             creature.health = template.max_health(creature.level);
-            creature.threat.clear();
-            creature.swing_timer = 0;
-            creature.combat_timer = 0;
-            creature.tapped_by = None;
-            creature.cast = None;
-            creature.auras.clear();
-            creature.reset_abilities();
+            creature.reset();
             creature.encounter = None;
             creature.ai = CreatureAi::Idle {
                 timer: crate::WANDER_WAIT_TICKS[0],

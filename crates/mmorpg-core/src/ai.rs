@@ -516,10 +516,7 @@ impl ZoneSimulation {
         };
         if creature.ai == CreatureAi::Engaged && (chase.is_none() || leashed) {
             creature.ai = CreatureAi::Evading { ticks: 0 };
-            creature.threat.clear();
-            creature.tapped_by = None;
-            creature.combat_timer = 0;
-            creature.reset_abilities();
+            creature.reset();
             // A boss's attempt ends here (#276, 5.1.77): its profile and contributors go, and
             // it rests at full unscaled health only once home.
             if creature.encounter.take().is_some() {
@@ -673,10 +670,7 @@ impl ZoneSimulation {
                     if !marching {
                         creature.health = template.max_health(creature.level);
                     }
-                    creature.swing_timer = 0;
-                    creature.combat_timer = 0;
-                    creature.tapped_by = None;
-                    creature.reset_abilities();
+                    creature.reset();
                     creature.ai = CreatureAi::Idle {
                         timer: if marching {
                             0

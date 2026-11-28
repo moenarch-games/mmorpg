@@ -1,4 +1,5 @@
 import init from "./generated/mmorpg-wasm/mmorpg_wasm.js";
+import { countWasmBoundary, profiling } from "./world/frame-profile";
 
 /** The generated `mmorpg-wasm` bindings: the local zone host and the wire boundary (#541). */
 export * as wasm from "./generated/mmorpg-wasm/mmorpg_wasm.js";
@@ -22,7 +23,9 @@ async function compile(): Promise<WebAssembly.Module> {
  */
 export function loadWasm(): Promise<WebAssembly.Module> {
   loading ??= compile().then(async (module) => {
-    await init({ module_or_path: module });
+    // Under `?profile` each frame counts its boundary crossings (#1256).
+    const instantiate = () => init({ module_or_path: module });
+    await (profiling() ? countWasmBoundary(instantiate) : instantiate());
     return module;
   });
   return loading;

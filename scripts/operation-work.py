@@ -69,7 +69,22 @@ def browser_operations() -> list:
         return json.loads(out.read_text())["operations"]
 
 
+def prebuild() -> int:
+    """Compiles what the collector runs (`--prebuild`): every release work example and the release WASM
+    module. coding-tooling gives the collector ten minutes, which a cold CI runner spends compiling, so
+    scripts/ci-work-contract.sh builds first and the collector only measures."""
+    # One build per example, exactly as `cargo run` selects it, so the collector's runs reuse the
+    # same feature resolution instead of rebuilding.
+    for package, example in EXAMPLES:
+        subprocess.run(["cargo", "build", "-q", "--locked", "--release", "-p", package, "--example", example],
+                       cwd=ROOT, check=True)
+    subprocess.run(["bun", "scripts/build-wasm.ts"], cwd=ROOT / "web", check=True)
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--prebuild"]:
+        return prebuild()
     contract_bytes = (ROOT / ".performance" / "contract.json").read_bytes()
     contract = json.loads(contract_bytes)
     operations = []

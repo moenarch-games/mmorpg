@@ -50,9 +50,6 @@ pub const RICOCHET_BOUNCES: u8 = 2;
 /// whose centre lies within [`crate::unit::AIM_CONE_HALF_WIDTH`] (15°) of the facing (#884).
 /// Client aids such as the throw's landing marker use it.
 pub const AIM_ASSIST_COS: f32 = 0.966;
-/// A shielded creature (#160) blocks arrows and bolts arriving within this angle of its
-/// facing; magic missiles pass its shield.
-pub const CREATURE_SHIELD_HALF_ANGLE_DEGREES: f32 = 60.0;
 /// A bounced shot restarts this far off the surface along its normal, units.
 const BOUNCE_CLEARANCE_UNITS: f32 = 1.0;
 
@@ -281,6 +278,12 @@ impl Projectile {
 /// The horizontal length of `delta`; plain `sqrt`, correctly rounded on every target (#884).
 fn xz_length(delta: [f32; 3]) -> f32 {
     (delta[0] * delta[0] + delta[2] * delta[2]).sqrt()
+}
+
+/// A shot's exact position as whole XZ units, as gameplay rules see it.
+fn xz_units(position: [f32; 3]) -> [i32; 2] {
+    let [x, _, z] = crate::physics::to_units(position);
+    [x, z]
 }
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
@@ -765,37 +768,6 @@ impl ZoneSimulation {
         }
     }
 
-    /// Whether a living shielded creature (the Redbrand Brute, #160) faces a shot arriving from
-    /// `from`: within [`CREATURE_SHIELD_HALF_ANGLE_DEGREES`] of its facing. A stunned creature
-    /// drops its guard.
-    fn creature_shield_covers(
-        &self,
-        creature_id: crate::CreatureId,
-        from: [f32; 3],
-    ) -> Result<bool, ZoneError> {
-        let Some(creature) = self.creatures.get(&creature_id) else {
-            return Ok(false);
-        };
-        let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
-        if !self.content.is_shielded(spawn.template)
-            || !creature.is_alive()
-            || crate::aura::has_kind(&creature.auras, crate::AuraKind::Stun)
-        {
-            return Ok(false);
-        }
-        let Some(centre) = self.unit_centre(EntityRef::Creature(creature_id)) else {
-            return Ok(false);
-        };
-        let (x, z) = crate::trig::direction(creature.facing);
-        #[allow(clippy::cast_precision_loss)]
-        let forward = [x as f32, z as f32];
-        let delta = [from[0] - centre[0], from[2] - centre[2]];
-        let along = delta[0] * forward[0] + delta[1] * forward[1];
-        let length = libm::hypotf(delta[0], delta[1]) * libm::hypotf(forward[0], forward[1]);
-        Ok(length > 0.0
-            && along >= length * libm::cosf(CREATURE_SHIELD_HALF_ANGLE_DEGREES.to_radians()))
-    }
-
     /// `projectile` reached `unit`: a raised shield turned toward it blocks it; otherwise its
     /// ability lands on a valid victim (the tracked target, or anything a free shot meets) at
     /// `percent` of its damage. Returns whether it landed on a hostile victim.
@@ -833,7 +805,9 @@ impl ZoneSimulation {
         }
         if let EntityRef::Creature(creature_id) = unit
             && !projectile.kind.is_magic()
-            && self.creature_shield_covers(creature_id, from)?
+            // A shielded creature (#160) blocks arrows and bolts from its front arc; magic
+            // missiles pass its shield.
+            && self.creature_shield_faces(creature_id, xz_units(from))?
         {
             self.notify_units(
                 [Some(projectile.owner), Some(unit)],

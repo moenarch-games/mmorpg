@@ -374,14 +374,9 @@ impl ZoneSimulation {
         let distance = xz_distance_squared([origin.x, origin.z], [centre.x, centre.z]);
         let sighted = if rewound.is_some() {
             // Present cover between the swinger and the rewound body.
-            !self.world.segment_blocked(
-                origin,
-                Vec3i::new(
-                    centre.x - origin.x,
-                    centre.y - origin.y,
-                    centre.z - origin.z,
-                ),
-                |body| body.0 < crate::entity::PLAYER_BODY_BASE,
+            self.sight_between(
+                [origin.x, origin.y, origin.z],
+                [centre.x, centre.y, centre.z],
             )
         } else {
             self.line_of_sight(EntityRef::Player(player_id), entity)?

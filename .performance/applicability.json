@@ -16,6 +16,19 @@
           "platforms": [
             "linux"
           ]
+        },
+        {
+          "family": "runtime",
+          "capability": "profile:runtime",
+          "path": ".performance/runtime.json",
+          "tools": [
+            "python3",
+            "cargo",
+            "rustc"
+          ],
+          "platforms": [
+            "linux"
+          ]
         }
       ]
     }

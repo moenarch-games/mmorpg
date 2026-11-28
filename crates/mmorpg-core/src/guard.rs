@@ -237,6 +237,18 @@ impl crate::ZoneSimulation {
         creature_id: crate::CreatureId,
         attacker: PlayerId,
     ) -> Result<bool, ZoneError> {
+        let at = self.player_position(attacker)?;
+        self.creature_shield_faces(creature_id, [at.x, at.z])
+    }
+
+    /// Whether shield-bearing creature `creature_id` holds its shield toward the XZ point `from`
+    /// (units): alive, not stunned, and `from` within [`crate::FLANK_FRONT_HALF_ARC`] of its
+    /// facing. Melee blows and arrows meet the same guard (#1263).
+    pub(crate) fn creature_shield_faces(
+        &self,
+        creature_id: crate::CreatureId,
+        from: [i32; 2],
+    ) -> Result<bool, ZoneError> {
         let Some(creature) = self.creatures.get(&creature_id) else {
             return Ok(false);
         };
@@ -247,9 +259,8 @@ impl crate::ZoneSimulation {
         {
             return Ok(false);
         }
-        let at = self.player_position(attacker)?;
         let here = self.unit_position(EntityRef::Creature(creature_id))?;
-        Ok(trig::yaw_from_vector(at.x - here[0], at.z - here[2])
+        Ok(trig::yaw_from_vector(from[0] - here[0], from[1] - here[2])
             .is_some_and(|bearing| !crate::flanks(creature.facing, bearing)))
     }
 
