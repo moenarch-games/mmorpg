@@ -29,9 +29,7 @@ const FLOOR_TOP: i32 = 0;
 const WALL_THICKNESS: i32 = 100;
 const WALL_HEIGHT: i32 = 400;
 const PASSAGE_HALF_WIDTH: i32 = 300;
-/// Facing east, along the length of the dungeon.
-const EAST: u16 = 16_384;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, WEST};
 const WANDER_RADIUS: i32 = 300;
 
 /// Body centre of an arriving character: just inside the entrance hall, on its axis.
@@ -90,16 +88,7 @@ pub const FINAL_ATTACK_PARTY: u8 = 3;
 
 /// A wall from `min` to `max` on the floor, `(min, max)` over XZ.
 fn wall(id: &mut u32, min: [i32; 2], max: [i32; 2]) -> StaticCollider {
-    let half = [
-        (max[0] - min[0]) / 2,
-        WALL_HEIGHT / 2,
-        (max[1] - min[1]) / 2,
-    ];
-    let collider = StaticCollider {
-        id: *id,
-        position: [min[0] + half[0], FLOOR_TOP + half[1], min[1] + half[2]],
-        half_extents: half,
-    };
+    let collider = StaticCollider::over_footprint(*id, min, max, FLOOR_TOP, WALL_HEIGHT);
     *id += 1;
     collider
 }

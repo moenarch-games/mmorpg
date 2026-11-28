@@ -45,20 +45,7 @@ pub const THRESHOLD_HEIGHT: i32 = 350;
 #[must_use]
 pub fn threshold(id: u32) -> StaticCollider {
     let (min, max) = THRESHOLD;
-    let half = [
-        (max[0] - min[0]) / 2,
-        THRESHOLD_HEIGHT / 2,
-        (max[1] - min[1]) / 2,
-    ];
-    StaticCollider {
-        id,
-        position: [
-            min[0] + half[0],
-            GREYFANG.floor_y + half[1],
-            min[1] + half[2],
-        ],
-        half_extents: half,
-    }
+    StaticCollider::over_footprint(id, min, max, GREYFANG.floor_y, THRESHOLD_HEIGHT)
 }
 
 /// The public rooms beneath an irregular rock mound, entered through its north side.

@@ -1059,12 +1059,7 @@ fn lowest_corner(min: [i32; 2], max: [i32; 2]) -> i32 {
 
 /// A box standing on y = 0 over an authored footprint.
 const fn standing(id: u32, min: [i32; 2], max: [i32; 2], height: i32) -> StaticCollider {
-    let half = [(max[0] - min[0]) / 2, height / 2, (max[1] - min[1]) / 2];
-    StaticCollider {
-        id,
-        position: [min[0] + half[0], half[1], min[1] + half[2]],
-        half_extents: half,
-    }
+    StaticCollider::over_footprint(id, min, max, 0, height)
 }
 
 /// A box over an authored footprint, resting on the terrain there (#159).

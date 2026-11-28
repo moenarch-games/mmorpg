@@ -13,9 +13,7 @@ use super::units::templates::FOREST_LYNX;
 /// The lynxes' creature spawn IDs.
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 3_100..=3_119;
 
-/// Yaw 0 faces south (+Z) and 16 384 east (+X): out of the wood.
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
+use crate::trig::facing::{EAST, SOUTH};
 /// A lynx keeps to a short beat along its edge.
 const WANDER: i32 = 400;
 

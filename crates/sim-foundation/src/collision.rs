@@ -107,6 +107,26 @@ pub struct StaticCollider {
     pub half_extents: [i32; 3],
 }
 
+impl StaticCollider {
+    /// A box over the XZ footprint `min`..`max` (units) from height `base` up `height` (#1271):
+    /// walls, thresholds, standing stones and module blocks are authored this way.
+    #[must_use]
+    pub const fn over_footprint(
+        id: u32,
+        min: [i32; 2],
+        max: [i32; 2],
+        base: i32,
+        height: i32,
+    ) -> Self {
+        let half = [(max[0] - min[0]) / 2, height / 2, (max[1] - min[1]) / 2];
+        Self {
+            id,
+            position: [min[0] + half[0], base + half[1], min[1] + half[2]],
+            half_extents: half,
+        }
+    }
+}
+
 /// At most this many static colliders per zone: room for a whole region's forests (#816).
 pub const MAX_STATIC_COLLIDERS: usize = 16_384;
 

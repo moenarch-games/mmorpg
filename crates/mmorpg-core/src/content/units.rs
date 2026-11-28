@@ -281,12 +281,7 @@ impl CreatureTemplate {
     /// half turn swaps the X and Z extents, so a fence runs along its facing's side.
     #[must_use]
     pub const fn body_half_extents(&self, facing: u16) -> [i32; 3] {
-        let [x, y, z] = self.half_extents;
-        if (facing.wrapping_add(8_192) / 16_384) % 2 == 1 {
-            [z, y, x]
-        } else {
-            [x, y, z]
-        }
+        crate::trig::turn_extents(self.half_extents, crate::trig::nearest_quarter(facing))
     }
 
     const fn levels_above_min(&self, level: u8) -> u8 {

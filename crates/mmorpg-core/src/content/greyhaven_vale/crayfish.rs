@@ -15,8 +15,7 @@ use super::units::templates::RIVER_CRAYFISH;
 /// The crayfish' creature spawn IDs.
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 3_160..=3_179;
 
-/// Yaw 32 768 faces north (-Z), away from the water onto the bank.
-const NORTH: u16 = 32_768;
+use crate::trig::facing::NORTH;
 /// A crayfish keeps to a metre of its spot on the margin.
 const WANDER: i32 = 100;
 

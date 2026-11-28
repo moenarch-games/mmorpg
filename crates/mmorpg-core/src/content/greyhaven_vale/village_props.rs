@@ -305,13 +305,8 @@ impl Prop {
 
     /// A frame offset turned into the zone.
     #[must_use]
-    pub const fn turn(&self, [x, z]: [i32; 2]) -> [i32; 2] {
-        match self.quarters % 4 {
-            0 => [x, z],
-            1 => [z, -x],
-            2 => [-x, -z],
-            _ => [-z, x],
-        }
+    pub const fn turn(&self, offset: [i32; 2]) -> [i32; 2] {
+        crate::trig::turn_quarters(offset, self.quarters)
     }
 
     fn colliders(&self, first: u32) -> impl Iterator<Item = StaticCollider> + '_ {
@@ -321,11 +316,7 @@ impl Prop {
             .filter(|_| !WALKED_ON.contains(&self.name))
             .map(move |(id, &(centre, half))| {
                 let [dx, dz] = self.turn([centre[0], centre[2]]);
-                let [hx, hz] = if self.quarters % 2 == 1 {
-                    [half[2], half[0]]
-                } else {
-                    [half[0], half[2]]
-                };
+                let [hx, _, hz] = crate::trig::turn_extents(half, self.quarters);
                 StaticCollider {
                     id,
                     position: [

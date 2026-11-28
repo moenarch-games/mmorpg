@@ -16,8 +16,7 @@ pub const WANDER_RADIUS_UNITS: i32 = 200;
 /// The Greyfang Approach patrol's number.
 pub const GREYFANG_APPROACH: u16 = 1;
 
-/// Yaw 49 152 faces west (-X), toward the road.
-const WEST: u16 = 49_152;
+use crate::trig::facing::WEST;
 
 /// `(spawn id, template, role, feet XZ, levels)`.
 type Row = (u32, CreatureTemplateId, PatrolRole, [i32; 2], [u8; 2]);
