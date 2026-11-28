@@ -429,7 +429,7 @@ impl ClientSession {
             return Err("the redirect notice does not move this session's character".into());
         }
         let route = SessionRoute::parse(&notice.route)?;
-        if route.match_id.as_str() != format!("zone-{}", notice.destination.get()) {
+        if mmorpg_game_server::match_zone(&route.match_id).ok() != Some(notice.destination) {
             return Err("the redirect route does not name the destination zone".into());
         }
         self.followed = Some(notice.transfer_id);

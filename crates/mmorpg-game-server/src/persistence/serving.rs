@@ -14,7 +14,7 @@ use game_server::{
     MatchHostStatusConfig, MatchHostWebTransportConfig, MatchId, MatchRuntime, SnapshotCommitBatch,
     SnapshotCommitFuture, SnapshotCommitter, SnapshotPersistence,
 };
-use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation, long_ticks_from_ms};
+use mmorpg_core::{CharacterId, CharacterRecord, ZoneId, long_ticks_from_ms};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
@@ -183,11 +183,7 @@ impl Characters {
         context: ControlContext,
         payload: &[u8],
     ) -> std::result::Result<Vec<u8>, String> {
-        let (&appearance, raw) = payload.split_first().ok_or("missing character claim")?;
-        let class =
-            ClassChoice::from_appearance(u32::from(appearance)).ok_or("invalid character class")?;
-        let character = CharacterId::new(std::str::from_utf8(raw).map_err(message)?.to_owned())
-            .map_err(message)?;
+        let (class, character) = crate::decode_character_claim(payload)?;
         let store = self.stores.0.get(id).ok_or("unknown zone persistence")?;
         if let Some(current) = self.current(id, context.player_id).await?
             && !current.parked
@@ -217,14 +213,9 @@ impl Characters {
                 }
                 record
             } else {
-                let zone = zone_id(id)?;
-                let mut creation =
-                    ZoneSimulation::with_content(zone, mmorpg_core::content_for_zone(zone))
-                        .map_err(message)?;
-                creation.create_character(1, class).map_err(message)?;
-                creation
-                    .capture_character(1, character.clone())
-                    .map_err(message)?
+                let zone = crate::match_zone(id)?;
+                let content = mmorpg_core::content_for_zone(zone);
+                CharacterRecord::fresh(zone, content, class, character.clone()).map_err(message)?
             };
             for key in acquired.receipts {
                 let input = ZoneGameServerAdapter::reward_receipt_input(key).map_err(message)?;
@@ -297,14 +288,6 @@ impl MatchControlService for Characters {
         })();
         result.map_err(ControlServiceError::new)
     }
-}
-fn zone_id(id: &MatchId) -> std::result::Result<ZoneId, String> {
-    id.as_str()
-        .strip_prefix("zone-")
-        .ok_or("invalid zone route")?
-        .parse::<u32>()
-        .map(ZoneId::new)
-        .map_err(message)
 }
 
 /// The repair step for the shared party and instance directories
