@@ -18,8 +18,7 @@ pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 3_140..=3_159;
 /// whose tip hangs 3.4 m over the floor.
 pub const ROOST: [i32; 2] = [5_705, -14_148];
 
-/// Yaw 32 768 faces north (-Z), toward the cave mouth.
-const NORTH: u16 = 32_768;
+use crate::trig::facing::NORTH;
 
 /// `(id, roost XZ in units)`: a bat either side of the stalactite's tip.
 const BATS: [(u32, [i32; 2]); 2] = [(3_140, [5_665, -14_148]), (3_141, [5_745, -14_148])];

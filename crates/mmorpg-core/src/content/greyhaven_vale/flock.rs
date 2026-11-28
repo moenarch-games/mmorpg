@@ -34,8 +34,7 @@ pub const PROWLERS: [CreatureId; 4] = [
     CreatureId::new(1_415),
 ];
 
-const SOUTH: u16 = 0;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{SOUTH, WEST};
 
 /// `(id, name, feet XZ, facing)` of the stray and the fold's ewes.
 const SHEEP: [(u32, &str, [i32; 2], u16); 4] = [

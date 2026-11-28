@@ -1,54 +1,17 @@
 //! Windows of the game interface: chat, quest tracker/log, NPC dialogue,
 //! vendor, bags, character, loot and the party frame. Each control only names a shared command.
 use super::{GameUi, LogTab, UiFrame, UiIntent, chat, line_color, panel_frame};
-use crate::interaction::{NpcContext, quest_brief};
+use crate::interaction::NpcContext;
 use egui::{Align2, Color32, RichText, Vec2};
-use mmorpg_client_model::party::{self as party_model, PartyChat};
-use mmorpg_client_model::quest::{self, QuestStanding};
-use mmorpg_core::{
-    EquipmentSlot, ItemId, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot, find_text,
-    item_template, sell_price,
+use mmorpg_client_model::items::{
+    ATTRIBUTE_NAMES, item_detail, item_line, item_name, offer_text, sale, slot_title,
 };
+use mmorpg_client_model::panels::{LootAction, depths_loot_rows};
+use mmorpg_client_model::party::{self as party_model, PartyChat};
+use mmorpg_client_model::quest::{self, QuestStanding, quest_brief};
+use mmorpg_core::{EquipmentSlot, NpcRole, Quest, ZoneCommand, ZoneContent, ZoneSnapshot};
 use mmorpg_protocol::party::PartyRequest;
 use strum::VariantArray;
-
-fn item_name(id: ItemId) -> &'static str {
-    item_template(id).map_or("unknown item", |item| item.name)
-}
-
-/// An item's attributes and, for a find (#918), its quality, tactical trait and source.
-fn item_stats(id: ItemId) -> String {
-    let Some(stats) = item_template(id).map(|item| item.stats) else {
-        return String::new();
-    };
-    let attributes = [
-        (stats.stamina, "Stamina"),
-        (stats.strength, "Strength"),
-        (stats.agility, "Agility"),
-        (stats.intellect, "Intellect"),
-    ]
-    .into_iter()
-    .filter(|(value, _)| *value > 0)
-    .map(|(value, name)| format!("+{value} {name}"))
-    .collect::<Vec<_>>()
-    .join(", ");
-    match find_text(id) {
-        Some(find) if attributes.is_empty() => find,
-        Some(find) => format!("{attributes} · {find}"),
-        None => attributes,
-    }
-}
-
-fn slot_title(slot: EquipmentSlot) -> &'static str {
-    match slot {
-        EquipmentSlot::MainHand => "Main hand",
-        EquipmentSlot::OffHand => "Off hand",
-        EquipmentSlot::Head => "Head",
-        EquipmentSlot::Chest => "Chest",
-        EquipmentSlot::Legs => "Legs",
-        EquipmentSlot::Feet => "Feet",
-    }
-}
 
 fn progress_color(done: bool) -> Color32 {
     if done {
@@ -98,81 +61,32 @@ impl GameUi {
             .resizable(false)
             .collapsible(false)
             .show(ctx, |ui| {
-                for drop in &view.drops {
-                    let name = mmorpg_core::item_template(drop.item)
-                        .map_or("Unknown item", |item| item.name);
-                    ui.label(RichText::new(name).strong());
-                    match drop.state {
-                        mmorpg_core::DropView::Rolling {
-                            deadline,
-                            answer,
-                            may_need,
-                        } => match answer {
-                            Some(choice) => {
-                                ui.label(format!("You chose {choice:?}. Waiting for the others…"));
-                            }
-                            None => {
-                                let seconds = deadline.saturating_sub(snapshot.tick)
-                                    / u64::from(mmorpg_core::TICK_HZ);
-                                ui.label(format!("{seconds} s"));
-                                ui.horizontal(|ui| {
-                                    use mmorpg_core::RollChoice::{Greed, Need, Pass};
-                                    for (choice, label, enabled) in [
-                                        (Need, "Need", may_need),
-                                        (Greed, "Greed", true),
-                                        (Pass, "Pass", true),
-                                    ] {
-                                        if ui
-                                            .add_enabled(enabled, egui::Button::new(label))
-                                            .clicked()
-                                        {
-                                            intents.push(UiIntent::Command(
-                                                ZoneCommand::RollDepthsDrop {
-                                                    run: view.run_id,
-                                                    drop: drop.drop,
-                                                    choice,
-                                                },
-                                            ));
-                                        }
-                                    }
-                                });
-                            }
-                        },
-                        mmorpg_core::DropView::Held { claimable } => {
-                            if claimable {
-                                ui.label("Everyone passed.");
-                                if ui.button("Claim").clicked() {
-                                    intents.push(UiIntent::Command(ZoneCommand::ClaimDepthsDrop {
-                                        run: view.run_id,
-                                        drop: drop.drop,
-                                    }));
-                                }
-                            } else {
-                                ui.label("Everyone passed; it stays until the run ends.");
-                            }
-                        }
-                        mmorpg_core::DropView::Awarded {
-                            won,
-                            roll,
-                            need,
-                            pending,
-                        } => {
-                            let how = if roll == 0 {
-                                "claimed".to_owned()
-                            } else {
-                                format!("{} {roll}", if need { "Need" } else { "Greed" })
-                            };
-                            if won {
-                                ui.label(if pending {
-                                    format!("Yours ({how}) — bag full or arriving…")
-                                } else {
-                                    format!("Yours ({how})")
-                                });
-                            } else {
-                                ui.label("Taken by a party member.");
-                            }
-                        }
+                for row in depths_loot_rows(view, snapshot.tick) {
+                    ui.label(RichText::new(row.item_name).strong());
+                    ui.label(&row.line);
+                    if row.buttons.is_empty() {
+                        continue;
                     }
+                    ui.horizontal(|ui| {
+                        for button in &row.buttons {
+                            if ui
+                                .add_enabled(button.enabled, egui::Button::new(button.label))
+                                .clicked()
+                            {
+                                intents.push(UiIntent::Command(match button.action {
+                                    LootAction::Roll(choice) => ZoneCommand::RollDepthsDrop {
+                                        run: view.run_id,
+                                        drop: row.drop,
+                                        choice,
+                                    },
+                                    LootAction::Claim => ZoneCommand::ClaimDepthsDrop {
+                                        run: view.run_id,
+                                        drop: row.drop,
+                                    },
+                                }));
+                            }
+                        }
+                    });
                 }
             });
     }
@@ -499,12 +413,10 @@ impl GameUi {
                                 ui.horizontal_wrapped(|ui| {
                                     ui.label("Choose one:");
                                     for (choice, item) in quest.rewards.choices.iter().enumerate() {
-                                        let label =
-                                            format!("{} {}", item_name(*item), item_stats(*item));
                                         if ui
                                             .selectable_label(
                                                 context.choice == choice,
-                                                label.trim(),
+                                                item_line(*item),
                                             )
                                             .clicked()
                                         {
@@ -527,25 +439,7 @@ impl GameUi {
                         if let Some(stock) = content.vendor_stock(npc.id) {
                             for (index, offer) in stock.offers().iter().enumerate() {
                                 ui.horizontal(|ui| {
-                                    // A smith's recipe (#917) names what it takes from the bag.
-                                    let materials: Vec<String> = offer
-                                        .materials
-                                        .iter()
-                                        .map(|&(item, quantity)| {
-                                            format!("{quantity} {}", item_name(item))
-                                        })
-                                        .collect();
-                                    let fee = if materials.is_empty() {
-                                        String::new()
-                                    } else {
-                                        format!(" + {}", materials.join(", "))
-                                    };
-                                    ui.label(format!(
-                                        "{} {} — {} copper{fee}",
-                                        item_name(offer.item),
-                                        item_stats(offer.item),
-                                        offer.price
-                                    ));
+                                    ui.label(offer_text(offer));
                                     let affordable = snapshot.viewer.copper >= offer.price;
                                     if ui
                                         .add_enabled(affordable, egui::Button::new("Buy"))
@@ -566,13 +460,9 @@ impl GameUi {
                                 for (index, stack) in bag.slots().iter().enumerate() {
                                     let Some(stack) = stack else { continue };
                                     ui.horizontal(|ui| {
-                                        ui.label(format!(
-                                            "{} ×{} — {} copper each",
-                                            item_name(stack.item()),
-                                            stack.quantity(),
-                                            sell_price(stack.item())
-                                        ));
-                                        if ui.button("Sell one").clicked() {
+                                        let sold = sale(stack.item(), stack.quantity());
+                                        ui.label(&sold.text);
+                                        if ui.button("Sell").on_hover_text(&sold.label).clicked() {
                                             act(context, index, true);
                                         }
                                     });
@@ -636,7 +526,7 @@ impl GameUi {
                                     "{} ×{} {}",
                                     item_name(stack.item()),
                                     stack.quantity(),
-                                    item_stats(stack.item())
+                                    item_detail(stack.item())
                                 ));
                             }
                             if response.clicked() {
@@ -679,7 +569,7 @@ impl GameUi {
                                 .text("quantity"),
                         );
                     }
-                    if item_template(stack.item()).is_some_and(|t| t.slot.is_some())
+                    if mmorpg_core::item_template(stack.item()).is_some_and(|t| t.slot.is_some())
                         && ui
                             .button(format!("Equip {}", item_name(stack.item())))
                             .clicked()
@@ -717,7 +607,7 @@ impl GameUi {
                         ui.label(slot_title(slot));
                         match equipment.item(slot) {
                             Some(item) => {
-                                ui.label(format!("{} {}", item_name(item), item_stats(item)));
+                                ui.label(item_line(item));
                                 if ui.button("Unequip").clicked() {
                                     intents.push(UiIntent::Command(ZoneCommand::UnequipItem {
                                         equipment_slot: slot.index(),
@@ -735,12 +625,12 @@ impl GameUi {
                 ui.separator();
                 let totals = equipment.totals();
                 egui::Grid::new("stats").show(ui, |ui| {
-                    for (name, value) in [
-                        ("Stamina", totals.stamina),
-                        ("Strength", totals.strength),
-                        ("Agility", totals.agility),
-                        ("Intellect", totals.intellect),
-                    ] {
+                    for (name, value) in ATTRIBUTE_NAMES.into_iter().zip([
+                        totals.stamina,
+                        totals.strength,
+                        totals.agility,
+                        totals.intellect,
+                    ]) {
                         ui.label(name);
                         ui.label(value.to_string());
                         ui.end_row();

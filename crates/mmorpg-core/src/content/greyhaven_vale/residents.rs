@@ -10,10 +10,7 @@
 
 use crate::{Errand, HOUR_TICKS, Npc, NpcId, NpcRole, NpcRoutine};
 
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, NORTH, SOUTH, WEST};
 
 /// `(id, name, level, feet XZ, facing)` of the region's new residents.
 #[rustfmt::skip]

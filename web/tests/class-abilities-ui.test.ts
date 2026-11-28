@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { TICK_HZ, type AuraState, type CastState, type ViewerState, type ZoneEvent, type ErrorCode, type ZoneSnapshot } from "../src/replication";
 import type { AbilityRecord, type ContentCatalog } from "../src/world/catalog";
-import { auraPolarity, undescribedAbilities } from "../src/world/units/ability-presentation";
-import { actionBar, cooldownSeconds, formatRemaining, sweepDegrees, tooltipText } from "../src/world/units/ability-state";
-import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
+import { undescribedAbilities } from "../src/world/units/ability-presentation";
+import { actionBar, sweepDegrees, tooltipText } from "../src/world/units/ability-state";
+import { panelViews } from "../src/world/units/panel-views";
 import { hudTexts } from "../src/world/units/hud-texts";
 import { castBarView } from "../src/world/units/cast-bar";
 import { CombatTextFeed, combatTexts, viewerInterrupted } from "../src/world/units/combat-text";
@@ -52,7 +52,7 @@ describe("action bar", () => {
     const bar = actionBar(cooling);
     expect(bar.slice(0, 4).map((slot) => slot.ability)).toEqual([firebolt.id, nova.id, barrier.id, blizzard.id]);
     expect(bar[0]).toMatchObject({ learned: true, casting: true, outOfRange: false, cooldown: { kind: "gcd", remaining: t(40), total: t(45) } });
-    expect(bar[1]?.cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600) });
+    expect(bar[1]?.cooldown).toEqual({ kind: "cooldown", remaining: t(300), total: t(600), seconds: 10 });
     expect(bar[3]).toMatchObject({ learned: false, unlockLevel: 6, cooldown: { kind: "gcd" } });
     expect(actionBar(snapshot({}, {}, 3_001))[0]?.outOfRange).toBe(true);
     // Facing away, the zone would aim elsewhere: the selection says nothing about range (#884).
@@ -69,21 +69,6 @@ describe("sweep and labels", () => {
     expect(sweepDegrees(0, 600)).toBe(0);
     expect(sweepDegrees(10, 0)).toBe(0);
     expect(sweepDegrees(900, 600)).toBe(360);
-  });
-
-  test("seconds show only while at least 2 s remain", () => {
-    expect(cooldownSeconds(t(59))).toBeNull();
-    expect(cooldownSeconds(t(60))).toBe(2);
-    expect(cooldownSeconds(t(61))).toBe(3);
-    expect(cooldownSeconds(t(360))).toBe(12);
-  });
-
-  test("remaining time reads as seconds, then minutes", () => {
-    expect(formatRemaining(t(1))).toBe("1s");
-    expect(formatRemaining(t(31))).toBe("2s");
-    expect(formatRemaining(t(300))).toBe("10s");
-    expect(formatRemaining(t(1_800))).toBe("1m");
-    expect(formatRemaining(t(2_000))).toBe("2m");
   });
 });
 
@@ -118,25 +103,17 @@ describe("tooltips", () => {
 describe("auras", () => {
   const aura = (ability: number, kind: AuraState["kind"], remaining: number, amount = 0): AuraState => ({ ability, kind, remaining, amount });
 
-  test("buffs and debuffs split by kind, longest first, ties by ability", () => {
-    const sorted = sortAuras([
-      aura(10, "root", 100), aura(11, "absorb", 200, 40), aura(3, "heal-over-time", 200, 30),
-      aura(6, "damage-over-time", 400, 30), aura(8, "haste", 50, 40),
-    ]);
-    expect(sorted.buffs.map((entry) => entry.ability)).toEqual([3, 11, 8]);
-    expect(sorted.debuffs.map((entry) => entry.ability)).toEqual([6, 10]);
-  });
-
-  test("polarity by kind", () => {
-    expect(["heal-over-time", "absorb", "haste"].map((kind) => auraPolarity(kind as AuraState["kind"]))).toEqual(["buff", "buff", "buff"]);
-    expect(["damage-over-time", "root", "snare", "stun"].map((kind) => auraPolarity(kind as AuraState["kind"]))).toEqual(["debuff", "debuff", "debuff", "debuff"]);
-  });
-
-  test("labels name the ability, its effect and the time left", () => {
-    expect(auraLabel(aura(11, "absorb", t(600), 60), catalog)).toBe("Arcane Barrier: Absorbs 60 damage (20s)");
-    expect(auraLabel(aura(10, "root", t(31)), catalog)).toBe("Frost Nova: Rooted (2s)");
-    expect(auraLabel(aura(2, "snare", t(30), 50), catalog)).toBe("Shield Bash: Slowed by 50% (1s)");
-    expect(auraTimer(aura(11, "absorb", t(1_800)))).toBe("1m");
+  // The order, polarity and wording are `mmorpg-client-model`'s `hud::aura_rows` (#1280), tested there; the page reads
+  // them through the projection's panel views.
+  test("the panel views split the viewer's and the target's auras into ordered, worded rows", () => {
+    const views = panelViews(snapshot({
+      auras: [aura(10, "root", 100), aura(11, "absorb", t(600), 60), aura(3, "heal-over-time", 200, 30)],
+      targetDetail: { cast: null, auras: [aura(2, "snare", t(30), 50)] },
+    }));
+    expect(views.playerAuras.buffs.map((row) => row.ability)).toEqual([11, 3]);
+    expect(views.playerAuras.buffs[0]).toEqual({ ability: 11, polarity: "buff", label: "Arcane Barrier: Absorbs 60 damage (20s)", timer: "20s" });
+    expect(views.playerAuras.debuffs.map((row) => row.ability)).toEqual([10]);
+    expect(views.targetAuras.debuffs[0]?.label).toBe("Shield Bash: Slowed by 50% (1s)");
   });
 });
 

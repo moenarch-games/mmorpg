@@ -1,27 +1,13 @@
 import type { WorldCommand } from "../../command-wire";
 import type { StatTotals, ViewerState, ZoneSnapshot } from "../../replication";
-import type { ContentCatalog, ItemRecord, ItemStats } from "../catalog";
+import type { ContentCatalog, ItemStats } from "../catalog";
 import type { BagState } from "./bag-state";
 
-/** Equipment slot labels by wire index (0 main hand … 5 feet). */
-export const EQUIPMENT_SLOT_LABELS: readonly string[] = ["Main hand", "Off hand", "Head", "Chest", "Legs", "Feet"];
+// Slot titles, attribute names and each item's detail line are `mmorpg-client-model`'s `items` (#1280), carried by the
+// catalog export; the pane only lays them out.
 
-const STAT_LABELS: readonly [keyof ItemStats, string][] = [
-  ["stamina", "Stamina"],
-  ["strength", "Strength"],
-  ["agility", "Agility"],
-  ["intellect", "Intellect"],
-];
-
-/** Catalog attributes as text, for example `+2 Strength, +2 Agility`; empty when the item adds none. */
-export function itemStatsText(stats: ItemStats): string {
-  return STAT_LABELS.filter(([stat]) => stats[stat] > 0).map(([stat, label]) => `+${stats[stat]} ${label}`).join(", ");
-}
-
-/** An item's attributes and, for a find (#918), its quality, trait and source; empty for a plain bag item. */
-export function itemDetailText(item: ItemRecord): string {
-  return [itemStatsText(item.stats), item.find ?? ""].filter((part) => part).join(" · ");
-}
+/** Stat totals in the order of the catalog's `attributeNames`. */
+const STAT_KEYS: readonly (keyof ItemStats)[] = ["stamina", "strength", "agility", "intellect"];
 
 export type CharacterSlotView = {
   slot: number;
@@ -58,7 +44,7 @@ export function characterPaneModel(
   } else if (!equipment.canMove) {
     status = "You cannot change equipment while dead.";
   }
-  const slots = EQUIPMENT_SLOT_LABELS.map((label, slot): CharacterSlotView => {
+  const slots = (catalog?.equipmentSlots ?? []).map((label, slot): CharacterSlotView => {
     const itemId = equipment.equipment?.[slot] ?? null;
     if (equipment.equipment === null) {
       return { slot, label, itemName: null, text: `${label} · Waiting`, canUnequip: false };
@@ -70,18 +56,17 @@ export function characterPaneModel(
     if (!item) {
       throw new Error("Equipped item is missing from the content catalog.");
     }
-    const stats = itemDetailText(item);
     return {
       slot,
       label,
       itemName: item.name,
-      text: stats ? `${label} · ${item.name} (${stats})` : `${label} · ${item.name}`,
+      text: item.detail ? `${label} · ${item.name} (${item.detail})` : `${label} · ${item.name}`,
       canUnequip: equipment.canChangeEquipment,
     };
   });
   const totals: StatTotals | null = equipment.stats;
   const rows = [
-    ...STAT_LABELS.map(([stat, label]) => ({ label, value: totals ? String(totals[stat]) : "—" })),
+    ...(catalog?.attributeNames ?? []).map((label, index) => ({ label, value: totals ? String(totals[STAT_KEYS[index]!]) : "—" })),
     { label: "Health", value: viewer ? `${viewer.health} / ${viewer.maxHealth}` : "—" },
     { label: "Damage", value: viewer ? `${viewer.damage.min}–${viewer.damage.max}` : "—" },
   ];
@@ -106,9 +91,9 @@ export class CharacterPane {
   readonly #elements: CharacterElements;
   readonly #state: BagState;
   readonly #send: (command: WorldCommand, onSent: (sequence: number | null) => void) => void;
-  readonly #slotText: HTMLElement[];
-  readonly #unequip: HTMLButtonElement[];
-  readonly #values: HTMLElement[];
+  #slotText: HTMLElement[] = [];
+  #unequip: HTMLButtonElement[] = [];
+  #values: HTMLElement[] = [];
   #catalog: ContentCatalog | null = null;
   #viewer: ViewerState | null = null;
 
@@ -116,9 +101,27 @@ export class CharacterPane {
     this.#elements = elements;
     this.#state = state;
     this.#send = send;
+    elements.toggle.addEventListener("click", () => this.toggle());
+    elements.close.addEventListener("click", () => this.close());
+    elements.panel.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.close();
+      }
+    });
+    this.reset();
+  }
+
+  /** Takes the catalog and lays out its slots and stat rows. */
+  load(catalog: ContentCatalog): void {
+    this.#catalog = catalog;
+    const elements = this.#elements;
+    elements.slots.replaceChildren();
+    elements.stats.replaceChildren();
     this.#slotText = [];
     this.#unequip = [];
-    for (const [slot, label] of EQUIPMENT_SLOT_LABELS.entries()) {
+    for (const [slot, label] of catalog.equipmentSlots.entries()) {
       const row = document.createElement("li");
       row.className = "equipment-slot";
       row.dataset.slot = String(slot);
@@ -139,7 +142,7 @@ export class CharacterPane {
       this.#slotText.push(text);
       this.#unequip.push(button);
     }
-    this.#values = characterPaneModel(state, null, null).rows.map(({ label }) => {
+    this.#values = characterPaneModel(this.#state, null, catalog).rows.map(({ label }) => {
       const term = document.createElement("dt");
       term.textContent = label;
       const value = document.createElement("dd");
@@ -147,19 +150,8 @@ export class CharacterPane {
       elements.stats.append(term, value);
       return value;
     });
-    elements.toggle.addEventListener("click", () => this.toggle());
-    elements.close.addEventListener("click", () => this.close());
-    elements.panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        this.close();
-      }
-    });
-    this.reset();
+    this.render();
   }
-
-  load(catalog: ContentCatalog): void { this.#catalog = catalog; }
 
   /** Closes the pane and forgets the viewer; the shared bag cache is reset by its owner. */
   reset(snapshot: ZoneSnapshot | null = null): void {
@@ -212,8 +204,9 @@ export class CharacterPane {
       button.disabled = !view.canUnequip;
       button.setAttribute("aria-label", view.itemName ? `Unequip ${view.itemName}` : `Unequip ${view.label.toLowerCase()}`);
     }
-    for (const [index, row] of model.rows.entries()) {
-      setText(this.#values[index]!, row.value);
+    // The rows are laid out once the catalog names them.
+    for (const [index, value] of this.#values.entries()) {
+      setText(value, model.rows[index]?.value ?? "—");
     }
   }
 }

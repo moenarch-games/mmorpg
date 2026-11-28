@@ -1,8 +1,8 @@
-import { findEntity, TICK_HZ, type AuraState, type ResourceKind, type StrikeAim, type StrikeHeight, type StrikeSide, type ZoneSnapshot } from "../../replication";
+import { findEntity, TICK_HZ, type ResourceKind, type StrikeAim, type StrikeHeight, type StrikeSide, type ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
-import { artworkOf, auraPolarity, glyphOf } from "./ability-presentation";
-import { ActionBarCache, cooldownSeconds, resourceName, sweepDegrees, tooltipText, type SlotState } from "./ability-state";
-import { auraLabel, auraTimer, sortAuras } from "./aura-display";
+import { artworkOf, glyphOf } from "./ability-presentation";
+import { ActionBarCache, resourceName, sweepDegrees, tooltipText, type SlotState } from "./ability-state";
+import { panelViews, type AuraRow, type AuraRows } from "./panel-views";
 import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
@@ -265,7 +265,7 @@ export class ClassHud {
     this.#catalog = catalog;
     this.#latest = snapshot;
     this.#updateBar(snapshot, catalog);
-    this.#updatePlayer(snapshot, catalog);
+    this.#updatePlayer(snapshot);
     this.#updateTarget(snapshot, catalog);
     this.#updateCast(snapshot, catalog, now);
     this.#updateGuard(snapshot);
@@ -427,7 +427,7 @@ export class ClassHud {
     setData(button, "gcd", state.cooldown?.kind === "gcd" ? "true" : null);
     const degrees = state.cooldown ? sweepDegrees(state.cooldown.remaining, state.cooldown.total) : 0;
     setStyle(button, "--sweep", `${degrees.toFixed(1)}deg`);
-    const seconds = state.cooldown?.kind === "cooldown" ? cooldownSeconds(state.cooldown.remaining) : null;
+    const seconds = state.cooldown?.seconds ?? null;
     setText(slot.timer, seconds === null ? "" : String(seconds));
     setText(slot.unlock, state.learned ? "" : `Lv ${state.unlockLevel}`);
   }
@@ -499,7 +499,7 @@ export class ClassHud {
     }
   }
 
-  #updatePlayer(snapshot: ZoneSnapshot, catalog: ContentCatalog): void {
+  #updatePlayer(snapshot: ZoneSnapshot): void {
     const viewer = snapshot.viewer;
     const className = viewer.classChoice?.classId;
     setText(this.#player.name, `${className ? className[0]!.toUpperCase() + className.slice(1) : "Adventurer"} · Lv ${viewer.level}`);
@@ -512,7 +512,7 @@ export class ClassHud {
       this.#fillBar(this.#player.resource, resource.value, resource.max);
       setText(this.#player.resourceText, `${resourceName(resource.kind)} ${resource.value} / ${resource.max}`);
     }
-    this.#renderAuras(this.#player.buffs, this.#player.debuffs, snapshot.auras, catalog);
+    this.#renderAuras(this.#player.buffs, this.#player.debuffs, panelViews(snapshot).playerAuras);
   }
 
   #fillBar(fill: HTMLElement, value: number, max: number): void {
@@ -537,7 +537,7 @@ export class ClassHud {
     setStyle(frame.health, "--fill", `${percent}%`);
     frame.health.parentElement?.setAttribute("aria-valuenow", String(percent));
     setText(frame.healthText, record ? (record.flags.dead ? "Dead" : `${percent}%`) : "Out of sight");
-    this.#renderAuras(frame.buffs, frame.debuffs, snapshot.targetDetail.auras, catalog);
+    this.#renderAuras(frame.buffs, frame.debuffs, panelViews(snapshot).targetAuras);
     const cast = snapshot.targetDetail.cast;
     frame.cast.hidden = cast === null;
     if (cast) {
@@ -567,14 +567,14 @@ export class ClassHud {
     }
   }
 
-  #renderAuras(buffs: HTMLElement, debuffs: HTMLElement, auras: readonly AuraState[], catalog: ContentCatalog): void {
-    const sorted = sortAuras(auras);
-    this.#renderAuraRow(buffs, sorted.buffs, catalog);
-    this.#renderAuraRow(debuffs, sorted.debuffs, catalog);
+  /** A unit frame's auras as `mmorpg-client-model`'s `hud::aura_rows` orders and words them (#1280). */
+  #renderAuras(buffs: HTMLElement, debuffs: HTMLElement, rows: AuraRows): void {
+    this.#renderAuraRow(buffs, rows.buffs);
+    this.#renderAuraRow(debuffs, rows.debuffs);
   }
 
-  #renderAuraRow(container: HTMLElement, auras: readonly AuraState[], catalog: ContentCatalog): void {
-    const signature = auras.map((aura) => `${aura.ability}:${aura.kind}:${auraTimer(aura)}:${aura.amount}`).join("|");
+  #renderAuraRow(container: HTMLElement, auras: readonly AuraRow[]): void {
+    const signature = auras.map((aura) => `${aura.ability}:${aura.label}`).join("|");
     if (this.#auraSignatures.get(container) === signature) {
       return;
     }
@@ -583,14 +583,14 @@ export class ClassHud {
       const { glyph, accent } = glyphOf(aura.ability);
       const icon = document.createElement("span");
       icon.className = "aura-icon";
-      icon.dataset.polarity = auraPolarity(aura.kind);
+      icon.dataset.polarity = aura.polarity;
       icon.dataset.ability = String(aura.ability);
-      icon.title = auraLabel(aura, catalog);
+      icon.title = aura.label;
       icon.setAttribute("role", "img");
-      icon.setAttribute("aria-label", auraLabel(aura, catalog));
+      icon.setAttribute("aria-label", aura.label);
       const timer = document.createElement("span");
       timer.className = "aura-timer";
-      timer.textContent = auraTimer(aura);
+      timer.textContent = aura.timer;
       icon.append(glyphElement(glyph, accent), timer);
       return icon;
     }));

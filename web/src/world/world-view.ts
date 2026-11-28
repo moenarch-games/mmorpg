@@ -15,7 +15,8 @@ import { ingestedProjection, type EntityState, type QuestSheet, type StrikeHeigh
 import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, environmentAt } from "./environment";
 import { wasm } from "../wasm";
-import { Minimap, dispositionOf, type MinimapElements, type MinimapUnit } from "./minimap";
+import { Minimap, type MinimapElements, type MinimapUnit } from "./minimap";
+import { panelViews, type MinimapDotClass } from "./units/panel-views";
 import { MinimapPresenter } from "./minimap-presenter";
 import { Exploration, minimapExploration } from "./exploration";
 import type { MapSelf, WorldMap } from "./world-map";
@@ -496,6 +497,8 @@ export class WorldView {
   /** Smoke over a raided barn (#530); one permanent imported root. */
   readonly #raidSmoke = new RaidSmoke();
   readonly #raidSigns = new RaidSigns();
+  /** The latest projection's minimap dot classes by entity key (#1280). */
+  #dots: { projection: ZoneSnapshot | null; classes: ReadonlyMap<string, MinimapDotClass> } = { projection: null, classes: new Map() };
   /** The raided barn's roof centre and smoke span in metres, by objective (#530). */
   #raidRoof: { key: string; top: [number, number, number]; span: [number, number] } | null = null;
   /** The raid sites (#530, #1019): disturbance circles and aftermath aid task spots (#531), from the scenery. */
@@ -933,7 +936,6 @@ export class WorldView {
     this.#raidSites = world.scenery.raidSites;
     this.#raidPrep = world.scenery.raidPrep;
     this.#raidRoof = null;
-    this.#waystone.load(world.scenery.waystoneAt, world.scenery.waystones);
     this.#units = null;
     this.#occluders = occluders(world);
     this.#buildMs = performance.now() - started;
@@ -2177,6 +2179,7 @@ export class WorldView {
     this.#viewerAnimation = viewerModel ? { upper: [viewerModel.clip, viewerModel.time], lower: viewerModel.lower, layers: viewerModel.layers } : null;
     const projected: ProjectedUnit[] = [];
     const others: MinimapUnit[] = [];
+    const dots = this.#minimapDots(projection);
     const anchors = frame.anchors;
     anchors.clear();
     let self: FrameSelf | null = null;
@@ -2190,7 +2193,7 @@ export class WorldView {
         self = { focus: [unit.feet[0], unit.centreY, unit.feet[2]], x: unit.feet[0], feetY: unit.feet[1], z: unit.feet[2], facing: unit.yaw };
         this.#showArea(scenery.areaAt(entity.position[0], entity.position[2])?.name ?? this.#zoneName);
       } else {
-        others.push(this.#minimapUnit(entity, unitsPerMetre));
+        others.push(this.#minimapUnit(entity, unitsPerMetre, dots));
       }
     }
     frame.others = others;
@@ -2366,7 +2369,6 @@ export class WorldView {
   #hudStage(frame: WorldFrame): void {
     const { projection, now, self, view } = frame;
     const { scenery, catalog } = frame.world;
-    const { unitsPerMetre } = scenery.scenery;
     this.#combatHud.update(projection, now);
     this.#classHud.update(projection, catalog, now);
     this.#weaponMode.textContent = projection.viewer.weaponDrawn
@@ -2381,11 +2383,8 @@ export class WorldView {
     const cssSky = !this.#lighting.drawsSky;
     if (this.#elements.sky.hidden === cssSky) { this.#sky.show(cssSky); }
     if (cssSky) { this.#sky.update(this.#horizon(view.eye, view.target), frame.dayFraction); }
-    // A night raid's approximate disturbance area while its assault runs (#530).
-    const area = this.#raidSite(projection.entities[0]?.position)?.area ?? null;
-    const disturbance = area && (projection.raid?.phase ?? 0) > 0
-      ? { x: area.x / unitsPerMetre, z: area.z / unitsPerMetre, radius: area.radius / unitsPerMetre }
-      : null;
+    // A night raid's approximate disturbance area while its assault runs (#530), as `minimap::disturbance` places it.
+    const disturbance = panelViews(projection).disturbance;
     // Discovered landmarks and approximate quest areas (#983); the arena has neither.
     const exploration = this.#arena ? null : minimapExploration(this.#exploration.update(projection), self);
     this.#minimap.draw({ x: self.x, z: self.z }, this.#orbit.heading, self.facing, frame.others, disturbance, exploration);
@@ -2496,8 +2495,17 @@ export class WorldView {
     return this.#raidRoof;
   }
 
-  #minimapUnit(entity: EntityState, unitsPerMetre: number): MinimapUnit {
-    return { x: entity.position[0] / unitsPerMetre, z: entity.position[2] / unitsPerMetre, disposition: dispositionOf(entity) };
+  #minimapUnit(entity: EntityState, unitsPerMetre: number, dots: ReadonlyMap<string, MinimapDotClass>): MinimapUnit {
+    const dot = dots.get(entityKey({ kind: entity.kind, id: entity.entityId })) ?? (entity.flags.dead ? "dead" : "neutral");
+    return { x: entity.position[0] / unitsPerMetre, z: entity.position[2] / unitsPerMetre, dot };
+  }
+
+  /** Each projected unit's minimap dot class (`mmorpg-client-model`'s `minimap::dot_class`, #1280), once per projection. */
+  #minimapDots(projection: ZoneSnapshot): ReadonlyMap<string, MinimapDotClass> {
+    if (this.#dots.projection !== projection) {
+      this.#dots = { projection, classes: new Map(panelViews(projection).minimapDots.map(({ entity, class: dot }) => [entityKey(entity), dot])) };
+    }
+    return this.#dots.classes;
   }
 
   /** The horizon's height on screen as a fraction from the top, for the CSS sky. */

@@ -20,8 +20,7 @@ pub const LOOKOUT: CreatureId = CreatureId::new(1_802);
 /// Where the pair stand: a caster coming from the east meets them first.
 pub const PAIR_AT: [i32; 2] = [-57_000, -33_000];
 
-/// Yaw 16 384 faces east (+X).
-const EAST: u16 = 16_384;
+use crate::trig::facing::EAST;
 /// A short wander keeps the scouts in their formation.
 const WANDER: i32 = 100;
 

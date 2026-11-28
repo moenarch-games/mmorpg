@@ -14,9 +14,7 @@ use super::units::templates::MARSH_ADDER;
 /// The adders' creature spawn IDs.
 pub const SPAWN_IDS: std::ops::RangeInclusive<u32> = 3_120..=3_139;
 
-/// Yaw 0 faces south (+Z), 16 384 east (+X) and 32 768 north.
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
+use crate::trig::facing::{EAST, NORTH};
 /// An adder stays within 1.5 m of its coil.
 const WANDER: i32 = 150;
 

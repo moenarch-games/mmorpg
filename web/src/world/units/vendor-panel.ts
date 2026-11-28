@@ -1,8 +1,9 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ZoneSnapshot } from "../../replication";
-import type { ContentCatalog, ItemStats } from "../catalog";
+import type { ContentCatalog } from "../catalog";
 import type { BagState } from "./bag-state";
-import { nearestVendor, VendorState, type NearbyVendor } from "./vendor-state";
+import { nearestVendor, vendorSales, VendorState, type NearbyVendor } from "./vendor-state";
+import type { VendorSale } from "./panel-views";
 
 export type VendorElements = {
   panel: HTMLElement;
@@ -14,14 +15,6 @@ export type VendorElements = {
   sales: HTMLElement;
   feedback: HTMLElement;
 };
-
-const STATS: readonly [keyof ItemStats, string][] = [
-  ["stamina", "Stamina"], ["strength", "Strength"], ["agility", "Agility"], ["intellect", "Intellect"],
-];
-
-function statsText(stats: ItemStats): string {
-  return STATS.filter(([stat]) => stats[stat] > 0).map(([stat, label]) => `+${stats[stat]} ${label}`).join(", ");
-}
 
 function setText(element: HTMLElement, text: string): void {
   if (element.textContent !== text) {
@@ -82,6 +75,7 @@ export class VendorPanel {
   readonly #sales: ActionList;
   #catalog: ContentCatalog | null = null;
   #vendor: NearbyVendor | null = null;
+  #saleCache: { slots: BagState["slots"]; sales: readonly VendorSale[] } | null = null;
 
   constructor(elements: VendorElements, bag: BagState, send: (command: WorldCommand, onSent: (sequence: number | null) => void) => void, onOpen: () => void) {
     this.#elements = elements;
@@ -181,34 +175,29 @@ export class VendorPanel {
       if (!item) {
         throw new Error("Vendor offer item is missing from the content catalog.");
       }
-      const stats = statsText(item.stats);
-      // A smith's recipe (#917) names what it takes from the bag.
-      const materials = offer.materials.map((material) => `${material.quantity} ${catalog?.items.get(material.item)?.name ?? "?"}`).join(", ");
+      // The row (with a smith's recipe's materials, #917) is `mmorpg-client-model`'s `items::offer_text` (#1280).
       return {
         key: index,
-        text: `${item.name} · ${offer.price} copper${materials ? ` + ${materials}` : ""}${stats ? ` (${stats})` : ""}`,
+        text: offer.text,
         action: "Buy",
         label: `Buy ${item.name} for ${offer.price} copper`,
         enabled: canTrade && offer.price <= this.#state.copper,
       };
     }));
-    const slots = vendor ? this.#bag.slots ?? [] : [];
-    this.#sales.render(slots.flatMap((stack, slot) => {
-      if (!stack) {
-        return [];
+    const sales = vendor ? this.#salesOf(this.#bag) : [];
+    this.#sales.render(sales.map((sale) => ({ key: sale.slot, text: sale.text, action: "Sell", label: sale.label, enabled: canTrade })));
+  }
+
+  /** The bag's sales (`mmorpg-client-model`'s `items::sale`, #1280), read once per bag sheet. */
+  #salesOf(bag: BagState): readonly VendorSale[] {
+    if (this.#saleCache?.slots !== bag.slots) {
+      for (const stack of bag.slots ?? []) {
+        if (stack && !this.#catalog?.items.has(stack.itemId)) {
+          throw new Error("Projected item is missing from the content catalog.");
+        }
       }
-      const item = catalog?.items.get(stack.itemId);
-      if (!item) {
-        throw new Error("Projected item is missing from the content catalog.");
-      }
-      const value = item.sellPrice * stack.quantity;
-      return [{
-        key: slot,
-        text: `${item.name} × ${stack.quantity} · ${value} copper`,
-        action: "Sell",
-        label: `Sell ${item.name} × ${stack.quantity} for ${value} copper`,
-        enabled: canTrade,
-      }];
-    }));
+      this.#saleCache = { slots: bag.slots, sales: vendorSales(bag.slots) };
+    }
+    return this.#saleCache.sales;
   }
 }

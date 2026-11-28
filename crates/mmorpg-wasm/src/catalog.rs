@@ -6,7 +6,8 @@
 //! tables of the hosted [`ZoneContent`] as compact JSON: creature templates
 //! (name, family, behaviour, levels, elite, body size, breakable prop kind), NPCs (name, role,
 //! level, a private-home resident's night greeting), areas (name), items (name, stack limit, equipment slot, stats,
-//! sale value), vendors (NPC and priced offers), classes (name, resource),
+//! sale value, and the detail line `mmorpg-client-model`'s `items` words, #1280), equipment slot titles and
+//! attribute names, vendors (NPC and priced offers with their row text), classes (name, resource),
 //! abilities (name, user, unlock level, cost, cast time, cooldown, aura) and
 //! quests (name, text, giver, ender, prerequisite, objectives, rewards). It carries the content
 //! revision (a content hash), so a client can refuse a catalog of other content. Combat numbers,
@@ -15,6 +16,7 @@
 use std::sync::OnceLock;
 use strum::VariantArray;
 
+use mmorpg_client_model::items;
 use mmorpg_core::ZoneContent;
 use serde::Serialize;
 
@@ -32,6 +34,10 @@ pub struct CatalogExport {
     pub npcs: Vec<NpcExport>,
     pub areas: Vec<AreaNameExport>,
     pub items: Vec<ItemExport>,
+    /// Equipment slot titles by wire index (0 main hand … 5 feet).
+    pub equipment_slots: Vec<&'static str>,
+    /// The attribute names in the order item stats and stat totals list them.
+    pub attribute_names: [&'static str; 4],
     /// Class choices by wire value (0 Warden, 1 Ranger, 2 Arcanist).
     pub classes: Vec<ClassExport>,
     pub abilities: Vec<AbilityExport>,
@@ -164,6 +170,8 @@ pub struct VendorOfferExport {
     pub price: u32,
     /// `[item, quantity]` pairs taken per unit; empty for a plain offer.
     pub materials: Vec<[u32; 2]>,
+    /// The offer's row: name, price, materials and the item's detail.
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -244,6 +252,8 @@ pub struct ItemExport {
     pub sell_price: u32,
     /// A find's quality, tactical trait and source (#918), `null` for a standard item.
     pub find: Option<String>,
+    /// Its attributes and find joined, empty for a plain bag item.
+    pub detail: String,
 }
 
 /// The attributes an item adds while equipped.
@@ -276,8 +286,14 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                 },
                 sell_price: mmorpg_core::sell_price(item.id),
                 find: mmorpg_core::find_text(item.id),
+                detail: items::item_detail(item.id),
             })
             .collect(),
+        equipment_slots: mmorpg_core::EquipmentSlot::VARIANTS
+            .iter()
+            .map(|slot| items::slot_title(*slot))
+            .collect(),
+        attribute_names: items::ATTRIBUTE_NAMES,
         vendors: content
             .vendors()
             .iter()
@@ -294,6 +310,7 @@ pub fn catalog(content: &ZoneContent) -> CatalogExport {
                             .iter()
                             .map(|&(item, quantity)| [item.get(), u32::from(quantity)])
                             .collect(),
+                        text: items::offer_text(offer),
                     })
                     .collect(),
             })
@@ -430,8 +447,17 @@ mod tests {
                 _ => 1,
             };
             let sell_price = mmorpg_core::sell_price(mmorpg_core::ItemId::new(id));
-            json!({"id": id, "name": name, "maxStack": max_stack, "slot": slot, "stats": stats, "sellPrice": sell_price, "find": mmorpg_core::find_text(mmorpg_core::ItemId::new(id))})
+            let item = mmorpg_core::ItemId::new(id);
+            json!({"id": id, "name": name, "maxStack": max_stack, "slot": slot, "stats": stats, "sellPrice": sell_price, "find": mmorpg_core::find_text(item), "detail": items::item_detail(item)})
         };
+        assert_eq!(
+            value["equipmentSlots"],
+            json!(["Main hand", "Off hand", "Head", "Chest", "Legs", "Feet"])
+        );
+        assert_eq!(
+            value["attributeNames"],
+            json!(["Stamina", "Strength", "Agility", "Intellect"])
+        );
         assert_eq!(
             value["items"],
             json!([
@@ -661,8 +687,26 @@ mod tests {
         );
         assert_eq!(quests[11]["choices"], json!([18]));
         let offer = |item, price| json!({"item": item, "price": price, "materials": []});
+        // Each offer's row is `mmorpg-client-model`'s wording of the content offer.
+        let mut vendors = value["vendors"].clone();
+        for (vendor, (_, stock)) in vendors
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(content.vendors())
+        {
+            for (exported, offer) in vendor["offers"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .zip(stock.offers())
+            {
+                let text = exported.as_object_mut().unwrap().remove("text").unwrap();
+                assert_eq!(text, json!(items::offer_text(offer)));
+            }
+        }
         assert_eq!(
-            value["vendors"],
+            vendors,
             json!([
                 {"npc": 3, "offers": [
                     offer(2, 5), offer(9, 12), offer(8, 12), offer(7, 15),

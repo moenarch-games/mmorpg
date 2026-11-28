@@ -8,12 +8,17 @@ import {
   type RuntimeEventTargetLike,
   type VisibilityEventTargetLike,
 } from "@moritzbrantner/input-bindings-web";
+import sharedCatalog from "../../../content/settings/input-actions.json";
 import type { HeldIntent } from "../world/orbit-camera";
 
 // MMORPG owns this catalog, its defaults and its contexts. `input-bindings` only normalizes
 // keyboard/gamepad input, resolves it through the context stack and retires held actions;
 // what an action does (and the per-tick command stream) stays in the client and the zone.
+// The actions both clients bind (ids, titles, contexts, keys, pad buttons and stick thresholds)
+// are `content/settings/input-actions.json`, in `input-bindings`' own registry format, which the
+// native client reads too (#1284); this file adds only the browser's screen and menu actions.
 
+/** Every action id the browser binds: the shared catalog's, then the browser-only ones. */
 export const GAME_ACTIONS = [
   "move.forward",
   "move.back",
@@ -103,32 +108,27 @@ export function contextStack(screen: ControlScreen): ContextLayer[] {
   ];
 }
 
-/** The catalog version stored with each portable binding profile. */
-export const GAME_ACTION_REGISTRY_VERSION = 1;
+/** The catalog version stored with each portable binding profile, shared with the native client. */
+export const GAME_ACTION_REGISTRY_VERSION: number = sharedCatalog.registryVersion;
+
+/**
+ * The shared pad guard rule (#156, owner answer #156.Q1 A): a pad holding `triggerButton` past
+ * `triggerThreshold` % aims the guard with `stickAxis`, high or low past `deflection` %.
+ */
+export const GUARD_LANE_RULE: {
+  readonly triggerButton: number;
+  readonly triggerThreshold: number;
+  readonly stickAxis: number;
+  readonly deflection: number;
+} = sharedCatalog.guardLane;
+
+/** The actions both clients bind; the JSON import widens its string literals, the runtime validates it. */
+export const SHARED_ACTIONS = sharedCatalog.actions as unknown as ActionRegistry["actions"];
 
 const key = (code: string): InputStroke => ({ key: { kind: "physical", value: code } });
-/** Shift + `code`: the second action-bar row (#294). */
-const shifted = (code: string): InputStroke => ({ key: { kind: "physical", value: code }, modifiers: { shift: true } });
-const stick = (axis: number, direction: "positive" | "negative"): InputStroke => ({
-  device: "gamepadAxis",
-  axis,
-  direction,
-  threshold: 50,
-  deadzone: 20,
-});
 const button = (index: number): InputStroke => ({ device: "gamepadButton", button: index, threshold: 50 });
 
-const ACTION_CATEGORIES: Readonly<Record<string, string>> = {
-  move: "Movement",
-  target: "Targeting",
-  combat: "Combat",
-  ability: "Abilities",
-  minions: "Combat",
-  wheel: "Interface",
-  player: "Character",
-  ui: "Interface",
-};
-
+/** A browser-only screen or menu action; every one is an interface action. */
 function action(
   id: GameAction,
   title: string,
@@ -138,7 +138,7 @@ function action(
   return {
     id,
     title,
-    categoryPath: [ACTION_CATEGORIES[id.split(".")[0] ?? ""] ?? "Other"],
+    categoryPath: ["Interface"],
     repeatPolicy: "never",
     allowedDevices: ["keyboard", "gamepad"],
     defaults: strokes.map((stroke, index): Binding => ({
@@ -152,79 +152,18 @@ function action(
 }
 
 /**
- * Standard-mapping gamepad: left stick moves, A jumps, B rolls (#516; it closes a panel or cancels a cast while one is open or running), X attacks,
- * Y releases, and the d-pad (up, right, down, left) uses ability slots 1–4.
+ * The shared catalog (standard-mapping gamepad: left stick moves, A jumps, B rolls, #516, and
+ * cancels a cast while one runs, X swings, Y releases, the d-pad uses slots 1–4, L3 and RT open the
+ * character pane and quest log), then the browser's own screen and menu actions.
  */
 export const GAME_ACTION_REGISTRY: ActionRegistry = {
   actions: [
-    action("move.forward", "Run forward", "gameplay", [key("KeyW"), key("ArrowUp"), stick(1, "negative")]),
-    action("move.back", "Backpedal", "gameplay", [key("KeyS"), key("ArrowDown"), stick(1, "positive")]),
-    action("move.strafeLeft", "Strafe left", "gameplay", [
-      key("KeyA"),
-      key("ArrowLeft"),
-      stick(0, "negative"),
-    ]),
-    action("move.strafeRight", "Strafe right", "gameplay", [
-      key("KeyD"),
-      key("ArrowRight"),
-      stick(0, "positive"),
-    ]),
-    action("move.jump", "Jump", "gameplay", [key("Space"), button(0)]),
-    // Tap to dodge-roll along the held movement, or straight back standing still (#516).
-    action("move.roll", "Dodge roll", "gameplay", [key("KeyF"), button(1)]),
-    // Held while swimming (#274): Space or A ascends (held Jump), X or R3 descends.
-    action("move.descend", "Swim down (hold)", "gameplay", [key("KeyX"), button(11)]),
-    action("target.next", "Target next", "gameplay", [key("Tab"), button(5)]),
-    action("combat.toggleWeapon", "Draw / sheathe weapon", "gameplay", [key("KeyH"), button(4)]),
-    // One swing where the character faces (#517): Q or gamepad X (#636: the left mouse button selects).
-    action("combat.swing", "Swing weapon", "combat", [key("KeyQ"), button(2)]),
-    action("ability.slot1", "Ability 1", "combat", [key("Digit1"), button(12)]),
-    action("ability.slot2", "Ability 2", "combat", [key("Digit2"), button(15)]),
-    action("ability.slot3", "Ability 3", "combat", [key("Digit3"), button(13)]),
-    action("ability.slot4", "Ability 4", "combat", [key("Digit4"), button(14)]),
-    // Slots 5–10 are keyboard-only by default; the d-pad holds slots 1–4.
-    action("ability.slot5", "Ability 5", "combat", [key("Digit5")]),
-    action("ability.slot6", "Ability 6", "combat", [key("Digit6")]),
-    action("ability.slot7", "Ability 7", "combat", [key("Digit7")]),
-    action("ability.slot8", "Ability 8", "combat", [key("Digit8")]),
-    action("ability.slot9", "Ability 9", "combat", [key("Digit9")]),
-    action("ability.slot10", "Ability 10", "combat", [key("Digit0")]),
-    // The second row, Shift+1 to Shift+0 (#294, Atlas 5.2.i294).
-    action("ability.slot11", "Ability 11 (Shift row)", "combat", [shifted("Digit1")]),
-    action("ability.slot12", "Ability 12 (Shift row)", "combat", [shifted("Digit2")]),
-    action("ability.slot13", "Ability 13 (Shift row)", "combat", [shifted("Digit3")]),
-    action("ability.slot14", "Ability 14 (Shift row)", "combat", [shifted("Digit4")]),
-    action("ability.slot15", "Ability 15 (Shift row)", "combat", [shifted("Digit5")]),
-    action("ability.slot16", "Ability 16 (Shift row)", "combat", [shifted("Digit6")]),
-    action("ability.slot17", "Ability 17 (Shift row)", "combat", [shifted("Digit7")]),
-    action("ability.slot18", "Ability 18 (Shift row)", "combat", [shifted("Digit8")]),
-    action("ability.slot19", "Ability 19 (Shift row)", "combat", [shifted("Digit9")]),
-    action("ability.slot20", "Ability 20 (Shift row)", "combat", [shifted("Digit0")]),
-    // Hold, aim with the pointer, release (#154): the Warden's directed Heroic Strike.
-    action("combat.directedStrike", "Directed Heroic Strike (hold, aim, release)", "combat", [key("KeyG")]),
-    // Hold to raise the Warden's shield; pointer up/down (or the right stick, holding LT) picks the lane (#156).
-    action("combat.guard", "Shield guard (hold, aim up/down)", "combat", [key("KeyZ"), button(6)]),
-    // Right click cancels a cast in the world view (#636); Escape opens the game menu instead.
-    action("combat.cancelCast", "Cancel cast", "casting", [button(1)]),
-    // Radial wheels (#653): hold, flick toward an action and release, or tap and left-click; they
-    // open only with Settings → Wheels → Radial wheels on.
-    action("wheel.fixed", "Fixed wheel (hold, flick, release)", "gameplay", [key("KeyT")]),
-    action("wheel.context", "Context wheel (hold, flick, release)", "gameplay", [key("KeyK")]),
-    // A Necromancer's group orders for all its minions (#295, Atlas 5.2.84); the zone checks them.
-    action("minions.attack", "Minions: attack target", "gameplay", [key("KeyY")]),
-    action("minions.defend", "Minions: defend here", "gameplay", [key("KeyU")]),
-    action("minions.follow", "Minions: follow", "gameplay", [key("KeyI")]),
-    action("minions.retreat", "Minions: retreat", "gameplay", [key("KeyO")]),
-    action("player.releaseSpirit", "Release spirit", "gameplay", [key("KeyR"), button(3)]),
-    action("ui.toggleBags", "Toggle bags", "gameplay", [key("KeyB"), button(8)]),
-    action("ui.toggleCharacter", "Toggle character pane", "gameplay", [key("KeyC")]),
+    ...SHARED_ACTIONS,
     action("ui.toggleVendor", "Toggle vendor", "gameplay", [key("KeyV")]),
     // Interact (#158; E since #515): talk to the selected NPC, or open or close a door in reach.
     // E remains an explicit interaction attempt in combat so the drawn-weapon hint is actionable.
+    // The native client interacts through its own `world.interact`.
     action("ui.talk", "Interact: talk, or open or close a door", "gameplay", [key("KeyE"), button(9)]),
-    action("ui.toggleQuestLog", "Toggle quest log", "gameplay", [key("KeyL")]),
-    action("ui.toggleWorldMap", "Toggle world map", "gameplay", [key("KeyM")]),
-    action("ui.openChat", "Chat", "gameplay", [key("Enter"), key("NumpadEnter")]),
     action("ui.closePanel", "Close panel", "panels", [key("Escape"), button(1)]),
     // Escape opens the game menu (#636): an open panel claims it first, and the menu holds the
     // return to characters. The touch menu still returns directly.

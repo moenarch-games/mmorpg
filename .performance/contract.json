@@ -1282,6 +1282,22 @@
           "growth": [{ "dimension": "frames", "bound": "constant" }]
         }
       ]
+    },
+    {
+      "id": "panel-views",
+      "description": "Browser panel views (#1280): the minimap's dot classes and raid disturbance, the unit frames' auras, the waystone panel and the depths loot rows come from mmorpg-client-model through one mmorpg-wasm panelViews call per projection, shared by every panel and frame that shows the projection (Atlas 7.1.i1256). Measured over WaystonePanel, DepthsLootPanel and the shared reader by web/tests/support/work/panel-views.ts: asserted by web/tests/panel-views.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": { "frames": { "description": "frames that show each projection, each asking every panel" } },
+      "scalePoints": [{ "frames": 1 }, { "frames": 4 }, { "frames": 16 }],
+      "metrics": [
+        {
+          "name": "largest_projection_panel_reads",
+          "unit": "calls",
+          "signal": "operation-count",
+          "notes": "panelViews calls into WASM one projection made (five readers a frame would make five per frame without the shared cache).",
+          "budget": { "max": 1 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        }
+      ]
     }
   ]
 }

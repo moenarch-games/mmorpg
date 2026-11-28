@@ -104,8 +104,6 @@ describe("scenery provider and local world", () => {
     gatherNodes: () => new Int32Array(),
     veinSlots: () => new Uint32Array(),
     raidPrep: () => new Int32Array(),
-    waystoneAt: () => 0,
-    waystoneNames: () => [],
   });
 
   test("registers every ordinary placed kit of the shared inventory alike (#683)", () => {

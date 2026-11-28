@@ -21,8 +21,7 @@ pub const PARTNER: CreatureId = CreatureId::new(2_802);
 /// Where the signaler stands: a player coming from the east meets him first.
 pub const SIGNALER_AT: [i32; 2] = [-62_000, -33_000];
 
-/// Yaw 16 384 faces east (+X).
-const EAST: u16 = 16_384;
+use crate::trig::facing::EAST;
 /// A short wander keeps the post in its places.
 const WANDER: i32 = 150;
 

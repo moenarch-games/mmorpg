@@ -1064,28 +1064,11 @@ impl Presentation {
         now.saturating_duration_since(self.latest_received) > Duration::from_secs(1)
     }
 
-    /// Tab targeting: the nearest living attackable creature in the latest
-    /// projection; while one of them is selected, the next one outward.
+    /// Tab targeting in the latest projection
+    /// (`mmorpg_client_model::targeting::next_tab_target`).
     #[must_use]
     pub fn next_tab_target(&self) -> Option<EntityRef> {
-        let latest = self.latest()?;
-        let viewer = latest.entities.first()?;
-        let mut candidates: Vec<_> = latest
-            .entities
-            .iter()
-            .filter(|entity| entity.kind == EntityKind::Creature && entity.flags.attackable)
-            .map(|entity| {
-                let dx = i64::from(entity.position[0] - viewer.position[0]);
-                let dz = i64::from(entity.position[2] - viewer.position[2]);
-                (dx * dx + dz * dz, entity.entity())
-            })
-            .collect();
-        candidates.sort_unstable();
-        let current = candidates
-            .iter()
-            .position(|(_, entity)| Some(*entity) == latest.viewer.target);
-        let next = current.map_or(0, |index| (index + 1) % candidates.len());
-        candidates.get(next).map(|(_, entity)| *entity)
+        mmorpg_client_model::targeting::next_tab_target(self.latest()?)
     }
 
     /// A unit's display name from the zone content; "you" for the viewer

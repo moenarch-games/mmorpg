@@ -76,8 +76,6 @@ function arenaScenery(local: LocalWorld, presentation: ArenaPresentation): Scene
     areaAt: () => null,
     raidSites: [],
     raidPrep: null,
-    waystoneAt: () => 0,
-    waystones: [],
     reliefAt: () => 0,
     regionModels: () => [],
   };

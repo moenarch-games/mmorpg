@@ -98,12 +98,7 @@ impl Piece {
 
     /// The XZ half extents after its turn.
     fn turned(&self) -> [i32; 3] {
-        let [x, y, z] = self.half_extents();
-        if self.quarters.is_multiple_of(2) {
-            [x, y, z]
-        } else {
-            [z, y, x]
-        }
+        crate::trig::turn_extents(self.half_extents(), self.quarters)
     }
 
     /// Where its feet rest: on level ground at its height, on a slope at its lowest corner,

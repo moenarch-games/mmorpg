@@ -111,10 +111,13 @@ pub enum SlotCooldownKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
+#[tsify(missing_as_null)]
 pub struct SlotCooldown {
     pub kind: SlotCooldownKind,
     pub remaining: u16,
     pub total: u16,
+    /// The whole seconds the slot shows, `null` below 2 s and for the global cooldown (#1280).
+    pub seconds: Option<u16>,
 }
 
 /// What one action-bar slot shows; the zone answers every use itself.
@@ -151,6 +154,7 @@ impl From<hud::SlotState> for SlotState {
                 },
                 remaining: cooldown.remaining,
                 total: cooldown.total,
+                seconds: cooldown.shown_seconds(),
             }),
         }
     }

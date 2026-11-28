@@ -76,10 +76,7 @@ fn no_colliders() -> Vec<StaticCollider> {
     Vec::new()
 }
 
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, NORTH, SOUTH, WEST};
 
 const LOW: [u8; 2] = [1, 2];
 const TOP: [u8; 2] = [2, 2];

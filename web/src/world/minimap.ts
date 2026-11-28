@@ -1,10 +1,10 @@
-import type { EntityState } from "../replication";
 import { mixColor, shadeColor, type EnvironmentStyle } from "./environment";
 import {
   minimapFrame, paintMinimapLayers, rasterizeMinimapTerrain,
   type MinimapFrame, type MinimapLayers, type MinimapTerrainSource, type MinimapVectors,
 } from "./minimap-raster";
-import type { Color, Prop, Scenery } from "./scenery";
+import type { Color, Scenery } from "./scenery";
+import { minimapRules, type MinimapDotClass } from "./units/panel-views";
 
 /**
  * The circular minimap. Scenery becomes a top-down map (terrain colours with
@@ -12,6 +12,11 @@ import type { Color, Prop, Scenery } from "./scenery";
  * `Minimap` paints that image every frame rotated so the camera heading
  * points up (or north up), with the player's arrow in the middle and other
  * units as dots. `MinimapPresenter` decides which image it shows.
+ *
+ * Its rules are `mmorpg-client-model`'s `minimap` (#1280), as the native client draws them: the zoom radii, building
+ * kinds and landmark range are read once per page (`minimapRules`), each unit's dot class and the raid disturbance
+ * once per projection (`panelViews`). Only the per-frame projection runs here, held to the shared `minimap::offset`
+ * by its test, since it runs for every dot every frame (Atlas 7.1.i1256).
  */
 export type { MinimapLayers } from "./minimap-raster";
 
@@ -23,18 +28,11 @@ const COARSE_PIXELS_PER_METRE = 1;
 const COARSE_HALF_SIZE_METRES = 140;
 /** How far the player walks before the coarse map is re-centred. */
 export const COARSE_MARGIN_METRES = 40;
-/** Zoom levels: metres from the centre to the minimap's rim. */
-export const MINIMAP_RADII_METRES = [30, 45, 70, 100] as const;
 
 function channels(color: Color): [number, number, number] {
   const value = Number.parseInt(color.slice(1), 16);
   return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
 }
-
-const BUILDING_KINDS = new Set<Prop["kind"]>([
-  "keep", "inn", "house", "smithy", "barn", "farmhouse", "windmill", "well", "palisade", "gate-post", "tent",
-  "mine-entrance", "waystone", "fence", "cliff",
-]);
 
 /** The whole mapped rectangle at full resolution. */
 export function fullMinimapFrame(): MinimapFrame {
@@ -89,6 +87,7 @@ export function buildMinimapVectors(scenery: Scenery, style: EnvironmentStyle): 
   const { min, max } = MINIMAP_BOUNDS_METRES;
   const metres = (units: number) => units / unitsPerMetre;
   const { palette } = style;
+  const buildingKinds: ReadonlySet<string> = new Set(minimapRules().buildingKinds);
   const buildings: MinimapVectors["buildings"] = [];
   const trees: MinimapVectors["trees"] = [];
   for (const prop of scenery.props) {
@@ -102,7 +101,7 @@ export function buildMinimapVectors(scenery: Scenery, style: EnvironmentStyle): 
       trees.push({ center: [x, z], radius: 1.6 * (prop.collider ? 1 : prop.scale), color: shadeColor(color, 0.85) });
       continue;
     }
-    if (!BUILDING_KINDS.has(prop.kind)) {
+    if (!buildingKinds.has(prop.kind)) {
       continue;
     }
     const hx = metres(prop.halfExtents[0]);
@@ -138,7 +137,8 @@ export function buildMinimapVectors(scenery: Scenery, style: EnvironmentStyle): 
  * Screen offset in minimap pixels (x right, y down) of a world offset
  * `(dx, dz)` in metres. North (−Z) is up when `headingUp` is false;
  * otherwise the camera heading `heading` (radians, 0 toward +Z, increasing
- * toward +X) points up.
+ * toward +X) points up. The per-frame form of `mmorpg-client-model`'s `minimap::offset`; `tests/minimap.test.ts`
+ * holds the two equal.
  */
 export function minimapOffset(dx: number, dz: number, heading: number, headingUp: boolean, pixelsPerMetre: number): [number, number] {
   // North-up maps world X to screen right and world Z to screen down.
@@ -165,26 +165,15 @@ export function clampToRim(offset: readonly [number, number], radius: number): [
   return [(offset[0] / length) * radius, (offset[1] / length) * radius];
 }
 
-export type Disposition = "hostile" | "neutral" | "friendly" | "player";
-
-export const DOT_COLORS: Readonly<Record<Disposition, Color>> = {
+/** Each dot class's colour, as the native minimap's. */
+export const DOT_COLORS: Readonly<Record<MinimapDotClass, Color>> = {
   hostile: "#e5483d",
   neutral: "#f0cf4a",
   friendly: "#5ccf6c",
   player: "#4ea8ff",
+  minion: "#d8d0b4",
+  dead: "#6e6e6e",
 };
-
-/**
- * The dot colour class of a projected unit: players apart, creatures and
- * NPCs by the disposition their placeholder bodies are coloured by
- * (hostile or neutral creatures by their flags, friendly NPCs).
- */
-export function dispositionOf(entity: EntityState): Disposition {
-  if (entity.kind !== "creature") {
-    return entity.kind === "player" ? "player" : "friendly";
-  }
-  return entity.flags.hostile ? "hostile" : "neutral";
-}
 
 export type MinimapElements = {
   root: HTMLElement;
@@ -194,7 +183,7 @@ export type MinimapElements = {
   northUp: HTMLButtonElement;
 };
 
-export type MinimapUnit = { x: number; z: number; disposition: Disposition };
+export type MinimapUnit = { x: number; z: number; dot: MinimapDotClass };
 
 /** An approximate disturbance area (#530): a night raid's circle, centre and radius in metres. */
 export type MinimapDisturbance = { x: number; z: number; radius: number };
@@ -229,7 +218,8 @@ export function paintMinimapImage(layers: MinimapLayers): MinimapImage {
 export class Minimap {
   readonly #elements: MinimapElements;
   #image: MinimapImage | null = null;
-  #zoom = 1;
+  /** The zoom level, an index into the shared radii; the shared default until the first draw or press. */
+  #zoom: number | null = null;
   #headingUp = true;
 
   constructor(elements: MinimapElements) {
@@ -240,13 +230,12 @@ export class Minimap {
       // keyboard users still reach the buttons with Tab.
       button.addEventListener("mousedown", (event) => event.preventDefault());
     }
-    elements.zoomIn.addEventListener("click", () => this.#setZoom(this.#zoom - 1));
-    elements.zoomOut.addEventListener("click", () => this.#setZoom(this.#zoom + 1));
+    elements.zoomIn.addEventListener("click", () => this.#setZoom(this.#level() - 1));
+    elements.zoomOut.addEventListener("click", () => this.#setZoom(this.#level() + 1));
     elements.northUp.addEventListener("click", () => {
       this.#headingUp = !this.#headingUp;
       elements.northUp.setAttribute("aria-pressed", String(!this.#headingUp));
     });
-    this.#setZoom(this.#zoom);
   }
 
   /** Shows `image` from the next draw on, or none (markers only) while there is no map yet. */
@@ -255,13 +244,23 @@ export class Minimap {
   }
 
   get radiusMetres(): number {
-    return MINIMAP_RADII_METRES[this.#zoom] ?? MINIMAP_RADII_METRES[1];
+    const { radiiMetres } = minimapRules();
+    return radiiMetres[this.#level()] ?? radiiMetres[0]!;
+  }
+
+  /** The zoom level, taking the shared default (which needs `mmorpg-wasm`) on first use. */
+  #level(): number {
+    if (this.#zoom === null) {
+      this.#setZoom(minimapRules().defaultZoom);
+    }
+    return this.#zoom!;
   }
 
   #setZoom(zoom: number): void {
-    this.#zoom = Math.min(MINIMAP_RADII_METRES.length - 1, Math.max(0, zoom));
+    const levels = minimapRules().radiiMetres.length;
+    this.#zoom = Math.min(levels - 1, Math.max(0, zoom));
     this.#elements.zoomIn.disabled = this.#zoom === 0;
-    this.#elements.zoomOut.disabled = this.#zoom === MINIMAP_RADII_METRES.length - 1;
+    this.#elements.zoomOut.disabled = this.#zoom === levels - 1;
   }
 
   /** Draws the map around `self` (metres); `heading` is the camera yaw, `facing` the character's. */
@@ -316,7 +315,7 @@ export class Minimap {
     // Units as dots, the player's arrow on top.
     for (const unit of units) {
       const [dx, dy] = clampToRim(minimapOffset(unit.x - self.x, unit.z - self.z, heading, this.#headingUp, pixelsPerMetre), radius - 5 * ratio);
-      context.fillStyle = DOT_COLORS[unit.disposition];
+      context.fillStyle = DOT_COLORS[unit.dot];
       context.strokeStyle = "rgb(0 0 0 / 60%)";
       context.lineWidth = ratio;
       context.beginPath();

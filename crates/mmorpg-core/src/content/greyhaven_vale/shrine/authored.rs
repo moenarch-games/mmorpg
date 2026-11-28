@@ -31,13 +31,8 @@ pub const ROOM_CLEAR: i32 = 500;
 /// The 4 m terrain grid the plaza, the cave and the kit share.
 pub const CELL: i32 = 400;
 
-/// Yaws (65 536 steps per turn, 0 keeping local +Z on +Z) of the kit modules' fronts.
-pub mod facing {
-    pub const SOUTH: u16 = 0;
-    pub const EAST: u16 = 16_384;
-    pub const NORTH: u16 = 32_768;
-    pub const WEST: u16 = 49_152;
-}
+/// Yaws of the kit modules' fronts.
+pub use crate::trig::facing;
 
 /// The open shrine plaza, `(min, max)` XZ, flattened but not roofed.
 pub const PLAZA: ([i32; 2], [i32; 2]) = ([4_400, -6_000], [5_600, -4_800]);
@@ -115,23 +110,15 @@ pub fn cave_water() -> WaterVolume {
 
 /// A box over `(min, max)` XZ from `base` up `height`.
 const fn block(id: u32, min: [i32; 2], max: [i32; 2], base: i32, height: i32) -> StaticCollider {
-    let half = [(max[0] - min[0]) / 2, height / 2, (max[1] - min[1]) / 2];
-    StaticCollider {
-        id,
-        position: [min[0] + half[0], base + half[1], min[1] + half[2]],
-        half_extents: half,
-    }
+    StaticCollider::over_footprint(id, min, max, base, height)
 }
 
 /// A module-frame box (`centre`/`half` along local X and Z) turned by `yaw` about `origin`;
 /// yaws are quarter turns.
 fn turned(origin: [i32; 2], yaw: u16, centre: [i32; 2], half: [i32; 2]) -> ([i32; 2], [i32; 2]) {
-    let ([cx, cz], [hx, hz]) = match yaw {
-        facing::EAST => ([centre[1], -centre[0]], [half[1], half[0]]),
-        facing::NORTH => ([-centre[0], -centre[1]], half),
-        facing::WEST => ([-centre[1], centre[0]], [half[1], half[0]]),
-        _ => (centre, half),
-    };
+    let quarters = crate::trig::nearest_quarter(yaw);
+    let [cx, cz] = crate::trig::turn_quarters(centre, quarters);
+    let [hx, _, hz] = crate::trig::turn_extents([half[0], 0, half[1]], quarters);
     let [x, z] = [origin[0] + cx, origin[1] + cz];
     ([x - hx, z - hz], [x + hx, z + hz])
 }

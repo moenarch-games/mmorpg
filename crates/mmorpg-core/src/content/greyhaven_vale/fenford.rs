@@ -85,9 +85,7 @@ const WHEEL_HALF: [i32; 3] = [70, 70, 20];
 const BARRICADE_AT: [i32; 2] = [109_300, 28_250];
 const BARRICADE_HALF: [i32; 3] = [200, 60, 25];
 
-/// Yaw 0 faces +Z (south), 32 768 north, 16 384 east and 49 152 west.
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{NORTH, WEST};
 /// Aldo faces down the road to the ford (north-east).
 const TO_THE_FORD: u16 = 24_576;
 

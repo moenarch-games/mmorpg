@@ -33,6 +33,7 @@ pub mod catalog;
 pub mod client_model;
 pub mod constants;
 pub mod front_end;
+pub mod panels;
 pub mod party;
 pub mod projections;
 pub mod scenery;
@@ -790,23 +791,6 @@ pub fn scenery() -> String {
 #[wasm_bindgen(js_name = catalog)]
 pub fn content_catalog() -> String {
     catalog::hosted_catalog_json().to_owned()
-}
-
-/// The hosted content's waystone (#145) within reach of `(x, z)` units, 0 for none.
-#[wasm_bindgen(js_name = waystoneAt)]
-#[must_use]
-pub fn waystone_at(x: i32, z: i32) -> u32 {
-    mmorpg_core::waystone_within_reach(&host::hosted_content(), [x, z]).map_or(0, |id| id.get())
-}
-
-/// Names of the waystone network (#145) in ID order: waystone `index + 1`.
-#[wasm_bindgen(js_name = waystoneNames)]
-#[must_use]
-pub fn waystone_names() -> Vec<String> {
-    mmorpg_core::WAYSTONES
-        .iter()
-        .map(|site| site.name.to_owned())
-        .collect()
 }
 
 /// Each raid site's approximate disturbance circle (#530) as `[x, z, radius]` in units, the

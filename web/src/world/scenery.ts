@@ -3,7 +3,6 @@ import type { KitBundle, KitLodsHandle, PlacedKitSource } from "./placed-kit";
 import type { LayeredSurface } from "./layered-surface";
 import type { DrawnKits, StaticSceneContent } from "./scenery-nodes";
 import type { UnitPresenterHandle } from "./unit-presenter";
-import type { WaystoneSite } from "./units/waystone-panel";
 import { prepSpots, type RaidPrepSpots } from "./raid-prep";
 import { raidSites, type RaidSiteSpots } from "./raid-aid";
 /**
@@ -132,10 +131,6 @@ export type SceneryContent = StaticSceneContent & {
   veinSlots(): Uint32Array;
   /** The night raid target's forewarning spots (#532): tracks `[x, z]`, lookout NPC, then `[x, z]` per brace; empty without one. */
   raidPrep(): Int32Array;
-  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
-  waystoneAt(x: number, z: number): number;
-  /** Names of the waystone network in ID order (ID = index + 1). */
-  waystoneNames(): string[];
   reliefAt(x: number, z: number): number;
   /** Per area, the imported unit models its creatures use (#240), as JSON. */
   regionModels(): string;
@@ -226,10 +221,6 @@ export type SceneryProvider = {
   readonly raidSites: readonly RaidSiteSpots[];
   /** The night raid target's forewarning spots in units (#532): the tracks, the lookout guard and the brace spots. */
   readonly raidPrep: RaidPrepSpots | null;
-  /** The waystone (#145) within reach of `(x, z)` units, 0 for none. */
-  waystoneAt(x: number, z: number): number;
-  /** The waystone network in ID order. */
-  readonly waystones: readonly WaystoneSite[];
   /** Presentation relief at `(x, z)` in units; units are drawn raised by it. */
   reliefAt(x: number, z: number): number;
   /** The imported unit models the creatures of area `id` use (#240). */
@@ -566,10 +557,6 @@ export function createSceneryProvider(content: SceneryContent): SceneryProvider 
     },
     raidSites: raidSites(content.raidArea(), content.raidAid()),
     raidPrep: prepSpots(content.raidPrep()),
-    waystoneAt(x, z) {
-      return content.waystoneAt(Math.round(x), Math.round(z));
-    },
-    waystones: content.waystoneNames().map((name, index) => ({ id: index + 1, name })),
     areaAt(x, z) {
       const id = content.areaAt(Math.round(x), Math.round(z));
       if (id === undefined) {

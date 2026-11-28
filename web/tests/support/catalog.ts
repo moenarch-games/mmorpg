@@ -3,10 +3,10 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
   return {
     format: "mmorpg.catalog",
     items: [
-      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null },
-      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2, find: null },
-      { id: 9, name: "Worn Boots", maxStack: 1, slot: "feet", stats: { stamina: 1, strength: 0, agility: 2, intellect: 0 }, sellPrice: 3, find: null },
-      { id: 10, name: "Wolf Pelt", maxStack: 10, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null },
+      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null, detail: "" },
+      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2, find: null, detail: "+2 Strength, +2 Agility" },
+      { id: 9, name: "Worn Boots", maxStack: 1, slot: "feet", stats: { stamina: 1, strength: 0, agility: 2, intellect: 0 }, sellPrice: 3, find: null, detail: "+1 Stamina, +2 Agility" },
+      { id: 10, name: "Wolf Pelt", maxStack: 10, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null, detail: "" },
     ],
     contentRevision: revision,
     creatureTemplates: [
@@ -26,7 +26,9 @@ export function catalogJson(revision = "3"): Record<string, unknown> {
       { id: 1, name: "ranger", resource: "focus" },
       { id: 2, name: "arcanist", resource: "mana" },
     ],
-    vendors: [{ npc: 3, offers: [{ item: 2, price: 9, materials: [] }] }],
+    vendors: [{ npc: 3, offers: [{ item: 2, price: 9, materials: [], text: "Worn Dagger · 9 copper (+2 Strength, +2 Agility)" }] }],
+    equipmentSlots: ["Main hand", "Off hand", "Head", "Chest", "Legs", "Feet"],
+    attributeNames: ["Stamina", "Strength", "Agility", "Intellect"],
     quests: [
       {
         id: 1, name: "Trouble in the Woods", text: "Slay six wolves.", giver: 1, ender: 1, prerequisite: null,

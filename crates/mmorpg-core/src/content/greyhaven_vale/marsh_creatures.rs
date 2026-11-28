@@ -27,11 +27,7 @@ const TOP: [u8; 2] = [2, 2];
 /// A Mirefin Lurker's only level.
 const LURKER: [u8; 2] = [3, 3];
 
-/// Yaw 0 faces +Z (south), 32 768 north, 16 384 east and 49 152 west.
-const SOUTH: u16 = 0;
-const EAST: u16 = 16_384;
-const NORTH: u16 = 32_768;
-const WEST: u16 = 49_152;
+use crate::trig::facing::{EAST, NORTH, SOUTH, WEST};
 
 type Row = super::units::SpawnRow;
 

@@ -39,7 +39,7 @@ pub const FEN_CACHE: u32 = 3;
 
 /// Yaw 0 faces +Z (south), 32 768 north, 16 384 east and 49 152 west.
 const NORTH_EAST: u16 = 24_576;
-const WEST: u16 = 49_152;
+use crate::trig::facing::WEST;
 const WEST_SOUTH_WEST: u16 = 40_000;
 
 /// `(spawn id, template, feet XZ, facing, levels, wander radius)`.

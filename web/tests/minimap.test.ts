@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ENVIRONMENT } from "../src/world/environment";
 import {
-  Minimap, buildMinimapLayers, buildMinimapVectors, clampToRim, coarseMinimapFrame, dispositionOf, fullMinimapFrame, minimapOffset, minimapRotation,
+  Minimap, buildMinimapLayers, buildMinimapVectors, clampToRim, coarseMinimapFrame, DOT_COLORS, fullMinimapFrame, minimapOffset, minimapRotation,
   minimapTerrainSource, type MinimapElements, type MinimapImage,
 } from "../src/world/minimap";
 import { MinimapPresenter, type MinimapPresenterPlatform, type MinimapWorker } from "../src/world/minimap-presenter";
@@ -9,7 +9,9 @@ import { minimapFrame, rasterizeMinimapTerrain, runMinimapRaster, type MinimapRa
 import type { Scenery } from "../src/world/scenery";
 import type { EntityState } from "../src/replication";
 import { fixtureScenery } from "./support/scenery-fixture";
-import { NO_FLAGS, playerEntity } from "./support/snapshots";
+import { NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
+import { panelViews } from "../src/world/units/panel-views";
+import { wasm } from "../src/wasm";
 
 /** The rasterization before #527 moved it: the map must keep these exact bytes. */
 function previousTerrainRaster(scenery: Scenery): Uint8ClampedArray {
@@ -138,12 +140,29 @@ describe("minimap projection", () => {
     expect(y).toBeCloseTo(8, 9);
   });
 
-  test("dots take the unit's disposition: players, hostile or neutral creatures, friendly NPCs", () => {
-    const creature = (hostile: boolean): EntityState => ({ ...playerEntity(9, [0, 45, 0]), kind: "creature", appearance: 1, flags: { ...NO_FLAGS, hostile } });
-    expect(dispositionOf(playerEntity(2, [0, 90, 0]))).toBe("player");
-    expect(dispositionOf(creature(true))).toBe("hostile");
-    expect(dispositionOf(creature(false))).toBe("neutral");
-    expect(dispositionOf({ ...playerEntity(6, [0, 90, 0]), kind: "npc", appearance: 6 })).toBe("friendly");
+  test("the page's per-frame projection is the shared minimap::offset (#1280)", () => {
+    for (const heading of [0, 0.7, Math.PI / 2, 2.5, Math.PI, 5.9]) {
+      for (const headingUp of [true, false]) {
+        const [x, y] = minimapOffset(3, -4, heading, headingUp, 1.5);
+        const [sx, sy] = wasm.minimapOffset(3, -4, heading, headingUp, 1.5);
+        expect(x).toBeCloseTo(sx!, 4);
+        expect(y).toBeCloseTo(sy!, 4);
+      }
+    }
+  });
+
+  test("dots take the shared class: players, friendly NPCs, hostile or neutral creatures, minions and the dead", () => {
+    const creature = (id: number, flags: Partial<EntityState["flags"]>): EntityState => ({ ...playerEntity(id, [0, 45, 0]), kind: "creature", appearance: 1, flags: { ...NO_FLAGS, ...flags } });
+    const views = panelViews(testSnapshot({
+      zoneId: 1, tick: 1n, contentRevision: 1n, acknowledgedSequence: 0, viewerId: 1,
+      entities: [
+        playerEntity(1, [0, 90, 0]), playerEntity(2, [0, 90, 0]), creature(3, { hostile: true }), creature(4, {}),
+        { ...playerEntity(6, [0, 90, 0]), kind: "npc", appearance: 6 }, { ...playerEntity(7, [0, 90, 0]), kind: "minion" },
+        creature(8, { hostile: true, dead: true }),
+      ],
+    }));
+    expect(views.minimapDots.map((dot) => dot.class)).toEqual(["player", "hostile", "neutral", "friendly", "minion", "dead"]);
+    expect(Object.keys(DOT_COLORS).sort()).toEqual(["dead", "friendly", "hostile", "minion", "neutral", "player"]);
   });
 });
 
