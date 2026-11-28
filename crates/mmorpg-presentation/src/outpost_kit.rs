@@ -6,10 +6,13 @@
 //! clients place them once. While a client does not draw them (its bundle has not loaded or
 //! failed), the static scene keeps the buildings' procedural blockouts
 //! ([`crate::Motion::Fallback`]). Presentation only.
-use mmorpg_core::UNITS_PER_METRE;
 use mmorpg_scenery::Scenery;
 
-use crate::{Kit, batching::matrix, world_dressing};
+use crate::{
+    Kit,
+    geometry::{matrix, metres},
+    world_dressing,
+};
 
 /// One drawn kit module.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -21,10 +24,6 @@ pub struct Part {
     /// The building's wear in [0, 1] ([`world_dressing::Placed::wear`]), which the browser blends
     /// from the kit's wear masks; the native client draws the pristine modules.
     pub wear: f32,
-}
-
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
 }
 
 /// The kit entries the clients load, sorted and once each.

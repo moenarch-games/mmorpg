@@ -9,13 +9,14 @@
 //! while the viewer stands inside the room. Presentation only: the zone's door bodies and
 //! building colliders decide everything.
 use mmorpg_core::{
-    DoorId, UNITS_PER_METRE,
+    DoorId,
     greyhaven_vale::{cottages, inn, marshal_house},
 };
 use mmorpg_scenery::Scenery;
 
 use crate::{
-    batching::matrix,
+    geometry::matrix,
+    geometry::metres,
     geometry::{compose, ry, translate},
 };
 
@@ -268,10 +269,6 @@ pub struct WalkIn {
     /// Whether the viewer stood inside at the last [`Self::frame`]: a cottage lights its lamp
     /// only then, since the light passes through its walls.
     occupied: bool,
-}
-
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
 }
 
 impl WalkIn {

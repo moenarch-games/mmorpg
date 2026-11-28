@@ -10,6 +10,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::lod::numbers;
 use serde_json::Value;
 
 /// A traversal clip's `humanoid-clips` motion data (asset-tooling #416).
@@ -69,19 +70,13 @@ pub struct CastMarks {
 
 impl CastMarks {
     fn parse(marks: &Value) -> Self {
-        let span = |key: &str| {
-            let span = marks[key].as_array().filter(|span| span.len() == 2)?;
-            Some([span[0].as_f64()?, span[1].as_f64()?])
-        };
+        let span = |key: &str| numbers::<2>(&marks[key]);
         let hand = match marks["channelJoint"].as_str() {
             Some("hand_l") => Some(super::imported::Hand::Left),
             Some("hand_r") => Some(super::imported::Hand::Right),
             _ => None,
         };
-        let point = marks["channelPoint"]
-            .as_array()
-            .filter(|point| point.len() == 3)
-            .and_then(|point| Some([point[0].as_f64()?, point[1].as_f64()?, point[2].as_f64()?]));
+        let point = numbers::<3>(&marks["channelPoint"]);
         let pulse = |index: usize| marks["pulseSeconds"][index].as_f64();
         Self {
             release: marks["releaseSeconds"].as_f64(),
@@ -123,10 +118,7 @@ impl StrikeMarks {
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|span| {
-                    let span = span.as_array().filter(|span| span.len() == 2)?;
-                    Some([span[0].as_f64()?, span[1].as_f64()?])
-                })
+                .filter_map(numbers::<2>)
                 .collect()
         };
         Self {
@@ -135,10 +127,7 @@ impl StrikeMarks {
             recovery_start: marks["recoveryStart"].as_f64(),
             land: marks["landSeconds"].as_f64(),
             reach: marks["reachMeters"].as_f64(),
-            tip: marks["tipAt"]
-                .as_array()
-                .filter(|tip| tip.len() == 3)
-                .and_then(|tip| Some([tip[0].as_f64()?, tip[1].as_f64()?, tip[2].as_f64()?])),
+            tip: numbers::<3>(&marks["tipAt"]),
             plants: [plants("l"), plants("r")],
         }
     }

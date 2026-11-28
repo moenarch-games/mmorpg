@@ -194,22 +194,14 @@ pub fn waystone(id: WaystoneId) -> Option<&'static WaystoneSite> {
     WAYSTONES.iter().find(|site| site.id == id)
 }
 
-fn xz_distance_squared(a: [i32; 2], b: [i32; 2]) -> i64 {
-    let dx = i64::from(a[0]) - i64::from(b[0]);
-    let dz = i64::from(a[1]) - i64::from(b[1]);
-    dx * dx + dz * dz
-}
-
 /// The stone bound in `content` within reach of the XZ point `at`, if any. Clients use it
 /// to offer the waystone panel; the zone decides.
 #[must_use]
 pub fn waystone_within_reach(content: &crate::ZoneContent, at: [i32; 2]) -> Option<WaystoneId> {
     let reach = WAYSTONE_DISCOVERY_UNITS * WAYSTONE_DISCOVERY_UNITS;
-    content
-        .waystones()
-        .iter()
-        .copied()
-        .find(|&id| waystone(id).is_some_and(|site| xz_distance_squared(site.stone, at) <= reach))
+    content.waystones().iter().copied().find(|&id| {
+        waystone(id).is_some_and(|site| crate::reach::xz_distance_squared(site.stone, at) <= reach)
+    })
 }
 
 impl ZoneSimulation {
@@ -260,7 +252,7 @@ impl ZoneSimulation {
         if self.in_handoff_corridor(player_id) {
             return Ok(Some((ErrorCode::HandoffCorridor, None)));
         }
-        if player.combat_timer > 0 || self.threatened_players().contains(&player_id) {
+        if self.player_in_combat(player_id) {
             return Ok(Some((ErrorCode::InCombat, None)));
         }
         let unlocked = &player.waystones;

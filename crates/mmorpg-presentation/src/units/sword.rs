@@ -10,7 +10,7 @@ use super::{
     imported::Layer,
     kit::{Frame, Q, qa, qm, qr},
 };
-use crate::geometry::{V, norm};
+use crate::geometry::{V, add, dot, length, norm, sub};
 
 /// An accepted swing. Its clock, heading and aim come from `SwingBegan`, never local input.
 #[derive(Clone, Copy, Debug)]
@@ -170,18 +170,6 @@ pub fn angle(aim: StrikeAim, progress: f64) -> f64 {
     centre + direction * (2. * progress.clamp(0., 1.) - 1.) * half
 }
 
-fn sub(a: V, b: V) -> V {
-    std::array::from_fn(|i| a[i] - b[i])
-}
-fn add(a: V, b: V) -> V {
-    std::array::from_fn(|i| a[i] + b[i])
-}
-fn dot(a: V, b: V) -> f64 {
-    a.iter().zip(b).map(|(a, b)| a * b).sum()
-}
-fn length(v: V) -> f64 {
-    dot(v, v).sqrt()
-}
 fn conjugate([x, y, z, w]: Q) -> Q {
     [-x, -y, -z, w]
 }

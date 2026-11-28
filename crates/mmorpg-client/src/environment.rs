@@ -3,6 +3,9 @@
 //! No simulation clock is read here; the hour comes from `mmorpg_presentation::clock` and the
 //! curves from `mmorpg_presentation::lighting`.
 
+// `mix` is the browser's quantised sRGB palette interpolation, so both clients fog alike.
+use mmorpg_presentation::colour::{mix, rgb};
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lighting {
     /// Hours since midnight on the zone's clock; render-engine's `DayCycle` places the sun
@@ -32,20 +35,6 @@ pub struct PointLight {
     pub color: [f32; 3],
     pub lumens: f32,
     pub range: f32,
-}
-
-// Match the browser's quantized sRGB palette interpolation, so both clients fog alike.
-fn mix(from: u32, to: u32, amount: f64) -> u32 {
-    let t = amount.clamp(0.0, 1.0);
-    [16, 8, 0].into_iter().fold(0, |color, shift| {
-        let a = f64::from((from >> shift) & 255);
-        let b = f64::from((to >> shift) & 255);
-        color | (((a + (b - a) * t).round() as u32) << shift)
-    })
-}
-
-pub(crate) fn rgb(color: u32) -> [f32; 3] {
-    [16, 8, 0].map(|shift| ((color >> shift) & 255) as f32 / 255.0)
 }
 
 impl Lighting {

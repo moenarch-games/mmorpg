@@ -34,7 +34,7 @@ use std::sync::Arc;
 use crate::creature::Life;
 use crate::events::push_event;
 use crate::physics::Vec3i;
-use crate::routine::distance;
+use crate::reach::xz_distance;
 use crate::snapshot::CreatureAi;
 use crate::{
     CreatureId, EntityRef, ErrorCode, NpcId, NpcPlacement, QuestObjective, ZoneError, ZoneEvent,
@@ -248,7 +248,7 @@ impl ZoneSimulation {
         let here = [centre[0].round() as i32, centre[2].round() as i32];
         let goal = cart.position;
         let (dx, dz) = crate::ai::offset(here, goal);
-        if distance(here, goal) <= i64::from(STRIKE_STOP_UNITS) {
+        if xz_distance(here, goal) <= i64::from(STRIKE_STOP_UNITS) {
             return Ok(Some(([0, 0], crate::trig::yaw_from_vector(dx, dz))));
         }
         let toward = self
@@ -310,7 +310,7 @@ impl ZoneSimulation {
                     continue;
                 }
                 let at = self.unit_position(EntityRef::Creature(raider.creature))?;
-                if distance([at[0], at[2]], cart) > i64::from(STRIKE_REACH_UNITS) {
+                if xz_distance([at[0], at[2]], cart) > i64::from(STRIKE_REACH_UNITS) {
                     continue;
                 }
                 halted = true;
@@ -371,7 +371,7 @@ impl ZoneSimulation {
                     continue;
                 };
                 let feet = self.player_position(player)?;
-                if distance([feet.x, feet.z], at) <= i64::from(crossing.radius) {
+                if xz_distance([feet.x, feet.z], at) <= i64::from(crossing.radius) {
                     self.complete_ready(player, objective);
                 }
             }

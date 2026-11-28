@@ -32,9 +32,26 @@ struct CachedThreat {
     players: Arc<BTreeSet<PlayerId>>,
 }
 
+/// Whether `player_id` is in combat as the zone counts it (#1253): lately fighting, or on a
+/// threat table. `threatened` is [`ZoneSimulation::threatened_players`], derived once per pass.
+pub(crate) fn in_combat(
+    player: &crate::zone::PlayerState,
+    player_id: PlayerId,
+    threatened: &BTreeSet<PlayerId>,
+) -> bool {
+    player.combat_timer > 0 || threatened.contains(&player_id)
+}
+
 impl ZoneSimulation {
     /// Players on any living creature's threat table, themselves or through a minion (#295).
     /// Derived once per unchanged creature/minion state and shared by every caller (#1006).
+    /// Whether `player_id` is present and in combat; see [`in_combat`].
+    pub(crate) fn player_in_combat(&self, player_id: PlayerId) -> bool {
+        self.players
+            .get(&player_id)
+            .is_some_and(|player| in_combat(player, player_id, &self.threatened_players()))
+    }
+
     pub(crate) fn threatened_players(&self) -> Arc<BTreeSet<PlayerId>> {
         let creatures = self.creatures.revision();
         let minions = self.minions.revision();

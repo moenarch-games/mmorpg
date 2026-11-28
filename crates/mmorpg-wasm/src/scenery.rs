@@ -814,7 +814,7 @@ mod tests {
         assert_eq!(value["propKinds"][0], "keep");
         assert_eq!(value["propKinds"][13], "tree-pine");
         assert_eq!(value["biomes"][6]["name"], "plaza");
-        assert_eq!(value["biomes"][6]["color"], "#96886e");
+        assert_eq!(value["biomes"][6]["color"], "#8e7e61");
         // Stillwater Lake, then the wetlands' lake and pools (#426).
         assert_eq!(
             value["water"][0],

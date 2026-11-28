@@ -20,7 +20,8 @@ use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 
 use crate::{
     Cull, Kit,
-    batching::matrix,
+    geometry::matrix,
+    geometry::metres,
     geometry::{compose, ry, scale, translate},
     world_dressing,
 };
@@ -65,10 +66,6 @@ pub const ENTRIES: [&str; 8] = [
 ];
 
 pub use crate::lod::{Lods, Placement, Shown};
-
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
-}
 
 /// Whether the bundle draws `p` (the procedural model is its fallback): every tree and bush,
 /// and every rock that is not climbing rock, whose worn handholds (#512) stay on the

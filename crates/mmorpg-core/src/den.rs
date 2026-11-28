@@ -19,9 +19,10 @@
 
 use std::sync::Arc;
 
-use crate::ai::{distance_squared, offset, steer};
+use crate::ai::{offset, steer};
 use crate::entity::body_id;
 use crate::physics::Vec3i;
+use crate::reach::xz_distance_squared;
 use crate::snapshot::CreatureAi;
 use crate::trig::yaw_from_vector;
 use crate::zone::physics_error;
@@ -139,8 +140,8 @@ impl ZoneSimulation {
         den.prey
             .iter()
             .filter_map(|&prey| self.idle_alive(prey).map(|at| (prey, at)))
-            .filter(|&(_, at)| distance_squared(spot, at) <= i64::from(HUNT_RADIUS_UNITS).pow(2))
-            .min_by_key(|&(prey, at)| (distance_squared(spot, at), prey))
+            .filter(|&(_, at)| crate::reach::within_xz(spot, at, HUNT_RADIUS_UNITS))
+            .min_by_key(|&(prey, at)| (xz_distance_squared(spot, at), prey))
     }
 
     /// Step 2 for an idle pack wolf or hunted animal (#912): its velocity and facing, held for
@@ -162,7 +163,7 @@ impl ZoneSimulation {
                 ),
                 None => {
                     let home = at(den.anchor(self.tick).0, slot);
-                    if distance_squared(here, home) <= i64::from(wander_radius).pow(2) {
+                    if crate::reach::within_xz(here, home, wander_radius) {
                         return None;
                     }
                     (home, 0, crate::CREATURE_WALK_SPEED_SUBUNITS_PER_TICK)
@@ -184,8 +185,8 @@ impl ZoneSimulation {
             .pack
             .iter()
             .filter_map(|&wolf| self.idle_alive(wolf))
-            .filter(|&at| distance_squared(here, at) <= i64::from(FLEE_RADIUS_UNITS).pow(2))
-            .min_by_key(|&at| distance_squared(here, at))?;
+            .filter(|&at| crate::reach::within_xz(here, at, FLEE_RADIUS_UNITS))
+            .min_by_key(|&at| xz_distance_squared(here, at))?;
         let (dx, dz) = offset(chaser, here);
         let (dx, dz) = if (dx, dz) == (0, 0) { (0, 1) } else { (dx, dz) };
         Some((

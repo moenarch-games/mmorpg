@@ -10,11 +10,12 @@
 //! the geometry.
 use std::collections::BTreeSet;
 
-use mmorpg_core::{Platform, PlatformId, Ramp, RampRise, UNITS_PER_METRE, ZoneContent};
+use mmorpg_core::{Platform, PlatformId, Ramp, RampRise, ZoneContent};
 use serde_json::Value;
 
 use crate::{
-    batching::matrix,
+    geometry::matrix,
+    geometry::metres,
     geometry::{compose, ry, translate},
     lod::{self, EntryLods, Lods, Placed},
 };
@@ -227,10 +228,6 @@ impl Descriptor {
         dressing.lods = lods;
         dressing
     }
-}
-
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
 }
 
 /// A static piece, placed once.

@@ -1226,6 +1226,17 @@ impl ZoneSimulation {
         player_id: PlayerId,
         npc: NpcId,
     ) -> Result<bool, ZoneError> {
+        self.npc_within_reach(player_id, npc, QUEST_REACH_UNITS)
+    }
+
+    /// Whether the player's feet are within `reach` units of `npc`'s and the NPC is in sight:
+    /// the one rule quest givers and vendors are reached by (#1253).
+    pub(crate) fn npc_within_reach(
+        &self,
+        player_id: PlayerId,
+        npc: NpcId,
+        reach: i32,
+    ) -> Result<bool, ZoneError> {
         // A confronted NPC (#1019) is out of the world while its foe stands, and a departed one
         // out of this character's.
         let Some(feet) = self
@@ -1235,12 +1246,7 @@ impl ZoneSimulation {
             return Ok(false);
         };
         let from = self.player_position(player_id)?;
-        // i128 keeps the squared distance exact for any recovered i32 position.
-        let [dx, dz] = [
-            i128::from(from.x) - i128::from(feet[0]),
-            i128::from(from.z) - i128::from(feet[1]),
-        ];
-        Ok(dx * dx + dz * dz <= i128::from(QUEST_REACH_UNITS).pow(2)
+        Ok(crate::reach::within_xz([from.x, from.z], feet, reach)
             && self.npc_in_sight(player_id, npc)?)
     }
 

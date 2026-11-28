@@ -11,12 +11,13 @@ use crate::physics::Vec3i;
 use sim_combat::swing;
 
 use crate::action::authored::Step;
-use crate::ai::{creature_reach, distance_squared};
+use crate::ai::creature_reach;
 use crate::creature::Life;
 use crate::creature_store::Activity;
 use crate::entity::body_id;
 use crate::events::push_event;
 use crate::guard::GuardOutcome;
+use crate::reach::xz_distance_squared;
 use crate::snapshot::{CreatureAi, PlayerIntent};
 use crate::unit::{
     COMBAT_LINGER_TICKS, CORPSE_TICKS, REGEN_DELAY_TICKS, REGEN_INTERVAL_TICKS, REGEN_PERCENT,
@@ -536,10 +537,11 @@ impl ZoneSimulation {
                 self.unit_position(target)?
             }
         };
-        Ok(
-            distance_squared([center.x, center.z], [position[0], position[2]])
-                <= i64::from(INTEREST_RADIUS_UNITS).pow(2),
-        )
+        Ok(crate::reach::within_xz(
+            [center.x, center.z],
+            [position[0], position[2]],
+            INTEREST_RADIUS_UNITS,
+        ))
     }
 
     /// Where a released spirit stands: the graveyard, or the first spot on rings around it
@@ -559,7 +561,7 @@ impl ZoneSimulation {
         }
         let clear = |[x, z]: [i32; 2]| {
             others.iter().all(|other| {
-                distance_squared([x, z], *other) >= i64::from(spacing) * i64::from(spacing)
+                xz_distance_squared([x, z], *other) >= i64::from(spacing) * i64::from(spacing)
             })
         };
         let rings = (1..=8).flat_map(|ring: i32| {
@@ -1204,7 +1206,7 @@ impl ZoneSimulation {
         let to = self.unit_position(target)?;
         let reach = i64::from(creature_reach(target) + slack);
         Ok(
-            distance_squared([from.x, from.z], [to[0], to[2]]) <= reach * reach
+            xz_distance_squared([from.x, from.z], [to[0], to[2]]) <= reach * reach
                 && !self.combat_blocked(source, target),
         )
     }
@@ -1707,8 +1709,8 @@ impl ZoneSimulation {
             if !player.is_alive() {
                 continue;
             }
+            let in_combat = crate::threat_cache::in_combat(player, *player_id, &threatened);
             if let Some(choice) = player.class {
-                let in_combat = player.combat_timer > 0 || threatened.contains(player_id);
                 player
                     .resource
                     .advance(choice.class.resource(), player.level, in_combat);
@@ -1716,10 +1718,7 @@ impl ZoneSimulation {
             let max_health = player.max_health();
             // Calm time only counts while there is health to regain, so a
             // resting, healthy player's state does not change.
-            if player.combat_timer > 0
-                || threatened.contains(player_id)
-                || player.health >= max_health
-            {
+            if in_combat || player.health >= max_health {
                 player.calm_ticks = 0;
                 continue;
             }

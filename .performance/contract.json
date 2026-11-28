@@ -1093,6 +1093,74 @@
       ]
     },
     {
+      "id": "scene-matrix-frame",
+      "description": "Browser scene matrices (#1257): a frame walks the scene's world matrices once for all of its render passes (the lighting's own frame asked again), an ambient animal's subtree is recomputed only in a frame it was posed or moved, and its skinned meshes share one skeleton, whose bone texture uploads only after a pose. Measured over HeldMatrices and onceAcrossPasses by web/tests/support/work/scene-matrix-frame.ts: asserted by web/tests/held-matrices.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": {
+        "placed": { "description": "ambient animals placed, five skinned meshes each" },
+        "posed": { "description": "animals posed (a sampled clip) each frame" }
+      },
+      "scalePoints": [
+        { "placed": 16, "posed": 4 },
+        { "placed": 64, "posed": 4 },
+        { "placed": 256, "posed": 4 },
+        { "placed": 64, "posed": 1 },
+        { "placed": 64, "posed": 2 }
+      ],
+      "metrics": [
+        {
+          "name": "largest_frame_subtrees_recomputed",
+          "unit": "subtrees",
+          "signal": "operation-count",
+          "notes": "Animal subtrees whose world matrices one warm frame recomputed: the posed ones (every animal, every frame, before #1257).",
+          "budget": { "max": 4 },
+          "growth": [
+            { "dimension": "placed", "bound": "constant" },
+            { "dimension": "posed", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "largest_frame_skeleton_updates",
+          "unit": "updates",
+          "signal": "operation-count",
+          "notes": "Bone matrix recomputations, each a bone texture upload, of one warm frame over three passes drawing every skin: one per posed animal (one per drawn skinned mesh before #1257).",
+          "budget": { "max": 4 },
+          "growth": [
+            { "dimension": "placed", "bound": "constant" },
+            { "dimension": "posed", "bound": "linear" }
+          ]
+        },
+        {
+          "name": "largest_frame_scene_walks",
+          "unit": "walks",
+          "signal": "operation-count",
+          "notes": "Walks of the whole scene's world matrices in one frame of three passes (two before #1257).",
+          "budget": { "max": 1 }
+        },
+        {
+          "name": "skeletons_per_animal",
+          "unit": "skeletons",
+          "signal": "operation-count",
+          "notes": "Distinct skeletons of an animal's skinned meshes bound to the same joints and inverses (one per mesh before #1257).",
+          "budget": { "max": 1 }
+        }
+      ]
+    },
+    {
+      "id": "projection-rules",
+      "description": "Browser client rules over a projection (#1257): the action bar, chat log, combat text, quest views and the other rules the page hands each tick's projection view read the decoded projection its session's store kept, instead of deserialising the page object again (thousands of calls into the page per rule and tick). Measured through the real WASM module by web/tests/support/work/projection-rules.ts: asserted by web/tests/projection-rules.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": { "ticks": { "description": "projections one session ingests, each view read by three rules" } },
+      "scalePoints": [{ "ticks": 16 }, { "ticks": 32 }, { "ticks": 64 }],
+      "metrics": [
+        {
+          "name": "view_deserialisations",
+          "unit": "projections",
+          "signal": "operation-count",
+          "notes": "Projections the rules deserialised from page objects (one per rule and tick before #1257).",
+          "budget": { "max": 0 }
+        }
+      ]
+    },
+    {
       "id": "sun-shadow-casters",
       "description": "Browser sun shadows (#1083): a camera walking and turning through Greyhaven redraws at most two of the three sun cascades a frame (the far two take turns, three-lighting cascadeUpdateIntervals), a skinned unit's shadow proxy draws a simplified share of its body's triangles in each cascade, and the placed kits keep off-screen casters whose shadow reaches the view (#1038) for a bounded share more placements. Measured without a GPU by web/tests/support/work/sun-shadow-casters.ts: asserted by web/tests/shadow-lod.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
       "dimensions": { "frames": { "description": "frames of a fixed camera walk (6 m/s, a quarter turn every four seconds) after the first" } },

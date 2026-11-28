@@ -273,6 +273,7 @@ impl AudioCues {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::metres_f32;
     use mmorpg_core::{AbilityId, CreatureId, EntityFlags, EntityKind, ZoneId};
 
     fn unit(kind: EntityKind, id: u32) -> EntitySnapshot {
@@ -328,7 +329,7 @@ mod tests {
     const BRUTE: EntityRef = EntityRef::Creature(CreatureId::new(7));
 
     fn centre(e: &EntitySnapshot) -> [f32; 3] {
-        [e.position[0] as f32 / 100., 1., 0.]
+        [metres_f32(e.position[0]), 1., 0.]
     }
 
     fn both() -> Vec<EntitySnapshot> {

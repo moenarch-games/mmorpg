@@ -164,7 +164,7 @@ impl ZoneSimulation {
             .body(body_id(EntityRef::Player(player_id)))
             .ok_or_else(|| ZoneError::new("player physics body is missing"))?;
         let centre = body.position();
-        let feet = [centre.x, centre.y - body.half_extents().y, centre.z];
+        let feet = crate::zone::feet_of(centre);
         Ok(self.world.grounded(body.id())
             && crate::water::swim_depth(self.content.waters(), feet).is_none())
     }

@@ -23,10 +23,11 @@ use std::sync::Arc;
 
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 
-use crate::batching::{material, matrix, mix, rgb};
-use crate::geometry::{Geometry, ID, V, norm};
+use crate::batching::material;
+use crate::colour::{mix, rgb};
+use crate::geometry::{Geometry, ID, V, matrix, metres, norm, overlaps};
 use crate::ground::{self, Ground, Layer, Layers, Weights};
-use crate::terrain::{self, metres, overlaps};
+use crate::terrain;
 use crate::{Draw, Material};
 
 /// Grid cells along a tile's side: 128 m of four-metre cells (64 m tiles drew twice as many
@@ -212,12 +213,11 @@ impl Tiles {
                     ((column + 1) * TILE_CELLS).min(cells_x),
                     ((row + 1) * TILE_CELLS).min(cells_z),
                 ];
-                let rect = [
-                    metres(g.origin[0] + cells[0] as i32 * g.step),
-                    metres(g.origin[1] + cells[1] as i32 * g.step),
-                    metres(g.origin[0] + cells[2] as i32 * g.step),
-                    metres(g.origin[1] + cells[3] as i32 * g.step),
-                ];
+                let ([x0, z0], [x1, z1]) = (
+                    g.sample_xz(cells[0], cells[1]),
+                    g.sample_xz(cells[2], cells[3]),
+                );
+                let rect = [x0, z0, x1, z1].map(metres);
                 let index = row * columns + column;
                 let extras: Vec<_> = Layer::ALL
                     .iter()
@@ -527,10 +527,7 @@ impl Tiles {
         for &r in &rows {
             for &c in &columns {
                 let sample = r * g.columns + c;
-                let (x, z) = (
-                    metres(g.origin[0] + c as i32 * g.step),
-                    metres(g.origin[1] + r as i32 * g.step),
-                );
+                let [x, z] = g.sample_xz(c, r).map(metres);
                 out.p.push([x, metres(g.heights[sample]), z]);
                 out.n.push(terrain::smooth_normal(
                     g,
@@ -722,10 +719,7 @@ fn skirts(
         let base = out.p.len() as u32;
         for &(c, r) in &side {
             let sample = r * g.columns + c;
-            let (x, z) = (
-                metres(g.origin[0] + c as i32 * g.step),
-                metres(g.origin[1] + r as i32 * g.step),
-            );
+            let [x, z] = g.sample_xz(c, r).map(metres);
             let n = terrain::smooth_normal(g, c as isize, r as isize, s);
             let y = metres(g.heights[sample]);
             let c = rgb(color(sample, x, z)).map(f64::from);
@@ -737,13 +731,7 @@ fn skirts(
         }
         for (k, pair) in side.windows(2).enumerate() {
             let mid = |axis: usize| {
-                let point = |(c, r): (usize, usize)| {
-                    if axis == 0 {
-                        metres(g.origin[0] + c as i32 * g.step)
-                    } else {
-                        metres(g.origin[1] + r as i32 * g.step)
-                    }
-                };
+                let point = |(c, r): (usize, usize)| metres(g.sample_xz(c, r)[axis]);
                 (point(pair[0]) + point(pair[1])) / 2.
             };
             let (x, z) = (mid(0), mid(1));

@@ -352,14 +352,7 @@ fn optional_kit(characters: &Path, directory: &str, name: &str, module: &str, ab
 /// `nature-descriptor` (#49, its levels of detail and the rocks' collision proxies) or the
 /// climbing kit's `climbing-descriptor` (#621).
 fn descriptor(bundle: &Path, name: &str, out: &str) {
-    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!(
-            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
-            bundle.display()
-        )
-    });
-    let manifest: serde_json::Value =
-        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let manifest = manifest(bundle);
     let path = manifest["assets"]
         .as_array()
         .into_iter()
@@ -387,14 +380,7 @@ fn sound_bundle(bundle: &Path) {
     for watched in ["export.ref.json", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
-    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!(
-            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
-            bundle.display()
-        )
-    });
-    let manifest: serde_json::Value =
-        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let manifest = manifest(bundle);
     let assets = manifest["assets"].as_array().expect("bundle assets");
     let path = |asset: &serde_json::Value| {
         asset["path"]
@@ -586,14 +572,7 @@ fn static_bundle(name: &str, bundle: &Path, keys: Option<&[&str]>, variants: boo
     for watched in ["RELEASE", "export.ref.json", "manifest.json"] {
         println!("cargo:rerun-if-changed={}", bundle.join(watched).display());
     }
-    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
-        panic!(
-            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
-            bundle.display()
-        )
-    });
-    let manifest: serde_json::Value =
-        serde_json::from_str(&manifest).expect("the bundle manifest is JSON");
+    let manifest = manifest(bundle);
     let mut code = String::from("pub const ENTRIES: &[(&str, &str)] = &[\n");
     let mut files = Vec::new();
     let assets = manifest["assets"].as_array().expect("bundle assets");
@@ -656,4 +635,15 @@ fn write(name: &str, bundle: &Path, mut code: String, mut files: Vec<String>) {
     code.push_str("];\n");
     let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets it")).join(name);
     fs::write(out, code).expect("OUT_DIR is writable");
+}
+
+/// A fetched bundle's `manifest.json`; a missing bundle names the fetch script.
+fn manifest(bundle: &Path) -> serde_json::Value {
+    let manifest = fs::read_to_string(bundle.join("manifest.json")).unwrap_or_else(|error| {
+        panic!(
+            "the bundle {} is missing ({error}); run scripts/fetch-bundles.sh",
+            bundle.display()
+        )
+    });
+    serde_json::from_str(&manifest).expect("the bundle manifest is JSON")
 }

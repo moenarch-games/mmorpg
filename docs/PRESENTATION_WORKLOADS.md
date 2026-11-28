@@ -50,10 +50,12 @@ Units include the viewer and the NPCs and creatures its projection already shows
 | `world-frame` | warm frames | at most 8 presenter stage calls a frame; no panel redraws or render-root list rebuilds while nothing changed; one action-bar decode per projection |
 | `scenery-frame` | warm frames | no instance-batch view built: each resident instance batch keeps one shown and one hidden renderer batch |
 | `ambient-clips` | clips placed, visible near, visible middle | clips sampled in a warm frame constant in placed clips and linear in visible near ones (at most 8 at 4 near and 12 middle) |
+| `scene-matrix-frame` | animals placed, animals posed a frame | one walk of the scene's world matrices a frame; animal subtrees recomputed and skeleton updates linear in posed animals, constant in placed ones; one skeleton per animal |
+| `projection-rules` | projections ingested | no client rule deserialises an ingested projection's page view |
 | `sun-shadow-casters` | frames of a camera walk | at most 2 sun cascades redrawn a frame; a unit's shadow proxy at most 33 % of its triangles near and 12 % further out; the placed kits keep off-screen shadow casters (#1038) for at most 20 % more placements |
 | `seeded-content-entry` | content seeds a fresh page applies | no seeded base part (terrain heights, colliders, solid dressing) built again on the way to entry |
 
-The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third, and a find per interpolated unit or an allocating warm interpolation fails `unit_layout`'s interpolation test; a seeded page that builds a terrain, collider or dressing part again fails `mmorpg-wasm`'s `seeded_content` test. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. The `world-frame` bounds are blocking through `web/tests/frame-stages.test.ts` (`bun test`), which runs the staged frame's stage runner, panel gate, root registry and action-bar cache, the `scenery-frame` bound through `web/tests/scene-building.test.ts` over the real static scene, the `ambient-clips` bound through `web/tests/clip-detail.test.ts` and the `sun-shadow-casters` bounds through `web/tests/shadow-lod.test.ts`. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they never gate correctness. `scripts/profile-browser.py --budgets` checks its frame times against runtime budgets (see [Browser runtime budgets](#browser-runtime-budgets-1256)).
+The camera-only, projection-ingest and browser unit layout bounds are blocking, through the `presentation_work` and `mmorpg-wasm` `projection_ingest` and `unit_layout` tests that `cargo test` runs: an incremental-update regression that rebuilds, re-uploads or re-evicts static scenery on a camera-only frame (or never settles) fails the first, a second decode, a re-sent unchanged sheet or an extra byte copy fails the second, and a lookup per pair of units, faster-growing layout bytes or a per-character allocation fails the third, and a find per interpolated unit or an allocating warm interpolation fails `unit_layout`'s interpolation test; a seeded page that builds a terrain, collider or dressing part again fails `mmorpg-wasm`'s `seeded_content` test. Legitimate streaming, LOD and visibility changes stay allowed and the other counts are advisory. The `world-frame` bounds are blocking through `web/tests/frame-stages.test.ts` (`bun test`), which runs the staged frame's stage runner, panel gate, root registry and action-bar cache, the `scenery-frame` bound through `web/tests/scene-building.test.ts` over the real static scene, the `ambient-clips` bound through `web/tests/clip-detail.test.ts`, the `scene-matrix-frame` bounds through `web/tests/held-matrices.test.ts`, the `projection-rules` bound through `web/tests/projection-rules.test.ts` and the `sun-shadow-casters` bounds through `web/tests/shadow-lod.test.ts`. Frame pacing on real hardware stays with the existing wall-clock profilers, `scripts/profile-browser.py` (#546) and the native `outpost_frame_time` (#692); they never gate correctness. `scripts/profile-browser.py --budgets` checks its frame times against runtime budgets (see [Browser runtime budgets](#browser-runtime-budgets-1256)).
 
 ### Browser evidence (#1120)
 
@@ -154,3 +156,27 @@ Two runs were made of each build, and the table shows their mean. For rAF p95, i
 | `overview` | 24.2–25.3k → 7.7k | 35.2–36.7 → 36.2–37.8 | 19.4–20.4 → 20.5–21.6 | 17.5–18.7 → 17.0–17.7 | 506 → 506 |
 
 The sub-draws were cheaper than their count suggested: removing two thirds of them saves 1–2.5 ms of GPU time and a few FPS, not a whole vsync. The frame stays bound by the main thread issuing three.js calls and three-lighting's per-frame setup between passes (about 4 ms at `idle`, render-engine's `#renderPasses` scene walk).
+
+## Per-frame matrices and projection reads (#1257)
+
+The browser's frame rate had fallen from about 61 to 39 fps at `idle` between 2026-11-07 and -27. A V8 profile of a readable (unminified) build attributed the main-thread cost the page itself controls:
+
+- **Two walks of the scene's world matrices a frame.** `onceAcrossPasses` (`web/src/world/lighting.ts`) brings them up to date for all passes, and render-engine's own frame asked the scene again; the second walk is skipped (`scene-matrix-frame`).
+- **Ambient animals' bones.** Every animal's skeleton (about 1,900 nodes, most hidden or holding a pose) was recomposed every frame, and each of an animal's two to eight skinned meshes carried its own copy of the same skeleton, so its bone matrices were recomputed and its bone texture uploaded once per mesh. Each animal now shares one skeleton per skin, and `HeldMatrices` (`web/src/world/held-matrices.ts`) recomputes its subtree, and its bone texture, only in a frame it moved or sampled its clip. Texture uploads at `idle` fell from about 147 to 38 a frame (`scene-matrix-frame`).
+- **Projection views deserialised again.** A dozen client rules (action bar, chat log, combat text, quest views, ...) took the page's projection view and deserialised the whole projection through `serde-wasm-bindgen`, about 32,500 calls into the page a frame. `ProjectionStore` now remembers each view it hands out with its decoded projection, which the rules read: 2,700 import calls and 510 export calls a frame remain (`projection-rules`).
+- Grass cells no longer recompose their identity matrices, and the sword arm fit skips its three rig lookups in frames without a sword clip.
+
+Imported unit models were left alone: their unmerged skins bind the same joints with different inverse bind matrices, so they cannot share a skeleton. What remains of the render phase is three's per-draw issue and render-engine's whole-scene walks per pass (material assignment, caster lists, one `projectObject` walk per cascade and two for the main pass).
+
+Measured with `scripts/profile-browser.py --no-sweep` (Chromium, ANGLE Vulkan, RTX 3060 Ti, 1440×900, pixel ratio 1), minified builds of `17682571` (before) and this change (after), interleaved, two runs each, mean of the p50s:
+
+| Location | FPS | Main-thread frame (ms) | `render` phase (ms) | GPU (ms) |
+| --- | --- | --- | --- | --- |
+| `idle` | 37.2 → 41.6 | 22.6 → 20.4 | 16.2 → 15.0 | 16.8 → 17.4 |
+| `move-rotate` | 48.1 → 54.9 | 17.8 → 16.3 | 11.7 → 10.8 | 12.6 → 12.9 |
+| `dense-woods` | 42.8 → 44.5 | 13.4 → 13.2 | 9.1 → 8.4 | 16.3 → 16.8 |
+| `dense-hub` | 52.0 → 54.5 | 13.9 → 13.3 | 9.3 → 8.9 | 13.3 → 13.8 |
+| `western-lake` | 48.0 → 51.1 | 12.6 → 10.9 | 7.8 → 7.3 | 14.4 → 15.4 |
+| `overview` | 49.5 → 53.8 | 15.0 → 13.2 | 10.1 → 9.6 | 13.3 → 14.0 |
+
+`idle` still misses 60 fps: its main-thread frame is above 16.7 ms and its GPU time near it.

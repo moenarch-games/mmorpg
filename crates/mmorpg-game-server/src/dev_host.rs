@@ -79,7 +79,7 @@ async fn prepare(
     let prepared = prepare_live_match_host_for_recovery(
         ids,
         move |id: &MatchId| -> Result<_, String> {
-            let zone = crate::dev_characters::zone_of(id)?;
+            let zone = crate::match_zone(id)?;
             let mut adapter = ZoneGameServerAdapter::with_world_seed(
                 zone,
                 mmorpg_core::content_for_zone(zone),
@@ -275,7 +275,7 @@ pub(crate) async fn serve_characters_managed<B: EntryBackend + Send + 'static>(
         };
     let mut party_zones = BTreeMap::new();
     for (id, channel) in party_channels {
-        let zone = crate::dev_characters::zone_of(&id)?;
+        let zone = crate::match_zone(&id)?;
         party_zones.insert(
             id.clone(),
             PartyZone {
@@ -438,7 +438,7 @@ fn stopped_snapshots(directory: &Path, ids: &[MatchId]) -> HostResult<Vec<(Match
                 )
                 .into());
             }
-            let expected = crate::dev_characters::zone_of(id)?;
+            let expected = crate::match_zone(id)?;
             let (zone, _) = ZoneGameServerAdapter::decode_stored_zone(
                 &snapshot.payload,
                 mmorpg_core::content_for_zone(expected),

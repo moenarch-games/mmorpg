@@ -110,10 +110,7 @@ impl Mechanism {
     /// Whether feet at `feet` stand within reach of it.
     #[must_use]
     pub fn within(&self, feet: [i32; 3]) -> bool {
-        let [x, y, z] = self.at;
-        let (dx, dz) = (i64::from(feet[0] - x), i64::from(feet[2] - z));
-        dx * dx + dz * dz <= i64::from(self.reach).pow(2)
-            && (feet[1] - y).abs() <= crate::EVIDENCE_HEIGHT_UNITS
+        crate::reach::within_cylinder(self.at, self.reach, crate::EVIDENCE_HEIGHT_UNITS, feet)
     }
 }
 
@@ -224,12 +221,7 @@ impl ZoneSimulation {
         let Some(mechanism) = content.mechanism(id) else {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         };
-        let centre = self.player_position(player_id)?;
-        let feet = [
-            centre.x,
-            centre.y - crate::PLAYER_HALF_EXTENTS_UNITS[1],
-            centre.z,
-        ];
+        let feet = self.player_feet(player_id)?;
         if !mechanism.within(feet) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }

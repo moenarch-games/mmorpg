@@ -542,7 +542,7 @@ impl App {
         let aiming = self.mouse.gesture() == Some(Gesture::Aim);
         let opponent = opponent
             .filter(|_| !aiming)
-            .map(|entity| entity.position.map(|cm| cm as f32 / 100.0));
+            .map(|entity| mmorpg_presentation::geometry::position_f32(entity.position));
         self.camera
             .track(self.presentation.camera_target(now), opponent, dt);
         self.sync_cursor();

@@ -94,18 +94,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
-    println!("{{\n  \"version\": 1,\n  \"area\": \"greyhaven-props\",\n  \"placements\": [");
-    for (index, p) in placements.iter().enumerate() {
-        println!(
-            "    {}{}",
-            serde_json::to_string(p)?,
-            if index + 1 == placements.len() {
-                ""
-            } else {
-                ","
-            }
-        );
-    }
-    println!("  ]\n}}");
+    println!(
+        "{}",
+        mmorpg_scenery::layout::dressing_json("greyhaven-props", &placements)?
+    );
     Ok(())
 }

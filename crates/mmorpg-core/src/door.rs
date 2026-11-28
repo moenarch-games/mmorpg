@@ -58,11 +58,12 @@ impl Door {
     /// Whether feet at `position` (units) are within [`DOOR_REACH_UNITS`] of the closed leaf.
     #[must_use]
     pub fn within_reach(&self, position: [i32; 3]) -> bool {
-        let [dx, dz] = [
-            i64::from(position[0]) - i64::from(self.closed.position[0]),
-            i64::from(position[2]) - i64::from(self.closed.position[2]),
-        ];
-        dx * dx + dz * dz <= i64::from(DOOR_REACH_UNITS).pow(2)
+        let leaf = self.closed.position;
+        crate::reach::within_xz(
+            [leaf[0], leaf[2]],
+            [position[0], position[2]],
+            DOOR_REACH_UNITS,
+        )
     }
 }
 

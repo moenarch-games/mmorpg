@@ -10,7 +10,7 @@ use mmorpg_characters::{
     CharacterLease, CharacterStore, EntryBackend, FileEntries, LeaseHolder, StoreError,
     decode_entry,
 };
-use mmorpg_core::{CharacterId, ClassChoice, ZoneId, ZoneSimulation};
+use mmorpg_core::{CharacterId, ZoneId};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
@@ -404,20 +404,11 @@ impl<B: EntryBackend> DevCharacterStorage<B> {
     }
 }
 
-pub(crate) fn zone_of(id: &MatchId) -> Result<ZoneId, String> {
-    id.as_str()
-        .strip_prefix("zone-")
-        .ok_or("not a zone match")?
-        .parse::<u32>()
-        .map(ZoneId::new)
-        .map_err(message)
-}
-
 fn stored_characters(
     id: &MatchId,
     payload: &[u8],
 ) -> Result<Vec<crate::character_admission::StoredCharacter>, String> {
-    let content = mmorpg_core::content_for_zone(zone_of(id)?);
+    let content = mmorpg_core::content_for_zone(crate::match_zone(id)?);
     ZoneGameServerAdapter::stored_characters(payload, content).map_err(message)
 }
 
@@ -523,12 +514,8 @@ impl<B: EntryBackend> DevCharacterService<B> {
         context: ControlContext,
         payload: &[u8],
     ) -> Result<Vec<u8>, String> {
-        let (&appearance, raw_id) = payload.split_first().ok_or("missing character claim")?;
-        let class =
-            ClassChoice::from_appearance(u32::from(appearance)).ok_or("invalid character class")?;
-        let character = CharacterId::new(std::str::from_utf8(raw_id).map_err(message)?.to_owned())
-            .map_err(message)?;
-        let zone = zone_of(id)?;
+        let (class, character) = crate::decode_character_claim(payload)?;
+        let zone = crate::match_zone(id)?;
         let mut storage = self.storage.lock().map_err(message)?;
         let key = (id.clone(), context.player_id);
         if let Some(lease) = storage.leases.get(&key) {
@@ -562,11 +549,10 @@ impl<B: EntryBackend> DevCharacterService<B> {
                     record
                 }
                 None => {
-                    let mut zone =
-                        ZoneSimulation::with_content(zone, mmorpg_core::content_for_zone(zone))
+                    let content = mmorpg_core::content_for_zone(zone);
+                    let record =
+                        mmorpg_core::CharacterRecord::fresh(zone, content, class, character)
                             .map_err(message)?;
-                    zone.create_character(1, class).map_err(message)?;
-                    let record = zone.capture_character(1, character).map_err(message)?;
                     storage
                         .store
                         .commit(&acquired.lease, &record)
@@ -646,6 +632,7 @@ pub(crate) fn message(error: impl std::fmt::Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mmorpg_core::{ClassChoice, ZoneSimulation};
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
     struct Directory(std::path::PathBuf);

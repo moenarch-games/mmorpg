@@ -49,7 +49,7 @@ use mmorpg_core::{
 use tokio::net::TcpListener;
 
 use crate::departures::{arrival_input, decline_input, freeze_input, take_back_input};
-use crate::dev_characters::{DevCharacterStorage, message, zone_of};
+use crate::dev_characters::{DevCharacterStorage, message};
 use crate::handoff::{
     HandoffError, OutboundOutcome, OutboundRequest, Resolution, TransferZone, accept_inbound,
     activate_inbound, begin_outbound, reconcile_outbound, resolve_pending_handoff, retire_outbound,
@@ -246,7 +246,7 @@ impl<B: EntryBackend, Z: ZoneInputs, L: TransferLinks> HandoffHost<B, Z, L> {
         character: &CharacterId,
         class: ClassChoice,
     ) -> Result<bool, String> {
-        let Some(zone) = self.zones.get(&zone_of(id)?) else {
+        let Some(zone) = self.zones.get(&crate::match_zone(id)?) else {
             return Ok(false);
         };
         let found = lock(&self.inbound)?

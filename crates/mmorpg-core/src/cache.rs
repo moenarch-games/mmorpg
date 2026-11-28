@@ -14,8 +14,7 @@
 use std::sync::Arc;
 
 use crate::{
-    CreatureId, ItemId, ItemStack, LootRewards, PLAYER_HALF_EXTENTS_UNITS, PlayerId, ZoneError,
-    ZoneSimulation, settle_loot,
+    CreatureId, ItemId, ItemStack, LootRewards, PlayerId, ZoneError, ZoneSimulation, settle_loot,
 };
 
 /// A player's feet open a cache only this close to its spot's height: 1 m.
@@ -42,10 +41,7 @@ impl DiscoveryCache {
     /// Whether feet at `feet` stand at the cache.
     #[must_use]
     pub fn within(&self, feet: [i32; 3]) -> bool {
-        let [x, y, z] = self.at;
-        let (dx, dz) = (i64::from(feet[0] - x), i64::from(feet[2] - z));
-        dx * dx + dz * dz <= i64::from(self.reach).pow(2)
-            && (feet[1] - y).abs() <= CACHE_HEIGHT_UNITS
+        crate::reach::within_cylinder(self.at, self.reach, CACHE_HEIGHT_UNITS, feet)
     }
 }
 
@@ -69,8 +65,7 @@ impl ZoneSimulation {
                 .map(|(&id, _)| id)
                 .collect();
             for player_id in ids {
-                let centre = self.player_position(player_id)?;
-                let feet = [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z];
+                let feet = self.player_feet(player_id)?;
                 let key = crate::RewardKey::Cache { cache: cache.id };
                 // Like a full bag, a tick without room for its receipt leaves the cache
                 // closed until a later tick (#1112).

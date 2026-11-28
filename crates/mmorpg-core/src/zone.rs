@@ -1205,22 +1205,12 @@ impl ZoneSimulation {
             // and the surface holds it with its head out of the water.
             let centre = body.position();
             let swim_depth = alive
-                .then(|| {
-                    crate::water::swim_depth(
-                        self.content.waters(),
-                        [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
-                    )
-                })
+                .then(|| crate::water::swim_depth(self.content.waters(), feet_of(centre)))
                 .flatten();
             let grounded = is_grounded(&self.world, body)?;
             // An authored surface hazard under a standing player's feet (#294).
             let surface = (alive && grounded)
-                .then(|| {
-                    crate::surface::under_feet(
-                        self.content.surfaces(),
-                        [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
-                    )
-                })
+                .then(|| crate::surface::under_feet(self.content.surfaces(), feet_of(centre)))
                 .flatten();
             // A dodge roll (#516) starts on the ground, out of deep water, off any face and
             // unstunned; a stun or deep water ends it early, and death outright.
@@ -1382,10 +1372,7 @@ impl ZoneSimulation {
             velocity.y = vertical_velocity;
             // A channel's current carries a swimmer, and a wader by depth (#667, Decision 17).
             if alive {
-                let [x, z] = crate::water::current_push(
-                    self.content.waters(),
-                    [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z],
-                );
+                let [x, z] = crate::water::current_push(self.content.waters(), feet_of(centre));
                 velocity.x = velocity.x.saturating_add(x);
                 velocity.z = velocity.z.saturating_add(z);
             }
@@ -1620,6 +1607,11 @@ impl ZoneSimulation {
             .position())
     }
 
+    /// Where `player_id`'s feet stand (units): the bottom centre of its body.
+    pub(crate) fn player_feet(&self, player_id: PlayerId) -> Result<[i32; 3], ZoneError> {
+        self.player_position(player_id).map(feet_of)
+    }
+
     pub(crate) fn available_spawn_slot(&self) -> Option<u16> {
         (0..MAX_PLAYERS_PER_ZONE)
             .find(|candidate| {
@@ -1744,6 +1736,12 @@ impl ZoneSimulation {
             .find(|collider| is_ground(collider, spawn))
             .map(|collider| crate::physics::BodyId(u64::from(collider.id)))
     }
+}
+
+/// The feet (units) of a player body centred at `centre`: the bottom centre of its box, where
+/// reach, water and surface tests stand (#1253).
+pub(crate) const fn feet_of(centre: Vec3i) -> [i32; 3] {
+    [centre.x, centre.y - PLAYER_HALF_EXTENTS_UNITS[1], centre.z]
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 //! Spatial batching and immutable resources for Greyhaven's procedural world.
+use super::colour::rgb;
 use super::geometry::*;
 use super::{Draw, Group, Kit, Material};
 use std::{collections::BTreeMap, sync::Arc};
@@ -61,44 +62,6 @@ pub struct Batcher {
     instances: Vec<InstanceBatch>,
     /// Each instance batch's index in `instances`, by key.
     instance_keys: BTreeMap<String, usize>,
-}
-pub fn rgb(c: u32) -> [f32; 3] {
-    [16, 8, 0].map(|shift| ((c >> shift) & 255) as f32 / 255.)
-}
-pub fn shade(c: u32, f: f64) -> u32 {
-    [16, 8, 0].into_iter().fold(0, |out, s| {
-        out | ((((f64::from((c >> s) & 255) * f).clamp(0., 255.) + 0.5).floor() as u32) << s)
-    })
-}
-pub fn mix(a: u32, b: u32, t: f64) -> u32 {
-    [16, 8, 0].into_iter().fold(0, |out, s| {
-        let x = f64::from((a >> s) & 255);
-        let y = f64::from((b >> s) & 255);
-        out | (((x + (y - x) * t.clamp(0., 1.)).round() as u32) << s)
-    })
-}
-pub fn matrix(a: Affine) -> [f32; 16] {
-    let m = a.m;
-    {
-        [
-            m[0] as f32,
-            m[3] as f32,
-            m[6] as f32,
-            0.,
-            m[1] as f32,
-            m[4] as f32,
-            m[7] as f32,
-            0.,
-            m[2] as f32,
-            m[5] as f32,
-            m[8] as f32,
-            0.,
-            a.t[0] as f32,
-            a.t[1] as f32,
-            a.t[2] as f32,
-            1.,
-        ]
-    }
 }
 pub fn material(c: u32, glow: bool) -> Material {
     Material {

@@ -1,6 +1,7 @@
 //! Point lights the scenery content implies (#529): every campfire's flame, every lamp post's
 //! glass and the market square's lantern post. Renderer-neutral; each client maps them onto
 //! its own light type. Presentation only.
+use crate::geometry::metres;
 use mmorpg_scenery::Scenery;
 
 use crate::{Motion, StaticScene, geometry::point, props, settlement_props};
@@ -141,10 +142,7 @@ pub fn cave_interior(viewer: Option<[f64; 3]>) -> f32 {
         return 0.;
     }
     let inside = cave.floors.iter().any(|(min, max)| {
-        x >= f64::from(min[0]) / 100.
-            && x <= f64::from(max[0]) / 100.
-            && z >= f64::from(min[1]) / 100.
-            && z <= f64::from(max[1]) / 100.
+        x >= metres(min[0]) && x <= metres(max[0]) && z >= metres(min[1]) && z <= metres(max[1])
     });
     if !inside {
         return 0.;

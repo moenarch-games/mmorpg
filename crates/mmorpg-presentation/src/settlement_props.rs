@@ -6,13 +6,13 @@
 //! clients place them once. While a client does not draw them (its bundle has not loaded or
 //! failed), the static scene draws [`fallback`] boxes in their place
 //! ([`crate::Motion::Fallback`] for [`crate::Kit::SettlementProps`]). Presentation only.
-use mmorpg_core::UNITS_PER_METRE;
 use mmorpg_scenery::Scenery;
 
 use crate::{
     Kit,
-    batching::matrix,
     geometry::Affine,
+    geometry::matrix,
+    geometry::metres,
     lod::{EntryLods, Placement},
     world_dressing,
 };
@@ -103,10 +103,6 @@ pub struct Part {
     pub entry: &'static str,
     /// Column-major entry-to-world matrix, metres.
     pub model: [f32; 16],
-}
-
-fn metres(units: i32) -> f64 {
-    f64::from(units) / f64::from(UNITS_PER_METRE)
 }
 
 /// The prop entries the clients load, sorted and once each.

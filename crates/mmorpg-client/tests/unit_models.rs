@@ -6,12 +6,9 @@ use mmorpg_client::{
     },
 };
 use mmorpg_core::{CreatureFamily, EntityKind, NpcRole, PLAYER_HALF_EXTENTS_UNITS, greyhaven_vale};
+use mmorpg_presentation::geometry::position_f32 as metres;
 
 const COLOR: [f32; 3] = [0.7, 0.3, 0.2];
-
-fn metres(units: [i32; 3]) -> [f32; 3] {
-    units.map(|value| value as f32 / 100.0)
-}
 
 fn draw(model: UnitModel, half: [f32; 3], gait: Gait, corpse: bool) -> Vec<SceneBox> {
     let mut boxes = Vec::new();

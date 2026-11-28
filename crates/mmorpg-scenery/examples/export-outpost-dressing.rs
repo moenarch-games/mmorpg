@@ -1,6 +1,5 @@
 //! Offline Outpost layout + composition data → committed world dressing (#683).
 //! Runtime clients read only the committed result; hosts read only existing core collision.
-use mmorpg_core::greyhaven_vale;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -40,12 +39,7 @@ fn turn([x, z]: [i32; 2], quarters: u8) -> [i32; 2] {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = match std::env::args().nth(1) {
-        Some(path) => std::fs::read_to_string(path)?,
-        None => greyhaven_vale::layout::SOURCE.to_owned(),
-    };
-    let definition = greyhaven_vale::layout::compile(&source)?;
-    let scenery = mmorpg_scenery::layout::compose(&source, &definition)?;
+    let (_, scenery) = mmorpg_scenery::layout::exporter_input(std::env::args().nth(1))?;
     let mut compositions: Compositions = serde_json::from_str(include_str!(
         "../../../content/greyhaven/authoring/outpost-buildings.json"
     ))?;
@@ -104,18 +98,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "id": "outpost-authored-settlement", "asset": "greyhaven.fort.settlement",
         "position": [0, 0, 0], "yaw": 0, "scale": [1000, 1000, 1000]
     }));
-    println!("{{\n  \"version\": 1,\n  \"area\": \"outpost\",\n  \"placements\": [");
-    for (index, placement) in placements.iter().enumerate() {
-        println!(
-            "    {}{}",
-            serde_json::to_string(placement)?,
-            if index + 1 == placements.len() {
-                ""
-            } else {
-                ","
-            }
-        );
-    }
-    println!("  ]\n}}");
+    println!(
+        "{}",
+        mmorpg_scenery::layout::dressing_json("outpost", &placements)?
+    );
     Ok(())
 }

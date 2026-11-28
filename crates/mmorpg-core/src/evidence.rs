@@ -66,10 +66,7 @@ impl EvidenceSpot {
     /// Whether feet at `feet` stand within reach of the spot.
     #[must_use]
     pub fn within(&self, feet: [i32; 3]) -> bool {
-        let [x, y, z] = self.at;
-        let (dx, dz) = (i64::from(feet[0] - x), i64::from(feet[2] - z));
-        dx * dx + dz * dz <= i64::from(self.reach).pow(2)
-            && (feet[1] - y).abs() <= EVIDENCE_HEIGHT_UNITS
+        crate::reach::within_cylinder(self.at, self.reach, EVIDENCE_HEIGHT_UNITS, feet)
     }
 }
 
@@ -87,12 +84,7 @@ impl ZoneSimulation {
         let Some(site) = content.evidence_spot(spot) else {
             return Ok(Some((ErrorCode::InvalidTarget, None)));
         };
-        let centre = self.player_position(player_id)?;
-        let feet = [
-            centre.x,
-            centre.y - crate::PLAYER_HALF_EXTENTS_UNITS[1],
-            centre.z,
-        ];
+        let feet = self.player_feet(player_id)?;
         if !site.within(feet) {
             return Ok(Some((ErrorCode::OutOfRange, None)));
         }

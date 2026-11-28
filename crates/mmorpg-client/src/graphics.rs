@@ -1386,7 +1386,10 @@ mod tests {
                         (EntityKind::Npc, 2) => "hilda",
                         _ => return None,
                     };
-                    Some((name, unit.position.map(|v| v as f32 / 100.0)))
+                    Some((
+                        name,
+                        mmorpg_presentation::geometry::position_f32(unit.position),
+                    ))
                 })
                 .collect();
             let scenery = greyhaven_vale_scenery();

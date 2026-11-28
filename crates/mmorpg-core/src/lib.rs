@@ -325,8 +325,8 @@ pub use sim_combat::melee::{
 };
 pub use sim_combat::unit;
 pub use sim_foundation::{
-    PlayerId, TICK_HZ, ZoneError, ZoneId, long_ticks_from_ms, physics, rng, subunits_per_tick,
-    subunits_per_tick_squared, ticks_from_ms, trig, units_per_tick,
+    PlayerId, TICK_HZ, ZoneError, ZoneId, long_ticks_from_ms, physics, reach, rng,
+    subunits_per_tick, subunits_per_tick_squared, ticks_from_ms, trig, units_per_tick,
 };
 use sim_foundation::{entity, ramp, rock};
 pub use sim_movement::{

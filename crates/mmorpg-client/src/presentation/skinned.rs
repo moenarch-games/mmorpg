@@ -12,7 +12,7 @@ use mmorpg_presentation::units::{
         Joint, Kind, Layer, Loadout, Mask, Outfit, STARTER_HAIR, THROWABLE_BELT_SOCKET,
         THROWABLE_SOCKET, Throwable, UPPER_BODY_ROOT, draw_meters, gripped, stow_socket,
     },
-    kit::{Frame, model},
+    kit::{self, Frame, model},
     player::Hat,
     sway, sword,
     traversal::{self, Motions, SecondaryPose},
@@ -420,16 +420,6 @@ fn bound_chain(names: &[Option<String>], chain: &sway::Chain) -> Option<ModelCha
     })
 }
 
-/// The quaternion product `a × b` (`b` applied first) in `[x, y, z, w]` order.
-fn qmul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-    [
-        a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
-        a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
-        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
-        a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
-    ]
-}
-
 const fn qconj(q: [f32; 4]) -> [f32; 4] {
     [-q[0], -q[1], -q[2], q[3]]
 }
@@ -445,20 +435,7 @@ fn rotation_of(m: &M4) -> [f32; 4] {
     let (m00, m10, m20) = (m[0] / sx, m[1] / sx, m[2] / sx);
     let (m01, m11, m21) = (m[4] / sy, m[5] / sy, m[6] / sy);
     let (m02, m12, m22) = (m[8] / sz, m[9] / sz, m[10] / sz);
-    let trace = m00 + m11 + m22;
-    if trace > 0. {
-        let s = (trace + 1.).sqrt() * 2.;
-        [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25 * s]
-    } else if m00 > m11 && m00 > m22 {
-        let s = (1. + m00 - m11 - m22).sqrt() * 2.;
-        [0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s]
-    } else if m11 > m22 {
-        let s = (1. + m11 - m00 - m22).sqrt() * 2.;
-        [(m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s]
-    } else {
-        let s = (1. + m22 - m00 - m11).sqrt() * 2.;
-        [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s]
-    }
+    kit::from_axes([m00, m10, m20], [m01, m11, m21], [m02, m12, m22])
 }
 
 /// The chains both figures' appearances declare (Atlas 6.6.39), once.
@@ -873,9 +850,9 @@ impl Model {
                     let chain = &chains[chain];
                     let turn = sway::chain_turn(swing.chain[depth], chain.limit, chain.nodes.len());
                     let parent =
-                        self.parents[n].map_or(frame, |p| qmul(frame, rotation_of(&globals[p])));
-                    let delta = qmul(qmul(qconj(parent), turn), parent);
-                    let turned = qmul(delta, local[n].r);
+                        self.parents[n].map_or(frame, |p| kit::qm(frame, rotation_of(&globals[p])));
+                    let delta = kit::qm(kit::qm(qconj(parent), turn), parent);
+                    let turned = kit::qm(delta, local[n].r);
                     let len = turned.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-6);
                     local[n].r = turned.map(|v| v / len);
                 }
@@ -2831,7 +2808,7 @@ mod rolling_ranger_tests {
 
     /// The rotation angle, in radians, of `to` relative to `from`.
     fn angle(from: [f32; 4], to: [f32; 4]) -> f32 {
-        let relative = qmul(qconj(from), to);
+        let relative = kit::qm(qconj(from), to);
         2. * relative[3].abs().min(1.).acos()
     }
 

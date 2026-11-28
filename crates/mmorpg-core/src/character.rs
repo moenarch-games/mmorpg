@@ -157,6 +157,22 @@ impl DepthsRecord {
     }
 }
 
+impl CharacterRecord {
+    /// The first record of a never-stored character `id` of `class` in zone `zone_id` with
+    /// `content` (#1275): built in a throwaway zone, so no hosting world's state or RNG moves.
+    /// Every host that creates characters starts them here.
+    pub fn fresh(
+        zone_id: ZoneId,
+        content: std::sync::Arc<crate::ZoneContent>,
+        class: ClassChoice,
+        id: CharacterId,
+    ) -> Result<Self, ZoneError> {
+        let mut scratch = ZoneSimulation::with_content(zone_id, content)?;
+        scratch.create_character(1, class)?;
+        scratch.capture_character(1, id)
+    }
+}
+
 impl ZoneSimulation {
     /// The durable record of an admitted player who has chosen a class.
     pub fn capture_character(

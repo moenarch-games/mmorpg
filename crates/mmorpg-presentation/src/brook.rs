@@ -2,10 +2,13 @@
 //! Authored course, water level and traversable structures come from core; this is only art.
 use crate::{
     Animated, Draw, Group, Kit, Motion,
-    batching::{Batcher, Cull, material, matrix, mix, rgb},
+    batching::{Batcher, Cull, material},
+    colour::{mix, rgb},
+    geometry::matrix,
+    geometry::metres,
     geometry::{Geometry, ID, at, blob, box_shape, frustum, norm},
     ground::{self, Ground, Layer},
-    terrain::{metres, noise, surface},
+    terrain::{noise, surface},
 };
 use mmorpg_core::greyhaven_vale::brook as content;
 use mmorpg_scenery::{Scenery, TerrainGrid};

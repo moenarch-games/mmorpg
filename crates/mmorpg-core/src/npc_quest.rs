@@ -65,6 +65,7 @@ use std::sync::Arc;
 
 use crate::creature::Life;
 use crate::events::push_event;
+use crate::reach::xz_distance;
 use crate::{
     CreatureId, EntityRef, ErrorCode, ItemId, NpcId, PlayerClass, PlayerId, QuestId,
     QuestObjective, ZoneError, ZoneEvent, ZoneSimulation,
@@ -176,10 +177,6 @@ pub struct EscortState {
 
 type Refusal = Option<(ErrorCode, Option<EntityRef>)>;
 
-fn distance(a: [i32; 2], b: [i32; 2]) -> i64 {
-    i64::try_from(crate::trig::xz_length(a[0] - b[0], a[1] - b[1])).unwrap_or(i64::MAX)
-}
-
 impl ZoneSimulation {
     /// Whether `npc` is out of the world: a [`Confrontation`] NPC whose foe stands or lies dead.
     #[must_use]
@@ -252,19 +249,13 @@ impl ZoneSimulation {
         {
             return Ok(Admission::Recommended);
         }
-        if attitude.sponsor {
-            for mate in self.party_mates(player_id) {
-                if mate != player_id
-                    && self
-                        .players
-                        .get(&mate)
-                        .is_some_and(|state| state.is_alive())
-                    && !distrusted(mate)
-                    && self.within_quest_reach(mate, npc)?
-                {
-                    return Ok(Admission::Sponsored(mate));
-                }
-            }
+        if attitude.sponsor
+            && let Some(mate) = self
+                .party_mates_near(player_id, npc)?
+                .into_iter()
+                .find(|&mate| !distrusted(mate))
+        {
+            return Ok(Admission::Sponsored(mate));
         }
         // Put away, the staff would not stand between them (#1019).
         Ok(if class_distrusted(player_id) {
@@ -705,7 +696,7 @@ impl ZoneSimulation {
             };
             // The trail: where the one ahead walked, so the NPC goes where a body could.
             let last = escort.trail.last().copied().unwrap_or(escort.position);
-            if distance(last, feet) >= ESCORT_TRAIL_SPACING_UNITS {
+            if xz_distance(last, feet) >= ESCORT_TRAIL_SPACING_UNITS {
                 escort.trail.push(feet);
                 if escort.trail.len() > MAX_ESCORT_TRAIL {
                     escort.trail.remove(0);
@@ -714,12 +705,12 @@ impl ZoneSimulation {
             let from = escort.position;
             let mut position = from;
             let mut budget = ESCORT_UNITS_PER_TICK;
-            while budget > 0 && distance(position, feet) > ESCORT_GAP_UNITS {
+            while budget > 0 && xz_distance(position, feet) > ESCORT_GAP_UNITS {
                 let Some(&next) = escort.trail.first() else {
                     break;
                 };
                 self.tick_work.escort_trail_points += 1;
-                let step = distance(position, next);
+                let step = xz_distance(position, next);
                 if step <= budget {
                     position = next;
                     budget -= step;
@@ -742,7 +733,7 @@ impl ZoneSimulation {
                 escort.facing = facing;
             }
             escort.position = position;
-            if distance(position, feet) > ESCORT_LEASH_UNITS {
+            if xz_distance(position, feet) > ESCORT_LEASH_UNITS {
                 escort.behind = escort.behind.saturating_add(1);
             } else {
                 escort.behind = 0;
@@ -771,13 +762,14 @@ impl ZoneSimulation {
                     .area_at(position[0], position[1])
                     .is_some_and(|candidate| candidate.id() == area),
                 Destination::Npc(to) => self.npc_placement(to).is_some_and(|place| {
-                    distance(place.position, position) <= i64::from(crate::quest::QUEST_REACH_UNITS)
+                    xz_distance(place.position, position)
+                        <= i64::from(crate::quest::QUEST_REACH_UNITS)
                 }),
             };
             let line = self.content.escort_line(npc);
             let gathered = line.iter().all(|companion| {
                 self.escorts.get(companion).is_some_and(|companion| {
-                    distance(companion.position, position) <= ESCORT_GATHER_UNITS
+                    xz_distance(companion.position, position) <= ESCORT_GATHER_UNITS
                 })
             });
             if reached && gathered {
@@ -804,16 +796,8 @@ impl ZoneSimulation {
                     continue;
                 };
                 // Party mates walking beside it share the rescue (Atlas 5.4.17).
-                for mate in self.party_mates(player) {
-                    if mate != player
-                        && self
-                            .players
-                            .get(&mate)
-                            .is_some_and(|state| state.is_alive())
-                        && self.within_quest_reach(mate, npc)?
-                    {
-                        self.complete_objectives(mate, |candidate| candidate == objective);
-                    }
+                for mate in self.party_mates_near(player, npc)? {
+                    self.complete_objectives(mate, |candidate| candidate == objective);
                 }
                 continue;
             }

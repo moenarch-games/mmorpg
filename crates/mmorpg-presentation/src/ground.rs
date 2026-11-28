@@ -17,9 +17,9 @@
 //! vertex alpha, so an overlay would shadow the ground under its invisible parts. Its material
 //! alpha is [`OVERLAY_ALPHA`], below the cut-off, and its vertex alpha the weight divided by it,
 //! so the main pass still cuts at `weight × height alpha` while every shadow texel is cut away.
-use crate::batching::{mix, rgb, shade};
-use crate::geometry::{Geometry, V, norm};
-use crate::terrain::{SampleNormals, ground_biomes, height, metres, noise, surface};
+use crate::colour::{mix, rgb, shade};
+use crate::geometry::{Geometry, V, metres, metres_of, norm, overlaps};
+use crate::terrain::{SampleNormals, ground_biomes, height, noise, surface};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -418,10 +418,8 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
     let grounds = ground_biomes(g);
     let step = metres(g.step);
     let position = |i: usize| {
-        (
-            g.origin[0] + (i % g.columns) as i32 * g.step,
-            g.origin[1] + (i / g.columns) as i32 * g.step,
-        )
+        let [x, z] = g.index_xz(i);
+        (x, z)
     };
     let raw: Vec<f64> = (0..count)
         .map(|i| {
@@ -471,7 +469,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         let shore = if water == i64::MAX {
             f64::INFINITY
         } else {
-            water as f64 / 100.
+            metres_of(water as f64)
         };
         // The wetlands' designed ground, not the wider area traced round it (#1063).
         let marsh = mmorpg_core::greyhaven_vale::footprint_at(ux, uz)
@@ -520,7 +518,7 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         // The narrow ribbon still defines the path; this uses the existing masked material.
         let local = s.greyhaven() && x.abs() < 125. && (-170. ..115.).contains(&z);
         let verge = if local {
-            let from_track = s.road_distance([ux, uz]) as f64 / 100.;
+            let from_track = metres_of(s.road_distance([ux, uz]) as f64);
             (1. - smoothstep(0., 3.8, from_track.max(0.)))
                 * smoothstep(0.38, 0.68, noise(x, z, 4.5, 527.))
                 * 0.85
@@ -562,11 +560,6 @@ pub(crate) fn weights(s: &Scenery, g: &TerrainGrid) -> Weights {
         layers: OVERLAYS.into_iter().zip(layers).collect(),
         colors: OVERLAYS.into_iter().zip(colors).collect(),
     }
-}
-
-/// Overlaps of two open rectangles `[min x, min z, max x, max z]`.
-fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
-    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
 /// How an overlay vertex is textured: from above, or (rock only) from the side along x or z.
@@ -655,10 +648,7 @@ pub(crate) fn grid_overlays(
     let normals = SampleNormals::new(g, cells);
     let at = |sample: usize| -> (V, V) {
         let (c, r) = (sample % g.columns, sample / g.columns);
-        let (x, z) = (
-            metres(g.origin[0] + c as i32 * g.step),
-            metres(g.origin[1] + r as i32 * g.step),
-        );
+        let [x, z] = g.sample_xz(c, r).map(metres);
         ([x, metres(g.heights[sample]), z], normals.at(sample))
     };
     for (&layer, weights) in &w.layers {
@@ -669,12 +659,7 @@ pub(crate) fn grid_overlays(
         for r in cells[1]..cells[3] {
             for c in cells[0]..cells[2] {
                 let s0 = r * g.columns + c;
-                let cell = [
-                    metres(g.origin[0] + c as i32 * g.step),
-                    metres(g.origin[1] + r as i32 * g.step),
-                    metres(g.origin[0] + (c as i32 + 1) * g.step),
-                    metres(g.origin[1] + (r as i32 + 1) * g.step),
-                ];
+                let cell = g.cell_rect(c, r).map(metres);
                 if holes.iter().any(|hole| overlaps(*hole, cell)) {
                     continue;
                 }

@@ -20,6 +20,7 @@ pub mod buildings;
 mod cliffs;
 pub mod climbing;
 pub mod clock;
+pub mod colour;
 pub mod composition;
 pub mod crag;
 #[cfg(test)]
@@ -424,7 +425,7 @@ impl StaticScene {
         };
         self.animated
             .iter()
-            .map(|part| batching::matrix(motion(part.motion, t, animate)))
+            .map(|part| geometry::matrix(motion(part.motion, t, animate)))
             .collect()
     }
 
