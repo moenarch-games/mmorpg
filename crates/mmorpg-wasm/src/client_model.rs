@@ -26,7 +26,7 @@ use crate::wire::{
     ZoneSnapshot,
 };
 
-fn core_snapshot(snapshot: &ZoneSnapshot) -> Result<core::ZoneSnapshot, JsError> {
+pub(crate) fn core_snapshot(snapshot: &ZoneSnapshot) -> Result<core::ZoneSnapshot, JsError> {
     core::ZoneSnapshot::try_from(snapshot).map_err(|error| JsError::new(&error))
 }
 

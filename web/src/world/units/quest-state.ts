@@ -1,7 +1,8 @@
 import type { WorldCommand } from "../../command-wire";
 import type { ObjectiveView, QuestView as ModelQuestView, TrackerRow } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { questCompleted, ticksFromMs, type ErrorCode, type QuestMarkerKind, type QuestSheet, type RaidSignal, type SetDownLoad, type ZoneSnapshot } from "../../replication";
+import { questCompleted, ticksFromMs, type QuestMarkerKind, type QuestSheet, type RaidSignal, type SetDownLoad, type ZoneSnapshot } from "../../replication";
 import { wasm } from "../../wasm";
+import { panelRefusal } from "./hud-texts";
 import type { ContentCatalog, QuestRecord } from "../catalog";
 
 // Quest views are the shared client model's (`mmorpg-client-model`, #543), the same the native
@@ -148,18 +149,6 @@ export const NOTICE_TICKS = BigInt(ticksFromMs(4_000));
 /** Ticks (3 s) after which an unanswered quest request stops blocking new ones. */
 const PENDING_TICKS = BigInt(ticksFromMs(3_000));
 
-const REFUSALS: Partial<Record<ErrorCode, string>> = {
-  "invalid-quest": "That quest is not available here.",
-  "quest-log-full": "Your quest log is full. Abandon a quest first.",
-  "quest-incomplete": "That quest is not complete yet.",
-  "out-of-range": "Move closer to talk.",
-  "inventory-full": "Your bags cannot hold the reward.",
-  "money-overflow": "You cannot hold more copper.",
-  "you-are-dead": "You cannot do that while dead.",
-  "too-many-intents": "Too many actions. Try again.",
-  "invalid-inventory-move": "The reward was refused. Your items are unchanged.",
-};
-
 /**
  * The viewer's received quest sheet and quest intents. Nothing is predicted: the log, markers and
  * progress change only with the zone's next sheet, and refusals answer the latest request.
@@ -299,8 +288,8 @@ export class QuestState {
         const answers = event.target === null
           ? this.#pending.npc === null || event.code === "too-many-intents" || event.code === "you-are-dead"
           : event.target.kind === "npc" && event.target.id === this.#pending.npc;
-        const text = REFUSALS[event.code];
-        if (answers && text !== undefined) {
+        const text = panelRefusal(event.code, "quest");
+        if (answers && text !== null) {
           this.#feedback = text;
           this.#pending = null;
         }

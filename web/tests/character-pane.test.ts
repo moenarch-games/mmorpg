@@ -117,7 +117,7 @@ test("bounds, empty slots, a missed revision and death offer no equipment intent
 test("refusals read for the pending equipment change and leave items unchanged", () => {
   const cases: [ErrorCode, "equip" | "unequip", string][] = [
     ["not-equippable", "equip", "cannot be equipped"],
-    ["inventory-full", "unequip", "bag is full. The item stays equipped"],
+    ["inventory-full", "unequip", "bags are full. The item stays equipped"],
     ["invalid-inventory-move", "unequip", "equipment change was refused"],
     ["too-many-intents", "equip", "Try the equipment change again"],
     ["you-are-dead", "equip", "cannot change equipment while dead"],

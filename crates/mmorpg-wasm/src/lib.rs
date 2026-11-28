@@ -38,6 +38,7 @@ pub mod projections;
 pub mod scenery;
 pub mod shared_presentation;
 pub mod static_scene;
+pub mod texts;
 pub mod unit_layout;
 pub mod units;
 pub mod wire;

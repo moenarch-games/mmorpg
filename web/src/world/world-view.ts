@@ -2367,7 +2367,7 @@ export class WorldView {
     const { projection, now, self, view } = frame;
     const { scenery, catalog } = frame.world;
     const { unitsPerMetre } = scenery.scenery;
-    this.#combatHud.update(projection, catalog, now);
+    this.#combatHud.update(projection, now);
     this.#classHud.update(projection, catalog, now);
     this.#weaponMode.textContent = projection.viewer.weaponDrawn
       ? "Combat · Sheathe weapon [H]"

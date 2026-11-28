@@ -105,7 +105,7 @@ test("offers beyond the copper balance, out of reach, while dead or with a pause
 test("refusals addressed to the vendor read as trade feedback; other units' refusals do not", () => {
   const cases: [ErrorCode, string][] = [
     ["not-enough-money", "enough copper"],
-    ["inventory-full", "bags cannot hold"],
+    ["inventory-full", "bags are full"],
     ["invalid-vendor", "does not trade"],
     ["out-of-range", "Move closer"],
     ["money-overflow", "more copper"],
