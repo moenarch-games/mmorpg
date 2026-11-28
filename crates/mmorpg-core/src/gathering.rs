@@ -176,19 +176,15 @@ impl ZoneSimulation {
         if materials.is_empty() {
             return Ok(Some((ErrorCode::InvalidLoot, target)));
         }
-        if creature.tapped_by != Some(player_id) && !creature.loot_party.contains(&player_id) {
+        if !creature.corpse_open_to(player_id) {
             return Ok(Some((ErrorCode::NotLootOwner, target)));
         }
         if self.gathering.skinned.contains(&id) {
             return Ok(Some((ErrorCode::EmptyLoot, target)));
         }
         let from = self.player_position(player_id)?;
-        let distance: i128 = [from.x, from.y, from.z]
-            .into_iter()
-            .zip(position)
-            .map(|(a, b)| (i128::from(a) - i128::from(b)).pow(2))
-            .sum();
-        if distance > i128::from(crate::LOOT_REACH_UNITS).pow(2) {
+        if !crate::reach::within_sphere([from.x, from.y, from.z], position, crate::LOOT_REACH_UNITS)
+        {
             return Ok(Some((ErrorCode::OutOfRange, target)));
         }
         if let Some(code) = self.settle_gathered(player_id, materials)? {
@@ -218,11 +214,6 @@ impl ZoneSimulation {
                 return Ok(Some(ErrorCode::InventoryFull));
             }
         }
-        let Some(revision) = player.inventory_revision.checked_add(1) else {
-            return Ok(Some(ErrorCode::InvalidInventoryMove));
-        };
-        player.inventory = bag;
-        player.inventory_revision = revision;
-        Ok(None)
+        Ok(player.commit_bag(bag, None).err())
     }
 }

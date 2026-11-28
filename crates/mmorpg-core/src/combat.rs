@@ -318,16 +318,10 @@ impl ZoneSimulation {
                         Some((ErrorCode::InventoryFull, None))
                     }
                     Err(_) => Some((ErrorCode::InvalidInventoryMove, None)),
-                    Ok(()) if candidate == player.inventory => None,
-                    Ok(()) => {
-                        if let Some(revision) = player.inventory_revision.checked_add(1) {
-                            player.inventory = candidate;
-                            player.inventory_revision = revision;
-                            None
-                        } else {
-                            Some((ErrorCode::InvalidInventoryMove, None))
-                        }
-                    }
+                    Ok(()) => player
+                        .commit_bag(candidate, None)
+                        .err()
+                        .map(|code| (code, None)),
                 }
             }
             PlayerIntent::EquipItem { bag_slot } => {

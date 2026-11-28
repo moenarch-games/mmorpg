@@ -88,12 +88,11 @@ impl ZoneSimulation {
             return Ok(Err(ErrorCode::NoTarget));
         };
         let from = self.player_position(player_id)?;
-        let distance: i128 = [from.x, from.y, from.z]
-            .into_iter()
-            .zip(position)
-            .map(|(a, b)| (i128::from(a) - i128::from(b)).pow(2))
-            .sum();
-        if distance > i128::from(CORPSE_SPEND_REACH_UNITS).pow(2) {
+        if !crate::reach::within_sphere(
+            [from.x, from.y, from.z],
+            position,
+            CORPSE_SPEND_REACH_UNITS,
+        ) {
             return Ok(Err(ErrorCode::OutOfRange));
         }
         if matches!(ability.effect, AbilityEffect::RaiseDead { .. })

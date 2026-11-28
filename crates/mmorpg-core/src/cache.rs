@@ -92,12 +92,10 @@ impl ZoneSimulation {
                 if settle_loot(&mut bag, &mut copper, rewards).is_err() {
                     continue;
                 }
-                let Some(revision) = player.inventory_revision.checked_add(1) else {
+                if player.commit_bag(bag, None).is_err() {
                     continue;
-                };
-                player.inventory = bag;
+                }
                 player.copper = copper;
-                player.inventory_revision = revision;
                 player.caches.insert(cache.id);
                 crate::rewards::record(&mut self.rewards, player_id, key)?;
             }

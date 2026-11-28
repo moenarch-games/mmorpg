@@ -117,11 +117,9 @@ impl ZoneSimulation {
             {
                 return Ok(Some((ErrorCode::InventoryFull, None)));
             }
-            let Some(revision) = player.inventory_revision.checked_add(1) else {
-                return Ok(Some((ErrorCode::InvalidInventoryMove, None)));
-            };
-            player.inventory = bag;
-            player.inventory_revision = revision;
+            if let Err(code) = player.commit_bag(bag, None) {
+                return Ok(Some((code, None)));
+            }
             for &(quest, index, _) in &taken {
                 push_event(
                     &mut player.events,
@@ -157,11 +155,9 @@ impl ZoneSimulation {
             {
                 return Ok(Some((ErrorCode::MissingMaterials, None)));
             }
-            let Some(revision) = player.inventory_revision.checked_add(1) else {
-                return Ok(Some((ErrorCode::InvalidInventoryMove, None)));
-            };
-            player.inventory = bag;
-            player.inventory_revision = revision;
+            if let Err(code) = player.commit_bag(bag, None) {
+                return Ok(Some((code, None)));
+            }
             for &(slot, index, _) in &laid {
                 player.quests.entries[slot].set_progress(index, 1, &mut player.events);
             }
