@@ -829,6 +829,58 @@ impl From<&core::DepthsLootView> for DepthsLootView {
     }
 }
 
+impl TryFrom<&DepthsLootView> for core::DepthsLootView {
+    type Error = String;
+
+    /// The pool a page view carries, for the panel rules that read it back (#1280).
+    fn try_from(view: &DepthsLootView) -> Result<Self, String> {
+        let choice = |answer: &str| match answer {
+            "need" => Ok(core::RollChoice::Need),
+            "greed" => Ok(core::RollChoice::Greed),
+            "pass" => Ok(core::RollChoice::Pass),
+            other => Err(format!("unknown roll answer {other}")),
+        };
+        Ok(Self {
+            run_id: view.run_id,
+            drops: view
+                .drops
+                .iter()
+                .map(|drop| {
+                    Ok(core::DepthsDropView {
+                        drop: drop.drop,
+                        item: core::ItemId::new(drop.item_id),
+                        state: match &drop.state {
+                            DepthsDropState::Rolling {
+                                deadline,
+                                answer,
+                                may_need,
+                            } => core::DropView::Rolling {
+                                deadline: *deadline,
+                                answer: answer.as_deref().map(choice).transpose()?,
+                                may_need: *may_need,
+                            },
+                            DepthsDropState::Held { claimable } => core::DropView::Held {
+                                claimable: *claimable,
+                            },
+                            DepthsDropState::Awarded {
+                                won,
+                                roll,
+                                need,
+                                pending,
+                            } => core::DropView::Awarded {
+                                won: *won,
+                                roll: *roll,
+                                need: *need,
+                                pending: *pending,
+                            },
+                        },
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        })
+    }
+}
+
 /// The selected corpse's complete remaining rewards.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
@@ -2319,7 +2371,11 @@ impl TryFrom<&ZoneSnapshot> for core::ZoneSnapshot {
             }),
             // The party sheet only informs the page's own frame; nothing presents it back.
             party: None,
-            depths_loot: None,
+            depths_loot: snapshot
+                .depths_loot
+                .as_ref()
+                .map(core::DepthsLootView::try_from)
+                .transpose()?,
         })
     }
 }
