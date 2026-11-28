@@ -1,22 +1,73 @@
 //! Native composition of one action catalog and character-scoped portable profiles.
 //! input-bindings owns profile application, validation, conflicts and serialization.
+//!
+//! The actions both clients bind are `content/settings/input-actions.json` (#1284), in
+//! `input-bindings`' own registry format, which the browser's `web/src/input/game-controls.ts`
+//! imports too: ids, titles, contexts, default keys, pad buttons, stick thresholds and the pad
+//! guard rule. The native client adds only its world, interaction and pad-navigation actions.
 use input_bindings_core::{
-    ActionDefinition, ActionRegistry, ConfigurationDiagnosticSeverity, PortableConfigurationV1,
-    Profile, portable_configuration_from_profile, profile_from_portable_configuration,
-    resolve_portable_configuration, validate_registry,
+    ActionDefinition, ActionRegistry, ConfigurationDiagnosticSeverity, DeviceStroke, InputStroke,
+    PortableBindingPatch, PortableConfigurationV1, Profile, portable_configuration_from_profile,
+    profile_from_portable_configuration, resolve_portable_configuration, validate_registry,
 };
 use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
-pub const REGISTRY_VERSION: u32 = 1;
+const SHARED_CATALOG: &str = include_str!("../../../content/settings/input-actions.json");
+
+/// The pad guard rule both clients read (#156, owner answer #156.Q1 A): a pad holding
+/// `trigger_button` past `trigger_threshold` % aims the guard with `stick_axis`, high or low past
+/// `deflection` %.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GuardLaneRule {
+    pub trigger_button: u16,
+    pub trigger_threshold: u8,
+    pub stick_axis: u8,
+    pub deflection: u8,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SharedCatalog {
+    registry_version: u32,
+    guard_lane: GuardLaneRule,
+    actions: Vec<ActionDefinition>,
+}
+
+fn shared_catalog() -> &'static SharedCatalog {
+    static CATALOG: OnceLock<SharedCatalog> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        serde_json::from_str(SHARED_CATALOG).expect("content/settings/input-actions.json parses")
+    })
+}
+
+/// The catalog version stored with each portable binding profile, shared with the browser.
+pub fn registry_version() -> u32 {
+    shared_catalog().registry_version
+}
+
+/// The actions both clients bind, as the browser's `SHARED_ACTIONS`.
+#[must_use]
+pub fn shared_action_registry() -> ActionRegistry {
+    ActionRegistry {
+        actions: shared_catalog().actions.clone(),
+    }
+}
+
+#[must_use]
+pub fn guard_lane_rule() -> GuardLaneRule {
+    shared_catalog().guard_lane
+}
 
 pub fn action_registry() -> ActionRegistry {
     let mut actions: BTreeMap<String, ActionDefinition> = BTreeMap::new();
     for registry in [
-        crate::controls::native_action_registry(),
+        shared_action_registry(),
         crate::world_controls::world_action_registry(),
         crate::gamepad::pad_action_registry(),
     ] {
@@ -33,7 +84,11 @@ pub fn action_registry() -> ActionRegistry {
             }
         }
     }
-    for action in actions.values_mut() {
+    // The shared catalog names its categories; the native-only actions take theirs by id prefix.
+    for action in actions
+        .values_mut()
+        .filter(|action| action.category_path.is_empty())
+    {
         action.category_path = vec![
             match action.id.split('.').next().unwrap_or("") {
                 "move" => "Movement",
@@ -77,6 +132,59 @@ fn profile_path(directory: &Path, character: &str) -> Result<PathBuf, String> {
     Ok(directory.join("bindings").join(format!("{encoded}.json")))
 }
 
+/// Native profiles saved before the shared catalog (#1284) name a shared action's pad defaults
+/// `{action}.pad{n}`; the catalog numbers them after the action's keys, as the browser always did.
+/// The native-only pad actions keep their `.pad{n}` ids, so only a shared action's are renamed.
+fn rename_legacy_pad_bindings(configuration: &mut PortableConfigurationV1) {
+    let renamed = |id: &mut String| {
+        let Some((action, index)) = id.rsplit_once(".pad") else {
+            return;
+        };
+        let Ok(index) = index.parse::<usize>() else {
+            return;
+        };
+        let current = shared_catalog()
+            .actions
+            .iter()
+            .find(|shared| shared.id == action)
+            .and_then(|shared| {
+                shared
+                    .defaults
+                    .iter()
+                    .filter(|binding| {
+                        binding.sequence.iter().any(|stroke| {
+                            matches!(
+                                stroke,
+                                InputStroke::Device(
+                                    DeviceStroke::GamepadButton { .. }
+                                        | DeviceStroke::GamepadAxis { .. }
+                                )
+                            )
+                        })
+                    })
+                    .nth(index)
+            });
+        if let Some(binding) = current {
+            id.clone_from(&binding.id);
+        }
+    };
+    // An added binding never had a default's id; renaming one could only collide.
+    for patch in &mut configuration.patches {
+        match patch {
+            PortableBindingPatch::Add { .. } => {}
+            PortableBindingPatch::Remove { binding_id, .. } => renamed(binding_id),
+            PortableBindingPatch::Replace {
+                binding_id,
+                binding,
+                ..
+            } => {
+                renamed(binding_id);
+                renamed(&mut binding.id);
+            }
+        }
+    }
+}
+
 pub fn load(directory: &Path, character: &str) -> Result<Profile, String> {
     let path = profile_path(directory, character)?;
     let json = match std::fs::read_to_string(path) {
@@ -86,12 +194,13 @@ pub fn load(directory: &Path, character: &str) -> Result<Profile, String> {
         }
         Err(error) => return Err(error.to_string()),
     };
-    let configuration: PortableConfigurationV1 =
+    let mut configuration: PortableConfigurationV1 =
         serde_json::from_str(&json).map_err(|error| error.to_string())?;
+    rename_legacy_pad_bindings(&mut configuration);
     let report = resolve_portable_configuration(
         &configuration,
         &action_registry(),
-        REGISTRY_VERSION,
+        registry_version(),
         &[],
         &[],
     );
@@ -124,7 +233,7 @@ pub fn save(directory: &Path, character: &str, profile: &Profile) -> Result<(), 
         .flat_map(|action| action.defaults)
         .collect::<Vec<_>>();
     let (configuration, diagnostics) =
-        portable_configuration_from_profile(profile, &defaults, REGISTRY_VERSION, None);
+        portable_configuration_from_profile(profile, &defaults, registry_version(), None);
     if diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity == ConfigurationDiagnosticSeverity::Error)
@@ -200,8 +309,9 @@ mod tests {
             binding_id: replacement.id.clone(),
             binding: replacement,
         });
+        // The pad A default, as the browser numbers it (#1284).
         profile.patches.push(BindingPatch::Remove {
-            binding_id: "move.jump.pad0".into(),
+            binding_id: "move.jump.1".into(),
         });
         let mut keyboard = crate::controls::NativeControls::new();
         keyboard.set_profile(Some(profile.clone())).unwrap();
@@ -214,5 +324,108 @@ mod tests {
         assert_eq!(load(dir.path(), "a").unwrap(), profile);
         assert_eq!(load(dir.path(), "b").unwrap(), default_profile("b"));
         assert!(save(dir.path(), "b", &profile).is_err());
+    }
+
+    /// Both clients see one catalog (#1284): the native registry is the shared file's actions,
+    /// unchanged, beside native-only actions that reuse none of their ids.
+    #[test]
+    fn the_native_catalog_is_the_shared_catalog_plus_native_only_actions() {
+        use crate::controls::ControlAction;
+        let shared = shared_action_registry();
+        let native = action_registry();
+        for action in &shared.actions {
+            assert_eq!(
+                native.actions.iter().find(|known| known.id == action.id),
+                Some(action),
+                "{} is the shared definition",
+                action.id
+            );
+        }
+        let native_only = [
+            crate::world_controls::world_action_registry(),
+            crate::gamepad::pad_action_registry(),
+        ]
+        .into_iter()
+        .flat_map(|registry| registry.actions);
+        for action in native_only {
+            assert!(
+                !shared.actions.iter().any(|known| known.id == action.id),
+                "{} is native-only",
+                action.id
+            );
+        }
+        let mut controls = ControlAction::all()
+            .map(ControlAction::id)
+            .collect::<Vec<_>>();
+        let mut ids = shared
+            .actions
+            .iter()
+            .map(|action| action.id.as_str())
+            .collect::<Vec<_>>();
+        controls.sort_unstable();
+        ids.sort_unstable();
+        assert_eq!(controls, ids, "every shared action is a ControlAction");
+    }
+
+    #[test]
+    fn a_profile_saved_before_the_shared_catalog_keeps_its_pad_bindings() {
+        use input_bindings_core::{
+            Binding, PORTABLE_CONFIGURATION_SCHEMA_VERSION, PortableBindingPatch,
+        };
+        let registry = action_registry();
+        let default = |id: &str| -> Binding {
+            registry
+                .actions
+                .iter()
+                .flat_map(|action| &action.defaults)
+                .find(|binding| binding.id == id)
+                .unwrap()
+                .clone()
+        };
+        let mut select = default("ui.toggleCharacter.1");
+        select.id = "ui.toggleCharacter.pad0".into();
+        let legacy = PortableConfigurationV1 {
+            schema_version: PORTABLE_CONFIGURATION_SCHEMA_VERSION,
+            registry_version: 1,
+            profile_id: "character:a".into(),
+            preset_id: None,
+            patches: vec![
+                PortableBindingPatch::Remove {
+                    action_id: "move.jump".into(),
+                    binding_id: "move.jump.pad0".into(),
+                },
+                PortableBindingPatch::Replace {
+                    action_id: "ui.toggleCharacter".into(),
+                    binding_id: "ui.toggleCharacter.pad0".into(),
+                    binding: select,
+                },
+                // A native-only pad action keeps its id.
+                PortableBindingPatch::Remove {
+                    action_id: "ui.closePanel".into(),
+                    binding_id: "ui.closePanel.pad0".into(),
+                },
+            ],
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = profile_path(dir.path(), "a").unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let profile = load(dir.path(), "a").unwrap();
+        // In the foundation's canonical patch order.
+        assert_eq!(
+            profile.patches,
+            [
+                BindingPatch::Remove {
+                    binding_id: "move.jump.1".into()
+                },
+                BindingPatch::Remove {
+                    binding_id: "ui.closePanel.pad0".into()
+                },
+                BindingPatch::Replace {
+                    binding_id: "ui.toggleCharacter.1".into(),
+                    binding: default("ui.toggleCharacter.1"),
+                },
+            ]
+        );
     }
 }

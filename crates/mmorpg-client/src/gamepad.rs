@@ -1,17 +1,18 @@
 //! Native gamepad controls over the shared `input-bindings` runtime (#183).
 //!
-//! The pad catalog mirrors the browser's standard-mapping gamepad bindings in
-//! `web/src/input/game-controls.ts` (same action ids, button/axis indices,
-//! thresholds and contexts): the left stick runs and strafes, A jumps, B rolls
+//! The pad defaults are the catalog both clients load,
+//! `content/settings/input-actions.json` (#1284: action ids, button/axis
+//! indices, thresholds and contexts): the left stick runs and strafes, A jumps, B rolls
 //! (#516; while a panel is open or a cast runs, B
 //! closes the panel or cancels the cast instead), X swings the weapon (#517), Y releases the
-//! spirit, the right bumper cycles targets, the d-pad uses slots 1–4 and
-//! Select toggles bags. Native additions use otherwise unbound buttons: the
-//! left bumper draws/sheathes weapons, Start talks to the selected NPC, the left stick
+//! spirit, the right bumper cycles targets, the d-pad uses slots 1–4,
+//! Select toggles bags, the left bumper draws/sheathes weapons, the left stick
 //! click toggles the character pane and the right trigger the quest log.
+//! Native additions here use otherwise unbound buttons: Start talks to the selected NPC.
 //! Holding the left trigger raises the Warden's shield guard (#156, owner
 //! answer #156.Q1 A): the right stick's vertical deflection picks the lane
-//! (up high, centred middle, down low) and the camera stops tilting meanwhile. While an interface window is
+//! (up high, centred middle, down low; the shared catalog's `guardLane` rule)
+//! and the camera stops tilting meanwhile. While an interface window is
 //! open, the non-blocking `panels` layer turns the d-pad and A into focus
 //! navigation and activation of the egui controls; movement still falls
 //! through to gameplay. B never leaves the world natively: the window has no
@@ -115,154 +116,61 @@ fn button(index: u16) -> InputStroke {
     })
 }
 
-fn stick(axis: u8, direction: AxisDirection) -> InputStroke {
-    InputStroke::Device(DeviceStroke::GamepadAxis {
-        axis,
-        direction,
-        threshold: 50,
-        deadzone: 20,
-        gamepad: None,
+/// The one-shot pad action a dispatched press of `id` is; held movement, descent and the guard
+/// are read from the held state instead.
+fn pad_action(id: &str) -> Option<PadAction> {
+    Some(match id {
+        JUMP => PadAction::Jump,
+        "move.roll" => PadAction::Roll,
+        "target.next" => PadAction::TargetNext,
+        "combat.swing" => PadAction::Swing,
+        "ability.slot1" => PadAction::AbilitySlot(1),
+        "ability.slot2" => PadAction::AbilitySlot(2),
+        "ability.slot3" => PadAction::AbilitySlot(3),
+        "ability.slot4" => PadAction::AbilitySlot(4),
+        "combat.cancelCast" => PadAction::CancelCast,
+        "player.releaseSpirit" => PadAction::ReleaseSpirit,
+        "ui.toggleBags" => PadAction::TogglePanel(Panel::Bags),
+        "ui.toggleCharacter" => PadAction::TogglePanel(Panel::Character),
+        "ui.toggleQuestLog" => PadAction::TogglePanel(Panel::QuestLog),
+        "combat.toggleWeapon" => PadAction::ToggleWeapon,
+        "ui.talk" => PadAction::Talk,
+        "ui.closePanel" => PadAction::ClosePanel,
+        "ui.focusPrevious" => PadAction::FocusPrevious,
+        "ui.focusNext" => PadAction::FocusNext,
+        "ui.activate" => PadAction::Activate,
+        _ => return None,
     })
 }
 
-/// `(id, context, strokes, one-shot action)`; movement is held, not dispatched.
-type Entry = (
-    &'static str,
-    &'static str,
-    Vec<InputStroke>,
-    Option<PadAction>,
-);
-
-fn catalog() -> Vec<Entry> {
-    use AxisDirection::{Negative, Positive};
+/// The native-only pad actions `(id, context, strokes)`: Start talks (the browser's `ui.talk`
+/// also has E; natively E is `world.interact`), and the `panels` layer's egui navigation.
+fn native_pad_catalog() -> Vec<(&'static str, &'static str, Vec<InputStroke>)> {
     use standard::*;
     vec![
-        (MOVE_FORWARD, GAMEPLAY, vec![stick(1, Negative)], None),
-        (MOVE_BACK, GAMEPLAY, vec![stick(1, Positive)], None),
-        (MOVE_LEFT, GAMEPLAY, vec![stick(0, Negative)], None),
-        (MOVE_RIGHT, GAMEPLAY, vec![stick(0, Positive)], None),
-        (JUMP, GAMEPLAY, vec![button(A)], Some(PadAction::Jump)),
-        (
-            "move.roll",
-            GAMEPLAY,
-            vec![button(B)],
-            Some(PadAction::Roll),
-        ),
-        // Held while swimming (#274): A ascends, R3 descends.
-        (DESCEND, GAMEPLAY, vec![button(R3)], None),
-        (
-            "target.next",
-            GAMEPLAY,
-            vec![button(RB)],
-            Some(PadAction::TargetNext),
-        ),
-        (
-            "combat.swing",
-            COMBAT,
-            vec![button(X)],
-            Some(PadAction::Swing),
-        ),
-        (
-            "ability.slot1",
-            COMBAT,
-            vec![button(DPAD_UP)],
-            Some(PadAction::AbilitySlot(1)),
-        ),
-        (
-            "ability.slot2",
-            COMBAT,
-            vec![button(DPAD_RIGHT)],
-            Some(PadAction::AbilitySlot(2)),
-        ),
-        (
-            "ability.slot3",
-            COMBAT,
-            vec![button(DPAD_DOWN)],
-            Some(PadAction::AbilitySlot(3)),
-        ),
-        (
-            "ability.slot4",
-            COMBAT,
-            vec![button(DPAD_LEFT)],
-            Some(PadAction::AbilitySlot(4)),
-        ),
-        (
-            "combat.cancelCast",
-            CASTING,
-            vec![button(B)],
-            Some(PadAction::CancelCast),
-        ),
-        (
-            "player.releaseSpirit",
-            GAMEPLAY,
-            vec![button(Y)],
-            Some(PadAction::ReleaseSpirit),
-        ),
-        (
-            "ui.toggleBags",
-            GAMEPLAY,
-            vec![button(SELECT)],
-            Some(PadAction::TogglePanel(Panel::Bags)),
-        ),
-        (
-            "ui.toggleCharacter",
-            GAMEPLAY,
-            vec![button(L3)],
-            Some(PadAction::TogglePanel(Panel::Character)),
-        ),
-        (
-            "ui.toggleQuestLog",
-            GAMEPLAY,
-            vec![button(RT)],
-            Some(PadAction::TogglePanel(Panel::QuestLog)),
-        ),
-        (GUARD, COMBAT, vec![button(LT)], None),
-        (
-            "combat.toggleWeapon",
-            GAMEPLAY,
-            vec![button(LB)],
-            Some(PadAction::ToggleWeapon),
-        ),
-        (
-            "ui.talk",
-            GAMEPLAY,
-            vec![button(START)],
-            Some(PadAction::Talk),
-        ),
-        (
-            "ui.closePanel",
-            PANELS,
-            vec![button(B)],
-            Some(PadAction::ClosePanel),
-        ),
+        ("ui.talk", GAMEPLAY, vec![button(START)]),
+        ("ui.closePanel", PANELS, vec![button(B)]),
         (
             "ui.focusPrevious",
             PANELS,
             vec![button(DPAD_UP), button(DPAD_LEFT)],
-            Some(PadAction::FocusPrevious),
         ),
         (
             "ui.focusNext",
             PANELS,
             vec![button(DPAD_DOWN), button(DPAD_RIGHT)],
-            Some(PadAction::FocusNext),
         ),
-        (
-            "ui.activate",
-            PANELS,
-            vec![button(A)],
-            Some(PadAction::Activate),
-        ),
+        ("ui.activate", PANELS, vec![button(A)]),
     ]
 }
 
-/// The MMORPG-owned native gamepad catalog.
+/// The native-only gamepad actions; the shared ones come with the catalog both clients load.
 #[must_use]
 pub fn pad_action_registry() -> ActionRegistry {
     ActionRegistry {
-        actions: catalog()
+        actions: native_pad_catalog()
             .into_iter()
-            .map(|(id, context, strokes, _)| ActionDefinition {
+            .map(|(id, context, strokes)| ActionDefinition {
                 id: id.to_owned(),
                 title: id.to_owned(),
                 description: None,
@@ -548,16 +456,10 @@ impl PadControls {
         }
         self.releases.extend(slot_releases(&decisions));
         self.state.apply_decisions(&decisions);
-        let catalog = catalog();
         self.state
             .drain_presses()
             .iter()
-            .filter_map(|id| {
-                catalog
-                    .iter()
-                    .find(|(known, ..)| known == id)
-                    .and_then(|(.., action)| *action)
-            })
+            .filter_map(|id| pad_action(id))
             .collect()
     }
 
@@ -617,17 +519,27 @@ const CAMERA_DEADZONE: f32 = 0.2;
 /// Full deflection orbits this many mouse-drag pixels per second.
 const CAMERA_PIXELS_PER_SECOND: f32 = 420.0;
 
-/// Right-stick deflection past which a held guard aims high or low.
-const GUARD_LANE_DEFLECTION: f32 = 0.5;
-
-/// The lane a held pad guard aims: the right stick's most deflected vertical
-/// reading, up high, down low, otherwise middle.
+/// The lane a held pad guard aims, by the shared catalog's guard rule (as the browser's
+/// `padGuardLane`): among the pads holding the guard trigger, the most deflected vertical right
+/// stick, up high, down low, otherwise middle; middle while no pad holds the trigger.
 #[must_use]
 pub fn guard_lane(pads: &[PadState]) -> mmorpg_core::StrikeHeight {
+    let rule = crate::bindings::guard_lane_rule();
+    let percent = |value: u8| f32::from(value) / 100.0;
     let y = pads
         .iter()
-        .map(|pad| pad.axes[standard::RIGHT_Y])
-        .filter(|value| value.is_finite())
+        .filter(|pad| {
+            pad.buttons
+                .get(usize::from(rule.trigger_button))
+                .is_some_and(|&value| value >= percent(rule.trigger_threshold))
+        })
+        .map(|pad| {
+            pad.axes
+                .get(usize::from(rule.stick_axis))
+                .copied()
+                .filter(|value| value.is_finite())
+                .unwrap_or(0.0)
+        })
         .fold(0.0_f32, |most, value| {
             if value.abs() > most.abs() {
                 value
@@ -635,9 +547,10 @@ pub fn guard_lane(pads: &[PadState]) -> mmorpg_core::StrikeHeight {
                 most
             }
         });
-    if y <= -GUARD_LANE_DEFLECTION {
+    let deflection = percent(rule.deflection);
+    if y <= -deflection {
         mmorpg_core::StrikeHeight::High
-    } else if y >= GUARD_LANE_DEFLECTION {
+    } else if y >= deflection {
         mmorpg_core::StrikeHeight::Low
     } else {
         mmorpg_core::StrikeHeight::Middle
@@ -892,6 +805,10 @@ mod tests {
         assert_eq!(guard_lane(&[held]), mmorpg_core::StrikeHeight::High);
         held.axes[standard::RIGHT_Y] = 0.6;
         assert_eq!(guard_lane(&[held]), mmorpg_core::StrikeHeight::Low);
+        // Only a pad holding the trigger aims, as in the browser (#1284).
+        let mut other = pad();
+        other.axes[standard::RIGHT_Y] = -1.0;
+        assert_eq!(guard_lane(&[held, other]), mmorpg_core::StrikeHeight::Low);
         controls.sample(&[pad()]);
         assert!(!controls.guarding());
         // Focus loss lowers a still-held guard.

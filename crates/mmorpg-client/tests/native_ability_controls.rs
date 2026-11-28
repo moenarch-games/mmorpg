@@ -2,7 +2,7 @@
 //! `input-bindings` runtime.
 //!
 //! The native client resolves keys to the same MMORPG-owned semantic actions
-//! as the browser (`web/src/input/game-controls.ts`): `ability.slot1`–`4` on
+//! as the browser (both load `content/settings/input-actions.json`): `ability.slot1`–`4` on
 //! Digit1–Digit4 in the `gameplay` context and `combat.cancelCast` (no key since #636: right
 //! click cancels a cast) in
 //! the `casting` context, which is pushed only while the received projection
@@ -23,8 +23,8 @@
 //!     // "ability.slot1".."ability.slot4", "combat.cancelCast"
 //!
 //! pub fn native_action_registry() -> input_bindings_core::ActionRegistry;
-//!     // the MMORPG-owned native catalog: every ControlAction, repeat policy
-//!     // Never, keyboard defaults (physical key codes) with the browser's
+//!     // the catalog both clients load: every ControlAction, repeat policy
+//!     // Never, keyboard (physical key codes) and pad defaults in their
 //!     // contexts; it validates without diagnostics
 //!
 //! pub struct NativeControls { /* InputRuntime + SemanticControlState */ }
@@ -52,8 +52,6 @@ use input_bindings_core::{
 use mmorpg_client::controls::{ControlAction, NativeControls, native_action_registry};
 use winit::keyboard::KeyCode;
 
-const BROWSER_CONTROLS: &str = include_str!("../../../web/src/input/game-controls.ts");
-
 /// No control action.
 const NONE: [ControlAction; 0] = [];
 
@@ -68,27 +66,6 @@ fn press(controls: &mut NativeControls, key: KeyCode) -> Vec<ControlAction> {
     let actions = controls.key_down(key, false);
     controls.key_up(key);
     actions
-}
-
-/// The browser's default for `id`: its context and physical key codes, read
-/// from the `action("<id>", "<title>", "<context>", [key("…"), …])` line.
-fn browser_default(id: &str) -> (String, Vec<String>) {
-    let needle = format!("action(\"{id}\", ");
-    let line = BROWSER_CONTROLS
-        .lines()
-        .find(|line| line.contains(&needle))
-        .unwrap_or_else(|| panic!("the browser catalog defines {id}"));
-    let quoted: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
-    // id, title, context, then the key codes.
-    assert_eq!(quoted[0], id);
-    let context = quoted[2].to_owned();
-    let mut keys: Vec<String> = line
-        .split("key(\"")
-        .skip(1)
-        .map(|rest| rest.split('"').next().unwrap().to_owned())
-        .collect();
-    keys.sort();
-    (context, keys)
 }
 
 /// The native catalog's default for `id`: its contexts and physical key codes.
@@ -152,8 +129,10 @@ fn action_ids_are_the_shared_semantic_ids() {
     assert_eq!(ControlAction::CancelCast.id(), "combat.cancelCast");
 }
 
+/// Both clients load one catalog file (#1284), so its defaults are the browser's by
+/// construction; pin the combat ones so an edit cannot silently move them.
 #[test]
-fn native_defaults_match_the_browser_catalog() {
+fn native_defaults_are_the_shared_catalog() {
     let registry = native_action_registry();
     let report = validate_registry(&registry, None);
     assert!(
@@ -161,29 +140,20 @@ fn native_defaults_match_the_browser_catalog() {
         "the native catalog validates: {:?}",
         report.diagnostics
     );
-    let ids: Vec<&str> = SLOT_KEYS
+    let expected = SLOT_KEYS
         .iter()
-        .map(|&(_, slot)| ControlAction::AbilitySlot(slot).id())
+        .map(|&(key, slot)| (ControlAction::AbilitySlot(slot).id(), format!("{key:?}")))
         .chain([
-            ControlAction::Swing.id(),
-            ControlAction::DirectedStrike.id(),
-        ])
-        .collect();
-    for id in ids {
-        let (browser_context, browser_keys) = browser_default(id);
-        let (native_contexts, native_keys) = native_default(&registry, id);
-        assert_eq!(native_contexts, [browser_context], "{id}: same context");
-        assert_eq!(native_keys, browser_keys, "{id}: same default keys");
+            (ControlAction::Swing.id(), "KeyQ".to_owned()),
+            (ControlAction::DirectedStrike.id(), "KeyG".to_owned()),
+        ]);
+    for (id, key) in expected {
+        assert_eq!(
+            native_default(&registry, id),
+            (vec!["combat".to_owned()], vec![key]),
+            "{id}"
+        );
     }
-    // Pin the expectation itself, so a browser edit cannot silently move both.
-    assert_eq!(
-        browser_default("ability.slot1"),
-        ("combat".to_owned(), vec!["Digit1".to_owned()])
-    );
-    assert_eq!(
-        browser_default("combat.swing"),
-        ("combat".to_owned(), vec!["KeyQ".to_owned()])
-    );
 }
 
 #[test]

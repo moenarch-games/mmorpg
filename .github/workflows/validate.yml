@@ -86,10 +86,10 @@ jobs:
                 case "$file" in
                   Cargo.toml|Cargo.lock|rust-toolchain*|.cargo/*|crates/*|content/*|web/assets/*) rust_changed=true ;;
                   # Tracked files outside the crates that the Rust build and tests read (#1099):
-                  # golden fixtures, authored art and effects, the browser control catalog a
-                  # native test includes, review poses, the bundle fetch and CI installers, and
-                  # the lint, test-runner and work-contract configuration.
-                  fixtures/*|web/public/*|web/src/input/game-controls.ts) rust_changed=true ;;
+                  # golden fixtures, authored art and effects, review poses, the bundle fetch and
+                  # CI installers, and the lint, test-runner and work-contract configuration. The
+                  # shared input action catalog is content/settings/input-actions.json (#1284).
+                  fixtures/*|web/public/*) rust_changed=true ;;
                   scripts/review-poses.json|scripts/fetch-bundles.sh|scripts/ci-*) rust_changed=true ;;
                   .config/*|clippy.toml|.performance/*) rust_changed=true ;;
                 esac
@@ -97,7 +97,7 @@ jobs:
                 # unrelated long-running zone journeys on an ordinary PR. Merge queue runs
                 # retain the complete Rust suite before integration.
                 case "$file" in
-                  web/assets/*|web/public/*|web/src/input/game-controls.ts) settings_only=false ;;
+                  web/assets/*|web/public/*) settings_only=false ;;
                   content/settings/catalog.json) catalog_changed=true ;;
                   web/*) ;;
                   *) settings_only=false ;;

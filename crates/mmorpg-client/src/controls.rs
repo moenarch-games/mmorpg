@@ -1,16 +1,17 @@
 //! Native semantic controls over the shared `input-bindings` runtime.
 //!
-//! The client owns only the MMORPG catalog (the same action ids, contexts and
-//! default physical keys as the browser's `web/src/input/game-controls.ts`)
-//! and the translation from winit keys to physical strokes. Binding
-//! resolution, repeat suppression and held-state release belong to
+//! A [`ControlAction`] is one action of the catalog both clients load,
+//! `content/settings/input-actions.json` (#1284: its titles, contexts and
+//! default keys live there, not here). The client owns the mapping from those
+//! ids to its enum and the translation from winit keys to physical strokes.
+//! Binding resolution, repeat suppression and held-state release belong to
 //! `input_bindings_core::InputRuntime` and `SemanticControlState`. A control
 //! action names an action-bar slot, never an ability: what a slot use does
 //! stays with the session and the zone.
 use input_bindings_core::{
-    ActionDefinition, ActionRegistry, Binding, ContextLayer, DeviceClass, InputRuntime,
-    InputRuntimeOptions, InputStroke, KeyMatch, KeyStroke, Modifiers, Provenance, RepeatPolicy,
-    RuntimeActionPhase, RuntimeDecision, RuntimeDispatchReason, SemanticControlState, WhenExpr,
+    ActionRegistry, ContextLayer, InputRuntime, InputRuntimeOptions, InputStroke, KeyMatch,
+    KeyStroke, Modifiers, RuntimeActionPhase, RuntimeDecision, RuntimeDispatchReason,
+    SemanticControlState,
 };
 use std::collections::BTreeMap;
 use strum::{IntoEnumIterator, VariantArray};
@@ -159,74 +160,6 @@ impl ControlAction {
     fn from_id(id: &str) -> Option<Self> {
         Self::all().find(|action| action.id() == id)
     }
-
-    /// Title, context and default physical keys, as in the browser catalog.
-    fn default_binding(self) -> (&'static str, &'static str, &'static [&'static str]) {
-        type Spec = (&'static str, &'static str, &'static [&'static str]);
-        let (title, context, keys): Spec = match self {
-            Self::MoveForward => ("Move forward", GAMEPLAY, &["KeyW", "ArrowUp"]),
-            Self::MoveBackward => ("Move backward", GAMEPLAY, &["KeyS", "ArrowDown"]),
-            Self::MoveLeft => ("Strafe left", GAMEPLAY, &["KeyA", "ArrowLeft"]),
-            Self::MoveRight => ("Strafe right", GAMEPLAY, &["KeyD", "ArrowRight"]),
-            Self::Jump => ("Jump (hold to swim up)", GAMEPLAY, &["Space"]),
-            // Moved off Shift (#294): Shift now reaches the second action-bar row.
-            Self::Roll => ("Dodge roll", GAMEPLAY, &["KeyF"]),
-            Self::Descend => ("Swim down (hold)", GAMEPLAY, &["KeyX"]),
-            Self::TargetNext => ("Next target", GAMEPLAY, &["Tab"]),
-            Self::ToggleWeapon => ("Draw / sheathe weapon", GAMEPLAY, &["KeyH"]),
-            Self::Swing => ("Swing weapon", GAMEPLAY, &["KeyQ"]),
-            Self::ReleaseSpirit => ("Release spirit", GAMEPLAY, &["KeyR"]),
-            Self::AbilitySlot(1) => ("Ability 1", GAMEPLAY, &["Digit1"]),
-            Self::AbilitySlot(2) => ("Ability 2", GAMEPLAY, &["Digit2"]),
-            Self::AbilitySlot(3) => ("Ability 3", GAMEPLAY, &["Digit3"]),
-            Self::AbilitySlot(4) => ("Ability 4", GAMEPLAY, &["Digit4"]),
-            Self::AbilitySlot(5) => ("Ability 5", GAMEPLAY, &["Digit5"]),
-            Self::AbilitySlot(6) => ("Ability 6", GAMEPLAY, &["Digit6"]),
-            Self::AbilitySlot(7) => ("Ability 7", GAMEPLAY, &["Digit7"]),
-            Self::AbilitySlot(8) => ("Ability 8", GAMEPLAY, &["Digit8"]),
-            Self::AbilitySlot(9) => ("Ability 9", GAMEPLAY, &["Digit9"]),
-            Self::AbilitySlot(10) => ("Ability 10", GAMEPLAY, &["Digit0"]),
-            Self::AbilitySlot(11) => ("Ability 11 (Shift row)", GAMEPLAY, &["Shift+Digit1"]),
-            Self::AbilitySlot(12) => ("Ability 12 (Shift row)", GAMEPLAY, &["Shift+Digit2"]),
-            Self::AbilitySlot(13) => ("Ability 13 (Shift row)", GAMEPLAY, &["Shift+Digit3"]),
-            Self::AbilitySlot(14) => ("Ability 14 (Shift row)", GAMEPLAY, &["Shift+Digit4"]),
-            Self::AbilitySlot(15) => ("Ability 15 (Shift row)", GAMEPLAY, &["Shift+Digit5"]),
-            Self::AbilitySlot(16) => ("Ability 16 (Shift row)", GAMEPLAY, &["Shift+Digit6"]),
-            Self::AbilitySlot(17) => ("Ability 17 (Shift row)", GAMEPLAY, &["Shift+Digit7"]),
-            Self::AbilitySlot(18) => ("Ability 18 (Shift row)", GAMEPLAY, &["Shift+Digit8"]),
-            Self::AbilitySlot(19) => ("Ability 19 (Shift row)", GAMEPLAY, &["Shift+Digit9"]),
-            Self::AbilitySlot(_) => ("Ability 20 (Shift row)", GAMEPLAY, &["Shift+Digit0"]),
-            // Right click cancels a cast (#636); Escape opens the game menu instead.
-            Self::CancelCast => ("Cancel cast", CASTING, &[]),
-            Self::TogglePanel(Panel::Bags) => ("Toggle bags", GAMEPLAY, &["KeyB"]),
-            Self::TogglePanel(Panel::Character) => ("Toggle character pane", GAMEPLAY, &["KeyC"]),
-            Self::TogglePanel(Panel::QuestLog) => ("Toggle quest log", GAMEPLAY, &["KeyL"]),
-            Self::TogglePanel(Panel::WorldMap) => ("Toggle world map", GAMEPLAY, &["KeyM"]),
-            Self::OpenChat => ("Chat", GAMEPLAY, &["Enter", "NumpadEnter"]),
-            Self::DirectedStrike => (
-                "Directed Heroic Strike (hold, aim, release)",
-                GAMEPLAY,
-                &["KeyG"],
-            ),
-            Self::Guard => ("Shield guard (hold, aim up/down)", GAMEPLAY, &["KeyZ"]),
-            Self::Minions(MinionCommand::Attack) => ("Minions: attack target", GAMEPLAY, &["KeyY"]),
-            Self::Minions(MinionCommand::Defend) => ("Minions: defend here", GAMEPLAY, &["KeyU"]),
-            Self::Minions(MinionCommand::Follow) => ("Minions: follow", GAMEPLAY, &["KeyI"]),
-            Self::Minions(MinionCommand::Retreat) => ("Minions: retreat", GAMEPLAY, &["KeyO"]),
-            // Radial wheels (#653): only open with Settings → Wheels → Radial wheels on.
-            Self::FixedWheel => ("Fixed wheel (hold, flick, release)", GAMEPLAY, &["KeyT"]),
-            Self::ContextWheel => ("Context wheel (hold, flick, release)", GAMEPLAY, &["KeyK"]),
-        };
-        let context = if matches!(
-            self,
-            Self::Swing | Self::AbilitySlot(_) | Self::DirectedStrike | Self::Guard
-        ) {
-            COMBAT
-        } else {
-            context
-        };
-        (title, context, keys)
-    }
 }
 
 /// A held action-bar slot let go (#414, #485): the zone reads it only for an experimental
@@ -269,65 +202,21 @@ const CASTING: &str = "casting";
 /// needs no clock: every event carries the same timestamp.
 const NO_CLOCK_MS: u64 = 0;
 
-/// The MMORPG-owned native catalog: every [`ControlAction`] with repeat
-/// policy `Never` and its browser default key in the browser's context.
+/// The catalog every [`ControlAction`] comes from: the actions both clients
+/// bind, with their keyboard and pad defaults, as the browser loads them.
 #[must_use]
 pub fn native_action_registry() -> ActionRegistry {
-    ActionRegistry {
-        actions: ControlAction::all()
-            .map(|action| {
-                let id = action.id();
-                let (title, context, keys) = action.default_binding();
-                ActionDefinition {
-                    id: id.to_owned(),
-                    title: title.to_owned(),
-                    description: None,
-                    category_path: Vec::new(),
-                    repeat_policy: RepeatPolicy::Never,
-                    allowed_devices: vec![DeviceClass::Keyboard],
-                    defaults: keys
-                        .iter()
-                        .enumerate()
-                        .map(|(index, key)| Binding {
-                            id: format!("{id}.{index}"),
-                            action: id.to_owned(),
-                            sequence: vec![physical(key)],
-                            when: WhenExpr::Context {
-                                id: context.to_owned(),
-                            },
-                            priority: 0,
-                        })
-                        .collect(),
-                    provenance: Some(Provenance {
-                        source: "mmorpg".to_owned(),
-                        version: Some("1".to_owned()),
-                    }),
-                }
-            })
-            .collect(),
-    }
-}
-
-/// A default key; `Shift+` selects the second action-bar row (#294).
-fn physical(code: &str) -> InputStroke {
-    let (code, shift) = match code.strip_prefix("Shift+") {
-        Some(code) => (code, true),
-        None => (code, false),
-    };
-    InputStroke::Keyboard(KeyStroke {
-        key: KeyMatch::Physical {
-            value: code.to_owned(),
-        },
-        modifiers: Modifiers {
-            shift,
-            ..Modifiers::default()
-        },
-    })
+    crate::bindings::shared_action_registry()
 }
 
 /// winit's `KeyCode` names are the W3C physical key codes.
 fn stroke(key: KeyCode) -> InputStroke {
-    physical(&format!("{key:?}"))
+    InputStroke::Keyboard(KeyStroke {
+        key: KeyMatch::Physical {
+            value: format!("{key:?}"),
+        },
+        modifiers: Modifiers::default(),
+    })
 }
 
 /// Preserve the activation stroke until its physical key releases, even when
