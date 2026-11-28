@@ -1,4 +1,3 @@
-import type { AuraKind } from "../../replication";
 import type { AbilityRecord, ContentCatalog } from "../catalog";
 
 /**
@@ -112,14 +111,6 @@ export function presentationOf(ability: number): AbilityPresentation | undefined
   return ABILITY_PRESENTATION.get(ability);
 }
 
-export type AuraPolarity = "buff" | "debuff";
-
-const BUFF_KINDS: ReadonlySet<AuraKind> = new Set(["heal-over-time", "absorb", "haste", "corpse", "shapeshift"]);
-
-/** Heals, shields and haste help their bearer; damage over time, roots, snares and stuns hurt it. */
-export function auraPolarity(kind: AuraKind): AuraPolarity {
-  return BUFF_KINDS.has(kind) ? "buff" : "debuff";
-}
 
 /** The icon facts for an ability ID, with a neutral fallback for IDs this build does not describe. */
 export function glyphOf(ability: number): { glyph: string; accent: `#${string}` } {

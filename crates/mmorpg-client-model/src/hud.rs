@@ -5,8 +5,9 @@
 //! ability catalog; nothing here decides whether an ability can be used, the
 //! zone answers every `UseAbility` itself.
 use mmorpg_core::{
-    ABILITY_CATALOG, Ability, AbilityId, AbilityRange, AbilityUser, CastView, Cooldown, EntityRef,
-    PlayerClass, ResourceView, ViewerState, ZoneSnapshot, ability_by_id, trig, unit,
+    ABILITY_CATALOG, Ability, AbilityId, AbilityRange, AbilityUser, AuraKind, AuraView, CastView,
+    Cooldown, EntityRef, PlayerClass, ResourceView, TICK_HZ, ViewerState, ZoneSnapshot,
+    ability_by_id, trig, unit,
 };
 
 /// At most this many abilities sit on the action bar: two rows, the second reached with Shift
@@ -303,6 +304,119 @@ impl CombatHud {
     }
 }
 
+impl SlotCooldown {
+    /// The whole seconds a slot's own cooldown shows while at least 2 s remain, rounded up;
+    /// `None` below that and for the global cooldown, which only dims the slot (#1280).
+    #[must_use]
+    pub fn shown_seconds(self) -> Option<u16> {
+        (self.kind == CooldownKind::Ability && self.remaining >= 2 * TICK_HZ)
+            .then(|| self.remaining.div_ceil(TICK_HZ))
+    }
+}
+
+/// Time left as a short label: whole seconds rounded up (at least `1s`), then whole minutes
+/// rounded up from one minute.
+#[must_use]
+pub fn remaining_label(ticks: u16) -> String {
+    let seconds = ticks.div_ceil(TICK_HZ).max(1);
+    if seconds >= 60 {
+        format!("{}m", seconds.div_ceil(60))
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+/// Whether an aura helps its bearer or hurts it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuraPolarity {
+    Buff,
+    Debuff,
+}
+
+/// Heals, shields, haste, a fresh corpse and wolf form help their bearer; damage over time,
+/// roots, snares and stuns hurt it.
+#[must_use]
+pub const fn aura_polarity(kind: AuraKind) -> AuraPolarity {
+    match kind {
+        AuraKind::HealOverTime
+        | AuraKind::Absorb
+        | AuraKind::Haste
+        | AuraKind::Corpse
+        | AuraKind::Shapeshift => AuraPolarity::Buff,
+        AuraKind::DamageOverTime | AuraKind::Root | AuraKind::Snare | AuraKind::Stun => {
+            AuraPolarity::Debuff
+        }
+    }
+}
+
+/// What an aura does, from its kind and amount.
+#[must_use]
+pub fn aura_effect_text(aura: AuraView) -> String {
+    let amount = aura.amount;
+    match aura.kind {
+        AuraKind::DamageOverTime => format!("{amount} damage over time"),
+        AuraKind::HealOverTime => format!("{amount} healing over time"),
+        AuraKind::Absorb => format!("Absorbs {amount} damage"),
+        AuraKind::Root => "Rooted".to_owned(),
+        AuraKind::Snare => format!("Slowed by {amount}%"),
+        AuraKind::Stun => "Stunned".to_owned(),
+        AuraKind::Haste => format!("Attacks {amount}% faster"),
+        AuraKind::Corpse => "A fresh corpse to raise or burst".to_owned(),
+        AuraKind::Shapeshift => "In wolf form".to_owned(),
+    }
+}
+
+/// One aura icon of a unit frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuraRow {
+    pub ability: u32,
+    pub polarity: AuraPolarity,
+    /// The icon's tooltip: `Frost Nova: Rooted (2s)`.
+    pub label: String,
+    /// The corner timer: [`remaining_label`].
+    pub timer: String,
+}
+
+/// A unit frame's auras: buffs shown above, debuffs below, each longest remaining first, then by
+/// ability ID so equal times keep their order between projections.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AuraRows {
+    pub buffs: Vec<AuraRow>,
+    pub debuffs: Vec<AuraRow>,
+}
+
+/// The rows a unit frame shows for `auras`.
+#[must_use]
+pub fn aura_rows(auras: &[AuraView]) -> AuraRows {
+    let mut ordered = auras.to_vec();
+    ordered.sort_by(|left, right| {
+        right
+            .remaining
+            .cmp(&left.remaining)
+            .then(left.ability.get().cmp(&right.ability.get()))
+    });
+    let mut rows = AuraRows::default();
+    for aura in ordered {
+        let name = ability_by_id(aura.ability).map_or_else(
+            || format!("ability {}", aura.ability.get()),
+            |ability| ability.name.to_owned(),
+        );
+        let timer = remaining_label(aura.remaining);
+        let polarity = aura_polarity(aura.kind);
+        let row = AuraRow {
+            ability: aura.ability.get(),
+            polarity,
+            label: format!("{name}: {} ({timer})", aura_effect_text(aura)),
+            timer,
+        };
+        match polarity {
+            AuraPolarity::Buff => rows.buffs.push(row),
+            AuraPolarity::Debuff => rows.debuffs.push(row),
+        }
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,5 +655,83 @@ mod tests {
         assert!(aims_at_selection(&snapshot, firebolt));
         snapshot.viewer.target = None;
         assert!(!aims_at_selection(&snapshot, firebolt));
+    }
+
+    /// Ticks for `thirtieths` of a second, as the browser's former tests counted them.
+    fn t(thirtieths: u16) -> u16 {
+        u16::try_from(u32::from(thirtieths) * u32::from(TICK_HZ) / 30).unwrap()
+    }
+
+    #[test]
+    fn cooldown_seconds_show_from_two_seconds_and_never_for_the_global_wait() {
+        let cooldown = |kind, remaining| SlotCooldown {
+            kind,
+            remaining,
+            total: t(900),
+        };
+        assert_eq!(cooldown(CooldownKind::Ability, t(59)).shown_seconds(), None);
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(60)).shown_seconds(),
+            Some(2)
+        );
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(61)).shown_seconds(),
+            Some(3)
+        );
+        assert_eq!(
+            cooldown(CooldownKind::Ability, t(360)).shown_seconds(),
+            Some(12)
+        );
+        assert_eq!(cooldown(CooldownKind::Global, t(90)).shown_seconds(), None);
+    }
+
+    #[test]
+    fn remaining_time_reads_as_seconds_then_minutes() {
+        assert_eq!(remaining_label(t(1)), "1s");
+        assert_eq!(remaining_label(t(31)), "2s");
+        assert_eq!(remaining_label(t(300)), "10s");
+        assert_eq!(remaining_label(t(1_800)), "1m");
+        assert_eq!(remaining_label(t(2_000)), "2m");
+    }
+
+    #[test]
+    fn auras_split_by_polarity_longest_first_with_named_effects() {
+        let aura = |ability, kind, remaining, amount| AuraView {
+            ability: AbilityId::new(ability),
+            kind,
+            remaining,
+            amount,
+        };
+        let rows = aura_rows(&[
+            aura(10, AuraKind::Root, 100, 0),
+            aura(11, AuraKind::Absorb, 200, 40),
+            aura(3, AuraKind::HealOverTime, 200, 30),
+            aura(6, AuraKind::DamageOverTime, 400, 30),
+            aura(8, AuraKind::Haste, 50, 40),
+        ]);
+        let ids = |rows: &[AuraRow]| rows.iter().map(|row| row.ability).collect::<Vec<_>>();
+        assert_eq!(ids(&rows.buffs), [3, 11, 8]);
+        assert_eq!(ids(&rows.debuffs), [6, 10]);
+        let label = |aura| {
+            aura_rows(&[aura])
+                .buffs
+                .into_iter()
+                .chain(aura_rows(&[aura]).debuffs)
+                .next()
+                .unwrap()
+        };
+        assert_eq!(
+            label(aura(11, AuraKind::Absorb, t(600), 60)).label,
+            "Arcane Barrier: Absorbs 60 damage (20s)"
+        );
+        assert_eq!(
+            label(aura(10, AuraKind::Root, t(31), 0)).label,
+            "Frost Nova: Rooted (2s)"
+        );
+        assert_eq!(
+            label(aura(2, AuraKind::Snare, t(30), 50)).label,
+            "Shield Bash: Slowed by 50% (1s)"
+        );
+        assert_eq!(label(aura(11, AuraKind::Absorb, t(1_800), 0)).timer, "1m");
     }
 }

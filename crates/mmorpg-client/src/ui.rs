@@ -1066,16 +1066,11 @@ impl GameUi {
                                                     CooldownKind::Global => 110,
                                                 }),
                                             );
-                                            if cooldown.kind == CooldownKind::Ability {
+                                            if let Some(seconds) = cooldown.shown_seconds() {
                                                 ui.painter().text(
                                                     rect.center(),
                                                     Align2::CENTER_CENTER,
-                                                    format!(
-                                                        "{:.0}",
-                                                        (f32::from(cooldown.remaining)
-                                                            / f32::from(mmorpg_core::TICK_HZ))
-                                                        .ceil()
-                                                    ),
+                                                    seconds.to_string(),
                                                     egui::FontId::proportional(18.0),
                                                     Color32::WHITE,
                                                 );
@@ -1278,18 +1273,25 @@ fn cast_bar(ui: &mut egui::Ui, cast: mmorpg_core::CastView) {
     bar(ui, view.fill, name.to_owned(), color);
 }
 
+/// A unit frame's auras (`mmorpg_client_model::hud::aura_rows`): buffs on one line, debuffs on
+/// the next, each its name and timer with the effect as tooltip.
 fn auras(ui: &mut egui::Ui, auras: &[mmorpg_core::AuraView]) {
-    if auras.is_empty() {
-        return;
-    }
-    ui.horizontal_wrapped(|ui| {
-        for aura in auras {
-            let name = ability_by_id(aura.ability).map_or(aura.kind.name(), |a| a.name);
-            let seconds = f32::from(aura.remaining) / f32::from(mmorpg_core::TICK_HZ);
-            ui.small(format!("{name} {seconds:.0}s"))
-                .on_hover_text(aura.kind.name());
+    let rows = hud::aura_rows(auras);
+    for (row, color) in [
+        (&rows.buffs, Color32::from_rgb(150, 220, 140)),
+        (&rows.debuffs, Color32::from_rgb(235, 130, 110)),
+    ] {
+        if row.is_empty() {
+            continue;
         }
-    });
+        ui.horizontal_wrapped(|ui| {
+            for aura in row {
+                let name = aura.label.split(':').next().unwrap_or_default();
+                ui.small(RichText::new(format!("{name} {}", aura.timer)).color(color))
+                    .on_hover_text(&aura.label);
+            }
+        });
+    }
 }
 
 /// The waystone panel (#145): while the living viewer stands within reach of a stone, its
@@ -1300,49 +1302,26 @@ fn waystone_window(
     snapshot: &ZoneSnapshot,
     intents: &mut Vec<UiIntent>,
 ) {
-    if snapshot.viewer.dead {
-        return;
-    }
-    let Some(viewer) = snapshot.entities.first() else {
+    let Some(offer) = mmorpg_client_model::panels::waystone_offer(snapshot, frame.content) else {
         return;
     };
-    let Some(here) =
-        mmorpg_core::waystone_within_reach(frame.content, [viewer.position[0], viewer.position[2]])
-    else {
-        return;
-    };
-    let name = mmorpg_core::waystone(here).map_or("Waystone", |site| site.name);
-    let unlocked = &snapshot.viewer.waystones;
     egui::Window::new("Waystone")
         .anchor(Align2::RIGHT_CENTER, Vec2::new(-24.0, 0.0))
         .resizable(false)
         .collapsible(false)
         .show(ctx, |ui| {
             ui.set_width(220.0);
-            ui.label(RichText::new(name).strong());
-            let destinations = mmorpg_core::WAYSTONES
-                .iter()
-                .filter(|site| site.id != here && unlocked.contains(site.id))
-                .collect::<Vec<_>>();
-            if destinations.is_empty() {
-                ui.label("Explore to discover more waystones.");
-            }
-            for site in destinations {
+            ui.label(RichText::new(offer.name).strong());
+            for (waystone, name) in offer.destinations {
                 if ui
-                    .add_enabled(!snapshot.viewer.in_combat, egui::Button::new(site.name))
+                    .add_enabled(!snapshot.viewer.in_combat, egui::Button::new(name))
                     .clicked()
                 {
-                    intents.push(UiIntent::Command(ZoneCommand::UseWaystone {
-                        waystone: site.id,
-                    }));
+                    intents.push(UiIntent::Command(ZoneCommand::UseWaystone { waystone }));
                 }
             }
-            let undiscovered = mmorpg_core::WAYSTONES
-                .iter()
-                .filter(|site| !unlocked.contains(site.id))
-                .count();
-            if undiscovered > 0 {
-                ui.small(format!("{undiscovered} undiscovered"));
+            if !offer.status.is_empty() {
+                ui.small(offer.status);
             }
         });
 }

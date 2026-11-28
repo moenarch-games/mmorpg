@@ -45,13 +45,15 @@ export type ItemRecord = {
   sellPrice: number;
   /** A find's quality, tactical trait and source (#918), or null for a standard item. */
   find: string | null;
+  /** Its attributes and find as `mmorpg-client-model`'s `items` words them (#1280); empty for a plain bag item. */
+  detail: string;
 };
 
 /**
  * One unit of `item` costs `price` copper and, for a smith's recipe (#917), the `materials` taken
- * from the bag; the offer's array index is its wire index.
+ * from the bag; the offer's array index is its wire index. `text` is its row (#1280).
  */
-export type VendorOffer = { item: number; price: number; materials: readonly { item: number; quantity: number }[] };
+export type VendorOffer = { item: number; price: number; materials: readonly { item: number; quantity: number }[]; text: string };
 export type VendorRecord = { npc: number; offers: readonly VendorOffer[] };
 
 export type ClassName = "warden" | "ranger" | "arcanist" | "necromancer" | "rogue" | "cleric" | "druid";
@@ -144,6 +146,10 @@ export type QuestRecord = {
 
 export type ContentCatalog = {
   items: ReadonlyMap<number, ItemRecord>;
+  /** Equipment slot titles by wire index (0 main hand … 5 feet). */
+  equipmentSlots: readonly string[];
+  /** The attribute names, in `ItemStats` order (stamina, strength, agility, intellect). */
+  attributeNames: readonly string[];
   /** The content hash, never a hand-bumped counter. */
   contentRevision: bigint;
   creatureTemplates: ReadonlyMap<number, CreatureTemplate>;
@@ -241,6 +247,14 @@ function prose(value: unknown, name: string): string {
   return value;
 }
 
+/** A line that may be empty, at most `limit` characters. */
+function line(value: unknown, name: string, limit = 300): string {
+  if (typeof value !== "string" || value.length > limit) {
+    fail(`${name} must be text of at most ${limit} characters`);
+  }
+  return value;
+}
+
 function text(value: unknown, name: string, limit = 64): string {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > limit) {
     fail(`${name} must be non-empty text`);
@@ -274,8 +288,15 @@ export function decodeCatalog(json: string): ContentCatalog {
     fail("not JSON");
   }
   const root = object(parsed, [
-    "format", "contentRevision", "creatureTemplates", "npcs", "areas", "items", "classes", "abilities", "vendors", "quests",
+    "format", "contentRevision", "creatureTemplates", "npcs", "areas", "items", "equipmentSlots", "attributeNames", "classes",
+    "abilities", "vendors", "quests",
   ], "export");
+  const equipmentSlots = list(root.equipmentSlots, "equipment slots", EQUIPMENT_SLOT_NAMES.length)
+    .map((value, index) => text(value, `equipment slot ${index}`));
+  const attributeNames = list(root.attributeNames, "attribute names", 4).map((value, index) => text(value, `attribute ${index}`));
+  if (equipmentSlots.length !== EQUIPMENT_SLOT_NAMES.length || attributeNames.length !== 4) {
+    fail("the export needs every equipment slot title and four attribute names");
+  }
   if (root.format !== FORMAT) {
     fail(`unsupported format ${String(root.format)}`);
   }
@@ -327,7 +348,7 @@ export function decodeCatalog(json: string): ContentCatalog {
   });
   const items = list(root.items, "items", 256).map((value, index): ItemRecord => {
     const name = `item ${index}`;
-    const record = object(value, ["id", "name", "maxStack", "slot", "stats", "sellPrice", "find"], name);
+    const record = object(value, ["id", "name", "maxStack", "slot", "stats", "sellPrice", "find", "detail"], name);
     const stats = object(record.stats, ["stamina", "strength", "agility", "intellect"], `${name} stats`);
     return {
       id: int(record.id, `${name} id`, 1, 0xffff),
@@ -342,6 +363,7 @@ export function decodeCatalog(json: string): ContentCatalog {
       },
       sellPrice: int(record.sellPrice, `${name} sale value`, 0, 0xffff_ffff),
       find: record.find === null ? null : text(record.find, `${name} find`, 200),
+      detail: line(record.detail, `${name} detail`),
     };
   });
   const itemsById = byId(items, "item");
@@ -354,7 +376,7 @@ export function decodeCatalog(json: string): ContentCatalog {
     }
     // Vendor offers have no fixed cap (Atlas 2.2.i882); the bound only rejects malformed input.
     const offers = list(record.offers, `${name} offers`, 0xffff).map((offer, slot) => {
-      const entry = object(offer, ["item", "price", "materials"], `${name} offer ${slot}`);
+      const entry = object(offer, ["item", "price", "materials", "text"], `${name} offer ${slot}`);
       const item = int(entry.item, `${name} offer ${slot} item`, 1, 0xffff);
       if (!itemsById.has(item)) {
         fail(`${name} offer ${slot} names an unknown item`);
@@ -367,7 +389,10 @@ export function decodeCatalog(json: string): ContentCatalog {
         }
         return { item: id, quantity: int(quantity, `${name} offer ${slot} material ${at} quantity`, 1, 0xffff) };
       });
-      return { item, price: int(entry.price, `${name} offer ${slot} price`, 1, 0xffff_ffff), materials };
+      return {
+        item, price: int(entry.price, `${name} offer ${slot} price`, 1, 0xffff_ffff), materials,
+        text: text(entry.text, `${name} offer ${slot} text`, 300),
+      };
     });
     if (offers.length === 0) {
       fail(`${name} must offer at least one item`);
@@ -532,6 +557,8 @@ export function decodeCatalog(json: string): ContentCatalog {
     classes: byId(classes, "class"),
     abilities: byId(abilities, "ability"),
     items: itemsById,
+    equipmentSlots,
+    attributeNames,
     vendors: new Map([...byId(vendors, "vendor")].map(([id, { npc, offers }]) => [id, { npc, offers }])),
     contentRevision,
     creatureTemplates: byId(templates, "creature template"),

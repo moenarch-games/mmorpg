@@ -1,6 +1,6 @@
 /**
  * Work evidence for the browser operations of `.performance/contract.json` (#1120): `world-frame`, `scenery-frame`,
- * `static-batch-views`, `ambient-clips`, `sun-shadow-casters`, `entry-prebuild`, `scene-matrix-frame`, `projection-rules` and `hud-texts`. Each is measured by the same helper in `tests/support/work/` that its bun test
+ * `static-batch-views`, `ambient-clips`, `sun-shadow-casters`, `entry-prebuild`, `scene-matrix-frame`, `projection-rules`, `hud-texts` and `panel-views`. Each is measured by the same helper in `tests/support/work/` that its bun test
  * asserts through, at every scale point the contract declares, and written as `{ "operations": [...] }` to the path
  * given as the first argument; `scripts/operation-work.py` merges it with the Rust examples' samples. Counters only;
  * nothing is timed.
@@ -22,6 +22,7 @@ const { prebuildThenEnter } = await import("../tests/support/work/entry-prebuild
 const { ingestedRuleReads } = await import("../tests/support/work/projection-rules");
 const { sceneMatrixFrames } = await import("../tests/support/work/scene-matrix-frame");
 const { hudTextReadsPerProjection } = await import("../tests/support/work/hud-texts");
+const { panelViewReadsPerProjection } = await import("../tests/support/work/panel-views");
 const { greyhavenScenery, warmSceneryFrames } = await import("../tests/support/work/scenery-frame");
 const { staticBatchView } = await import("../tests/support/work/static-batch-views");
 const { largestFrameCascadeRedraws, largestFrameKitShadowCasterExtraPercent, unitShadowTrianglePercent } = await import("../tests/support/work/sun-shadow-casters");
@@ -87,6 +88,7 @@ const MEASUREMENTS: Record<string, Measure> = {
     return { frame_static_builds: frameStaticBuilds, static_parts: staticParts, prepares };
   },
   "hud-texts": (point) => ({ largest_projection_text_reads: hudTextReadsPerProjection(at(point, "frames")) }),
+  "panel-views": (point) => ({ largest_projection_panel_reads: panelViewReadsPerProjection(at(point, "frames")) }),
 };
 
 const out = process.argv[2];

@@ -1,10 +1,8 @@
 //! Selected-person context projected from immutable content and received self sheets.
 //! This is navigation and intent composition; the zone validates every request.
-use mmorpg_client_model::quest::{QuestStanding, standing};
-use mmorpg_core::{
-    Inventory, NpcId, NpcRole, QuestSheet, ZoneCommand, ZoneContent, ZoneSnapshot, item_template,
-    sell_price,
-};
+use mmorpg_client_model::items::{item_name, sale};
+use mmorpg_client_model::quest::{QuestStanding, quest_brief, standing};
+use mmorpg_core::{Inventory, NpcId, NpcRole, QuestSheet, ZoneCommand, ZoneContent, ZoneSnapshot};
 
 #[derive(Default)]
 pub struct NpcContext {
@@ -133,18 +131,13 @@ impl NpcContext {
                 }
             }
             NpcRole::Vendor if sell => {
-                // An omitted newer sheet is loading, not an empty slot. A fresh
-                // deliberate request still names this bag slot; only core settles it.
-                if self.row >= mmorpg_core::INVENTORY_SLOTS {
-                    return None;
-                }
-                if let Some(bag) = &self.inventory {
-                    bag.slots().get(self.row)?.as_ref()?;
-                }
+                // A sale is the whole stack (`mmorpg_client_model::items::sale`), so it waits for
+                // the current bag sheet: an omitted newer sheet is loading, not an empty slot.
+                let stack = (*self.inventory.as_ref()?.slots().get(self.row)?)?;
                 Some(ZoneCommand::SellItem {
                     npc,
-                    bag_slot: self.row as u8,
-                    quantity: 1,
+                    bag_slot: u8::try_from(self.row).ok()?,
+                    quantity: sale(stack.item(), stack.quantity()).quantity,
                 })
             }
             NpcRole::Vendor => {
@@ -203,14 +196,7 @@ impl NpcContext {
                                 "empty".into()
                             }
                         },
-                        |s| {
-                            format!(
-                                "{} x{}: {} copper each",
-                                item_name(s.item()),
-                                s.quantity(),
-                                sell_price(s.item())
-                            )
-                        },
+                        |s| sale(s.item(), s.quantity()).text,
                     );
                 format!(
                     "{}c · {}: {} · {}: {} · Up/Down row {}",
@@ -221,12 +207,11 @@ impl NpcContext {
                         "Buy unavailable"
                     },
                     buy,
-                    if self.inventory.is_none()
-                        || self
-                            .inventory
-                            .as_ref()
-                            .and_then(|bag| bag.slots().get(self.row))
-                            .is_some_and(Option::is_some)
+                    if self
+                        .inventory
+                        .as_ref()
+                        .and_then(|bag| bag.slots().get(self.row))
+                        .is_some_and(Option::is_some)
                     {
                         "2 Sell"
                     } else {
@@ -286,10 +271,6 @@ impl NpcContext {
         format!("{} — {detail} · {} · Esc close", npc.name, self.feedback)
     }
 }
-fn item_name(id: mmorpg_core::ItemId) -> &'static str {
-    item_template(id).map_or("unknown item", |item| item.name)
-}
-
 fn dialogue_pages(quest: &mmorpg_core::Quest, content: &ZoneContent) -> Vec<String> {
     quest_brief(quest, content)
         .chars()
@@ -297,84 +278,6 @@ fn dialogue_pages(quest: &mmorpg_core::Quest, content: &ZoneContent) -> Vec<Stri
         .chunks(100)
         .map(|chunk| chunk.iter().collect())
         .collect()
-}
-
-/// A quest's authored text, where it starts and ends, and its named objectives.
-#[must_use]
-pub fn quest_brief(quest: &mmorpg_core::Quest, content: &ZoneContent) -> String {
-    use mmorpg_core::QuestObjective;
-    let ender = content
-        .npc(quest.ender)
-        .map_or("quest ender", |npc| npc.name.as_str());
-    let giver = content
-        .npc(quest.giver)
-        .map_or("quest giver", |npc| npc.name.as_str());
-    let mut text = format!("{} Accept from {giver}; return to {ender}. ", quest.text);
-    for objective in &quest.objectives {
-        text.push_str(&match *objective {
-            QuestObjective::Kill { template, count } => format!(
-                "Defeat {count} {}. ",
-                content
-                    .creature_template(template)
-                    .map_or("creatures", |t| t.name.as_str())
-            ),
-            QuestObjective::Collect { item, count, .. } => {
-                format!("Collect {count} {}. ", item_name(item))
-            }
-            QuestObjective::Talk { npc } => format!(
-                "Speak to {}. ",
-                content
-                    .npc(npc)
-                    .map_or("the named NPC", |n| n.name.as_str())
-            ),
-            QuestObjective::Explore { area } => format!(
-                "Explore {}. ",
-                mmorpg_core::greyhaven_vale::areas()
-                    .areas()
-                    .iter()
-                    .find(|a| a.id() == area)
-                    .map_or("the objective area", |a| a.name())
-            ),
-            QuestObjective::Retrieve { item, area } => format!(
-                "Retrieve the {} from {}. ",
-                item_name(item),
-                mmorpg_core::greyhaven_vale::areas()
-                    .areas()
-                    .iter()
-                    .find(|a| a.id() == area)
-                    .map_or("the objective area", |a| a.name())
-            ),
-            QuestObjective::DefeatThorn => {
-                format!("Defeat {}. ", mmorpg_core::redbrand_depths::THORN_NAME)
-            }
-            QuestObjective::Inspect { spot } => format!(
-                "Inspect {}. ",
-                content
-                    .evidence_spot(spot)
-                    .map_or("the evidence", |spot| spot.name.as_str())
-            ),
-            // The quest actions and credits of #1019, as the quest log labels them.
-            objective => format!(
-                "{}. ",
-                mmorpg_client_model::quest::objective_label(objective, content)
-            ),
-        });
-    }
-    // What the giver hands over (#1019); a loan comes back at the turn-in.
-    for supply in &quest.supplies {
-        let classes: Vec<_> = supply.classes.iter().map(|class| class.name()).collect();
-        let loan = if supply.loaned() { " (a loan)" } else { "" };
-        if classes.is_empty() {
-            text.push_str(&format!("You receive {}{loan}. ", item_name(supply.item)));
-        } else {
-            text.push_str(&format!(
-                "A {} receives {}{loan}. ",
-                classes.join(" or "),
-                item_name(supply.item)
-            ));
-        }
-    }
-    text
 }
 
 #[cfg(test)]
@@ -427,18 +330,23 @@ mod tests {
         context.observe(&snapshot);
         context.open(NpcId::new(3));
         assert!(context.action(&content, true).is_some());
+        let bag = snapshot.inventory.take();
+        let stack = bag.as_ref().unwrap().slots()[0].unwrap();
         snapshot.inventory_revision += 1;
-        snapshot.inventory = None;
         snapshot.quests = None;
         context.observe(&snapshot);
         assert!(context.inventory.is_none());
         assert!(context.text(&content).contains("sheet pending"));
+        // A sale is the whole stack, so it waits for the current sheet.
+        assert_eq!(context.action(&content, true), None);
+        snapshot.inventory = bag;
+        context.observe(&snapshot);
         assert_eq!(
             context.action(&content, true),
             Some(ZoneCommand::SellItem {
                 npc: NpcId::new(3),
                 bag_slot: 0,
-                quantity: 1
+                quantity: stack.quantity()
             })
         );
         assert!(context.quests.is_none());

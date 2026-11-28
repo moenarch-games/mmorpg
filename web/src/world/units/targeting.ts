@@ -1,30 +1,14 @@
-import { sameEntity, type EntityRef } from "../../entity-ref";
-import { wireCatalog, type ZoneSnapshot } from "../../replication";
+import type { EntityRef } from "../../entity-ref";
+import type { ZoneSnapshot } from "../../replication";
+import { wasm } from "../../wasm";
 
 /**
- * Tab targeting: the nearest living attackable opponent in the projection.
- * Pressing again while one of them is selected cycles outward to the next.
- * Selection is only intent; the zone validates it.
+ * Tab targeting (`mmorpg-client-model`'s `targeting`, #1280): the nearest living attackable player or creature in the
+ * projection; pressing again while one of them is selected cycles outward to the next. Read once per press. Selection
+ * is only intent; the zone validates it.
  */
 export function nextTabTarget(snapshot: ZoneSnapshot): EntityRef | null {
-  const viewer = snapshot.entities[0];
-  if (!viewer) {
-    return null;
-  }
-  const kinds = wireCatalog().entityKinds;
-  const candidates = snapshot.entities
-    .filter((entity) => (entity.kind === "creature" || entity.kind === "player") && entity.flags.attackable && !entity.flags.dead)
-    .map((entity) => {
-      const dx = entity.position[0] - viewer.position[0];
-      const dz = entity.position[2] - viewer.position[2];
-      return { target: { kind: entity.kind, id: entity.entityId }, distance: dx * dx + dz * dz };
-    })
-    .sort((left, right) => left.distance - right.distance || kinds.indexOf(left.target.kind) - kinds.indexOf(right.target.kind) || left.target.id - right.target.id);
-  if (candidates.length === 0) {
-    return null;
-  }
-  const current = candidates.findIndex(({ target }) => sameEntity(target, snapshot.viewer.target));
-  return candidates[(current + 1) % candidates.length]?.target ?? null;
+  return wasm.nextTabTarget(snapshot) ?? null;
 }
 
 /** Only a living, projected opponent can own combat camera focus. NPC dialogue is not focus. */

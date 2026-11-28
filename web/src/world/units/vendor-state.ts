@@ -1,9 +1,16 @@
 import type { WorldCommand } from "../../command-wire";
-import type { ZoneSnapshot } from "../../replication";
+import type { InventorySlot, ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, VendorOffer } from "../catalog";
 import { zoneConstants } from "../../zone-constants";
+import { wasm } from "../../wasm";
 import type { BagState } from "./bag-state";
 import { panelRefusal } from "./hud-texts";
+import type { VendorSale } from "./panel-views";
+
+/** What selling each occupied bag slot does (`mmorpg-client-model`'s `items::sale`, #1280): always the whole stack. */
+export function vendorSales(slots: readonly (InventorySlot | null)[] | null): VendorSale[] {
+  return slots ? wasm.vendorSales(slots.map((stack) => stack && { itemId: stack.itemId, quantity: stack.quantity })) : [];
+}
 
 /** The nearest projected vendor NPC and whether it looks within the zone's vendor reach (a hint; the zone decides). */
 export type NearbyVendor = { npc: number; name: string; inReach: boolean; offers: readonly VendorOffer[] };
@@ -122,14 +129,18 @@ export class VendorState {
     return { kind: "buy-item", npc: vendor.npc, offer, quantity: 1 };
   }
 
-  /** Sells the whole stack in `bagSlot`. */
+  /** Sells the stack in `bagSlot` as the shared sale rule does: the whole stack. */
   sell(vendor: NearbyVendor | null, bagSlot: number, bag: BagState): WorldCommand | null {
     const stack = bag.slots?.[bagSlot];
     if (!vendor || !stack || !this.canTrade(vendor, bag)) {
       return null;
     }
+    const [sale] = vendorSales([stack]);
+    if (!sale) {
+      return null;
+    }
     this.#send("sell", vendor.npc, bag, "Selling…");
-    return { kind: "sell-item", npc: vendor.npc, bagSlot, quantity: stack.quantity };
+    return { kind: "sell-item", npc: vendor.npc, bagSlot, quantity: sale.quantity };
   }
 
   /** Records the sequence the pending trade was sent under; `null` means the source dropped it. */

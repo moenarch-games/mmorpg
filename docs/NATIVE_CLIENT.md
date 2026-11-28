@@ -135,7 +135,7 @@ Controls:
 | Space | Jump (only from the ground) |
 | F | Dodge roll along the held movement, or straight back standing still (#516; moved off Shift by #294) |
 | X | Swim down while held (#274); held Space swims up |
-| Tab | Select the nearest living attackable creature; press again to cycle outward |
+| Tab | Select the nearest living attackable player or creature; press again to cycle outward (`mmorpg-client-model`'s `targeting`, as in the browser) |
 | R | Release your spirit while dead |
 | 1–9, 0 | Use action-bar slot 1–10 (the class kit in catalog order; the Arcanist's Ice Wall and Earth Pillar take 9 and 0); offensive abilities fire where the character faces, heals and buffs land on the selected friend or yourself |
 | Shift+1–9, Shift+0 | The second action-bar row: slots 11–20, for class kits that outgrow the first ten (#294) |
@@ -152,7 +152,7 @@ Controls:
 | Chat field | Enter sends (`/s`, `/y`, `/wave`, `/bow`, `/cheer`, `/laugh`, `/point`), Escape returns to the world |
 | Interface clicks | Action-bar slots, Talk/Loot/Clear on the target frame, quest Accept/Complete with reward choice, Buy/Sell, bag move/split/merge/Equip, Unequip, Take all, Abandon, Release spirit |
 | Context: Up / Down | Browse every quest, stock offer and bag slot |
-| Context: 1 / 2 | Accept/complete the displayed quest or buy one displayed item / sell one from the displayed bag slot |
+| Context: 1 / 2 | Accept/complete the displayed quest or buy one displayed item / sell the displayed bag slot's whole stack |
 | Context: Left / Right | Choose a quest reward |
 | Quest context: H | Page through the authored dialogue and named objectives |
 | Free-look mouse motion | Captured pointer steers the over-the-shoulder camera and facing; unfocused A/D remain strafes |

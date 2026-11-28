@@ -527,6 +527,52 @@ fn npc_name(content: &ZoneContent, npc: NpcId) -> &str {
         .map_or("the quest giver", |npc| npc.name.as_str())
 }
 
+/// The glyph a quest marker shows over its NPC and on the minimap: `!` where a quest starts,
+/// `?` where one ends (grey while it is still in progress).
+#[must_use]
+pub const fn marker_glyph(marker: QuestMarker) -> &'static str {
+    match marker {
+        QuestMarker::Available => "!",
+        QuestMarker::Complete | QuestMarker::InProgress => "?",
+    }
+}
+
+/// A quest's brief (#1280): its text, who gives it and takes it back, each objective as the
+/// quest log labels it ([`objective_label`], with the count a counted objective needs) and what
+/// the giver hands over (#1019), a loan coming back at the turn-in.
+#[must_use]
+pub fn quest_brief(quest: &Quest, content: &ZoneContent) -> String {
+    let mut text = format!(
+        "{} Accept from {}; return to {}. ",
+        quest.text,
+        npc_name(content, quest.giver),
+        npc_name(content, quest.ender)
+    );
+    for objective in &quest.objectives {
+        let label = objective_label(*objective, content);
+        let required = objective.required();
+        if counted(*objective) && required > 1 {
+            text.push_str(&format!("{label} ({required}). "));
+        } else {
+            text.push_str(&format!("{label}. "));
+        }
+    }
+    for supply in &quest.supplies {
+        let item = crate::items::item_name(supply.item);
+        let loan = if supply.loaned() { " (a loan)" } else { "" };
+        if supply.classes.is_empty() {
+            text.push_str(&format!("You receive {item}{loan}. "));
+        } else {
+            let classes: Vec<_> = supply.classes.iter().map(|class| class.name()).collect();
+            text.push_str(&format!(
+                "A {} receives {item}{loan}. ",
+                classes.join(" or ")
+            ));
+        }
+    }
+    text
+}
+
 /// The viewer's marker over `npc`, if any.
 #[must_use]
 pub fn marker(sheet: &QuestSheet, npc: NpcId) -> Option<QuestMarker> {
@@ -927,6 +973,30 @@ mod tests {
 
     fn content() -> Arc<ZoneContent> {
         greyhaven_vale::content()
+    }
+
+    #[test]
+    fn a_brief_labels_objectives_as_the_quest_log_does() {
+        let content = content();
+        let (quest, objective) = content
+            .quests()
+            .iter()
+            .find_map(|quest| {
+                quest.objectives.iter().find_map(|objective| {
+                    matches!(objective, QuestObjective::Kill { count, .. } if *count > 1)
+                        .then_some((quest, *objective))
+                })
+            })
+            .expect("a quest that asks for several kills");
+        let brief = quest_brief(quest, &content);
+        assert!(brief.starts_with(&quest.text), "{brief}");
+        assert!(brief.contains(&format!(
+            "{} ({}). ",
+            objective_label(objective, &content),
+            objective.required()
+        )));
+        assert_eq!(marker_glyph(QuestMarker::Available), "!");
+        assert_eq!(marker_glyph(QuestMarker::InProgress), "?");
     }
 
     fn entry(quest: QuestId, progress: &[u8]) -> QuestEntry {
