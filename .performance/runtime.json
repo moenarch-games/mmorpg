@@ -35,7 +35,7 @@
           { "metric": "cpuFrameMs.p95", "max": 35 },
           { "metric": "phasesMs.render.p50", "max": 20 },
           { "metric": "phasesMs.simulation.p95", "max": 6 },
-          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 800 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 300 },
           { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 4000 },
           { "metric": "wasmBoundaryPerFrame.bytesIn.p95", "max": 7000 },
           { "metric": "wasmBoundaryPerFrame.bytesOut.p95", "max": 36000 }
@@ -46,7 +46,7 @@
           { "metric": "cpuFrameMs.p95", "max": 36 },
           { "metric": "phasesMs.render.p50", "max": 15 },
           { "metric": "phasesMs.simulation.p95", "max": 6 },
-          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 800 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 300 },
           { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 4000 },
           { "metric": "wasmBoundaryPerFrame.bytesIn.p95", "max": 7000 },
           { "metric": "wasmBoundaryPerFrame.bytesOut.p95", "max": 46000 }
@@ -56,7 +56,7 @@
           { "metric": "cpuFrameMs.p50", "max": 18 },
           { "metric": "cpuFrameMs.p95", "max": 22 },
           { "metric": "phasesMs.render.p50", "max": 12 },
-          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 800 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 300 },
           { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 3000 }
         ],
         "overview": [
@@ -64,7 +64,7 @@
           { "metric": "cpuFrameMs.p50", "max": 18 },
           { "metric": "cpuFrameMs.p95", "max": 23 },
           { "metric": "phasesMs.render.p50", "max": 13 },
-          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 800 },
+          { "metric": "wasmBoundaryPerFrame.calls.p95", "max": 300 },
           { "metric": "wasmBoundaryPerFrame.imports.p95", "max": 3000 }
         ]
       }
