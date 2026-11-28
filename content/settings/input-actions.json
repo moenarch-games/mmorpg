@@ -1,0 +1,525 @@
+{
+  "registryVersion": 1,
+  "guardLane": {"triggerButton": 6, "triggerThreshold": 50, "stickAxis": 3, "deflection": 50},
+  "actions": [
+    {
+      "id": "move.forward",
+      "title": "Run forward",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.forward.0", "action": "move.forward", "sequence": [{"key": {"kind": "physical", "value": "KeyW"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.forward.1", "action": "move.forward", "sequence": [{"key": {"kind": "physical", "value": "ArrowUp"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.forward.2", "action": "move.forward", "sequence": [{"device": "gamepadAxis", "axis": 1, "direction": "negative", "threshold": 50, "deadzone": 20}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.back",
+      "title": "Backpedal",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.back.0", "action": "move.back", "sequence": [{"key": {"kind": "physical", "value": "KeyS"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.back.1", "action": "move.back", "sequence": [{"key": {"kind": "physical", "value": "ArrowDown"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.back.2", "action": "move.back", "sequence": [{"device": "gamepadAxis", "axis": 1, "direction": "positive", "threshold": 50, "deadzone": 20}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.strafeLeft",
+      "title": "Strafe left",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.strafeLeft.0", "action": "move.strafeLeft", "sequence": [{"key": {"kind": "physical", "value": "KeyA"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.strafeLeft.1", "action": "move.strafeLeft", "sequence": [{"key": {"kind": "physical", "value": "ArrowLeft"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.strafeLeft.2", "action": "move.strafeLeft", "sequence": [{"device": "gamepadAxis", "axis": 0, "direction": "negative", "threshold": 50, "deadzone": 20}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.strafeRight",
+      "title": "Strafe right",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.strafeRight.0", "action": "move.strafeRight", "sequence": [{"key": {"kind": "physical", "value": "KeyD"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.strafeRight.1", "action": "move.strafeRight", "sequence": [{"key": {"kind": "physical", "value": "ArrowRight"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.strafeRight.2", "action": "move.strafeRight", "sequence": [{"device": "gamepadAxis", "axis": 0, "direction": "positive", "threshold": 50, "deadzone": 20}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.jump",
+      "title": "Jump",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.jump.0", "action": "move.jump", "sequence": [{"key": {"kind": "physical", "value": "Space"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.jump.1", "action": "move.jump", "sequence": [{"device": "gamepadButton", "button": 0, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.roll",
+      "title": "Dodge roll",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.roll.0", "action": "move.roll", "sequence": [{"key": {"kind": "physical", "value": "KeyF"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.roll.1", "action": "move.roll", "sequence": [{"device": "gamepadButton", "button": 1, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "move.descend",
+      "title": "Swim down (hold)",
+      "categoryPath": ["Movement"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "move.descend.0", "action": "move.descend", "sequence": [{"key": {"kind": "physical", "value": "KeyX"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "move.descend.1", "action": "move.descend", "sequence": [{"device": "gamepadButton", "button": 11, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "target.next",
+      "title": "Target next",
+      "categoryPath": ["Targeting"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "target.next.0", "action": "target.next", "sequence": [{"key": {"kind": "physical", "value": "Tab"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "target.next.1", "action": "target.next", "sequence": [{"device": "gamepadButton", "button": 5, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "combat.toggleWeapon",
+      "title": "Draw / sheathe weapon",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "combat.toggleWeapon.0", "action": "combat.toggleWeapon", "sequence": [{"key": {"kind": "physical", "value": "KeyH"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "combat.toggleWeapon.1", "action": "combat.toggleWeapon", "sequence": [{"device": "gamepadButton", "button": 4, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "combat.swing",
+      "title": "Swing weapon",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "combat.swing.0", "action": "combat.swing", "sequence": [{"key": {"kind": "physical", "value": "KeyQ"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "combat.swing.1", "action": "combat.swing", "sequence": [{"device": "gamepadButton", "button": 2, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot1",
+      "title": "Ability 1",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot1.0", "action": "ability.slot1", "sequence": [{"key": {"kind": "physical", "value": "Digit1"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "ability.slot1.1", "action": "ability.slot1", "sequence": [{"device": "gamepadButton", "button": 12, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot2",
+      "title": "Ability 2",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot2.0", "action": "ability.slot2", "sequence": [{"key": {"kind": "physical", "value": "Digit2"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "ability.slot2.1", "action": "ability.slot2", "sequence": [{"device": "gamepadButton", "button": 15, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot3",
+      "title": "Ability 3",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot3.0", "action": "ability.slot3", "sequence": [{"key": {"kind": "physical", "value": "Digit3"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "ability.slot3.1", "action": "ability.slot3", "sequence": [{"device": "gamepadButton", "button": 13, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot4",
+      "title": "Ability 4",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot4.0", "action": "ability.slot4", "sequence": [{"key": {"kind": "physical", "value": "Digit4"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "ability.slot4.1", "action": "ability.slot4", "sequence": [{"device": "gamepadButton", "button": 14, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot5",
+      "title": "Ability 5",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot5.0", "action": "ability.slot5", "sequence": [{"key": {"kind": "physical", "value": "Digit5"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot6",
+      "title": "Ability 6",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot6.0", "action": "ability.slot6", "sequence": [{"key": {"kind": "physical", "value": "Digit6"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot7",
+      "title": "Ability 7",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot7.0", "action": "ability.slot7", "sequence": [{"key": {"kind": "physical", "value": "Digit7"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot8",
+      "title": "Ability 8",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot8.0", "action": "ability.slot8", "sequence": [{"key": {"kind": "physical", "value": "Digit8"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot9",
+      "title": "Ability 9",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot9.0", "action": "ability.slot9", "sequence": [{"key": {"kind": "physical", "value": "Digit9"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot10",
+      "title": "Ability 10",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot10.0", "action": "ability.slot10", "sequence": [{"key": {"kind": "physical", "value": "Digit0"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot11",
+      "title": "Ability 11 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot11.0", "action": "ability.slot11", "sequence": [{"key": {"kind": "physical", "value": "Digit1"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot12",
+      "title": "Ability 12 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot12.0", "action": "ability.slot12", "sequence": [{"key": {"kind": "physical", "value": "Digit2"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot13",
+      "title": "Ability 13 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot13.0", "action": "ability.slot13", "sequence": [{"key": {"kind": "physical", "value": "Digit3"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot14",
+      "title": "Ability 14 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot14.0", "action": "ability.slot14", "sequence": [{"key": {"kind": "physical", "value": "Digit4"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot15",
+      "title": "Ability 15 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot15.0", "action": "ability.slot15", "sequence": [{"key": {"kind": "physical", "value": "Digit5"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot16",
+      "title": "Ability 16 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot16.0", "action": "ability.slot16", "sequence": [{"key": {"kind": "physical", "value": "Digit6"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot17",
+      "title": "Ability 17 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot17.0", "action": "ability.slot17", "sequence": [{"key": {"kind": "physical", "value": "Digit7"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot18",
+      "title": "Ability 18 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot18.0", "action": "ability.slot18", "sequence": [{"key": {"kind": "physical", "value": "Digit8"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot19",
+      "title": "Ability 19 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot19.0", "action": "ability.slot19", "sequence": [{"key": {"kind": "physical", "value": "Digit9"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "ability.slot20",
+      "title": "Ability 20 (Shift row)",
+      "categoryPath": ["Abilities"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ability.slot20.0", "action": "ability.slot20", "sequence": [{"key": {"kind": "physical", "value": "Digit0"}, "modifiers": {"shift": true}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "combat.directedStrike",
+      "title": "Directed Heroic Strike (hold, aim, release)",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "combat.directedStrike.0", "action": "combat.directedStrike", "sequence": [{"key": {"kind": "physical", "value": "KeyG"}}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "combat.guard",
+      "title": "Shield guard (hold, aim up/down)",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "combat.guard.0", "action": "combat.guard", "sequence": [{"key": {"kind": "physical", "value": "KeyZ"}}], "when": {"op": "context", "id": "combat"}},
+        {"id": "combat.guard.1", "action": "combat.guard", "sequence": [{"device": "gamepadButton", "button": 6, "threshold": 50}], "when": {"op": "context", "id": "combat"}}
+      ]
+    },
+    {
+      "id": "combat.cancelCast",
+      "title": "Cancel cast",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "combat.cancelCast.0", "action": "combat.cancelCast", "sequence": [{"device": "gamepadButton", "button": 1, "threshold": 50}], "when": {"op": "context", "id": "casting"}}
+      ]
+    },
+    {
+      "id": "wheel.fixed",
+      "title": "Fixed wheel (hold, flick, release)",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "wheel.fixed.0", "action": "wheel.fixed", "sequence": [{"key": {"kind": "physical", "value": "KeyT"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "wheel.context",
+      "title": "Context wheel (hold, flick, release)",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "wheel.context.0", "action": "wheel.context", "sequence": [{"key": {"kind": "physical", "value": "KeyK"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "minions.attack",
+      "title": "Minions: attack target",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "minions.attack.0", "action": "minions.attack", "sequence": [{"key": {"kind": "physical", "value": "KeyY"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "minions.defend",
+      "title": "Minions: defend here",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "minions.defend.0", "action": "minions.defend", "sequence": [{"key": {"kind": "physical", "value": "KeyU"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "minions.follow",
+      "title": "Minions: follow",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "minions.follow.0", "action": "minions.follow", "sequence": [{"key": {"kind": "physical", "value": "KeyI"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "minions.retreat",
+      "title": "Minions: retreat",
+      "categoryPath": ["Combat"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "minions.retreat.0", "action": "minions.retreat", "sequence": [{"key": {"kind": "physical", "value": "KeyO"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "player.releaseSpirit",
+      "title": "Release spirit",
+      "categoryPath": ["Character"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "player.releaseSpirit.0", "action": "player.releaseSpirit", "sequence": [{"key": {"kind": "physical", "value": "KeyR"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "player.releaseSpirit.1", "action": "player.releaseSpirit", "sequence": [{"device": "gamepadButton", "button": 3, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "ui.toggleBags",
+      "title": "Toggle bags",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ui.toggleBags.0", "action": "ui.toggleBags", "sequence": [{"key": {"kind": "physical", "value": "KeyB"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "ui.toggleBags.1", "action": "ui.toggleBags", "sequence": [{"device": "gamepadButton", "button": 8, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "ui.toggleCharacter",
+      "title": "Toggle character pane",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ui.toggleCharacter.0", "action": "ui.toggleCharacter", "sequence": [{"key": {"kind": "physical", "value": "KeyC"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "ui.toggleCharacter.1", "action": "ui.toggleCharacter", "sequence": [{"device": "gamepadButton", "button": 10, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "ui.toggleQuestLog",
+      "title": "Toggle quest log",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ui.toggleQuestLog.0", "action": "ui.toggleQuestLog", "sequence": [{"key": {"kind": "physical", "value": "KeyL"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "ui.toggleQuestLog.1", "action": "ui.toggleQuestLog", "sequence": [{"device": "gamepadButton", "button": 7, "threshold": 50}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "ui.toggleWorldMap",
+      "title": "Toggle world map",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ui.toggleWorldMap.0", "action": "ui.toggleWorldMap", "sequence": [{"key": {"kind": "physical", "value": "KeyM"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    },
+    {
+      "id": "ui.openChat",
+      "title": "Chat",
+      "categoryPath": ["Interface"],
+      "repeatPolicy": "never",
+      "allowedDevices": ["keyboard", "gamepad"],
+      "provenance": {"source": "mmorpg", "version": "1"},
+      "defaults": [
+        {"id": "ui.openChat.0", "action": "ui.openChat", "sequence": [{"key": {"kind": "physical", "value": "Enter"}}], "when": {"op": "context", "id": "gameplay"}},
+        {"id": "ui.openChat.1", "action": "ui.openChat", "sequence": [{"key": {"kind": "physical", "value": "NumpadEnter"}}], "when": {"op": "context", "id": "gameplay"}}
+      ]
+    }
+  ]
+}
