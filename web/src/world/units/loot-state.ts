@@ -1,6 +1,7 @@
 import type { WorldCommand } from "../../command-wire";
 import { sameEntity, type EntityRef } from "../../entity-ref";
-import type { ErrorCode, LootView, ZoneSnapshot } from "../../replication";
+import type { LootView, ZoneSnapshot } from "../../replication";
+import { panelRefusal } from "./hud-texts";
 
 export type LootIntent = (latest: ZoneSnapshot) => WorldCommand | null;
 
@@ -85,7 +86,7 @@ export class LootState {
         if (!related) {
           continue;
         }
-        const message = REFUSALS[event.code];
+        const message = panelRefusal(event.code, "loot");
         if (message !== null && (event.target !== null || !specificRefusal)) {
           this.#feedback = message;
           this.#pending = null;
@@ -142,80 +143,3 @@ function copySheet(sheet: LootView | null): LootView | null {
   };
 }
 
-const REFUSALS: Record<ErrorCode, string | null> = {
-  "no-target": null,
-  "target-dead": null,
-  "not-attackable": null,
-  "not-dead": null,
-  "invalid-target": null,
-  "inventory-full": "Your bags are full. The corpse keeps its rewards.",
-  "money-overflow": "You cannot hold more copper. The corpse keeps its rewards.",
-  "invalid-inventory-move": "Your bag cannot accept this claim. The corpse keeps its rewards.",
-  "invalid-loot": "That corpse is no longer available.",
-  "not-loot-owner": "That corpse belongs to another player.",
-  "empty-loot": "No rewards remain on that corpse.",
-  "out-of-range": "Move closer to the corpse.",
-  "you-are-dead": "You cannot loot while dead.",
-  "too-many-intents": "Too many actions. Try the claim again.",
-  // Ability, class, equipment, vendor, chat and quest refusals never answer a claim.
-  "no-class": null,
-  "not-learned": null,
-  "not-ready": null,
-  "not-enough-resource": null,
-  "stunned": null,
-  "already-casting": null,
-  "invalid-class": null,
-  "not-equippable": null,
-  "invalid-vendor": null,
-  "not-enough-money": null,
-  "chat-throttled": null,
-  "invalid-quest": null,
-  "quest-log-full": null,
-  "quest-incomplete": null,
-  "line-of-sight": null,
-  "door-blocked": null,
-  "vendor-closed": null,
-  "door-busy": null,
-  "no-minions": null,
-  "not-while-swimming": null,
-  "handoff-corridor": "Not here: you are crossing into another region. The corpse keeps its rewards.",
-  "in-combat": null,
-  "weapon-drawn": null,
-  "invalid-waystone": null,
-  "private-home": null,
-  "no-answer": null,
-  "seat-taken": null,
-  "cannot-sit-here": null,
-  "not-at-night": null,
-  "depths-locked": null,
-  "depths-closed": null,
-  "depths-wipe": null,
-  "depths-boss-open": null,
-  "no-room": null,
-  "no-landing": null,
-  "movement-immune": null,
-  "missing-materials": null,
-  "wrong-form": null,
-  "rewards-busy": "The realm cannot record that reward right now. The corpse keeps its rewards; try again in a moment.",
-  distrusted: null,
-  "npc-busy": null,
-  "escort-lost": null,
-  "not-sellable": null,
-  "hands-full": null,
-  "not-carrying": null,
-  "no-footing": null,
-  "load-lost": null,
-  "site-not-ready": null,
-  "seal-open": null,
-  warded: null,
-  "flock-unsettled": null,
-  "flock-fell": null,
-  "stray-bolted": null,
-  "out-of-order": null,
-  "staff-shown": null,
-  "patrol-resting": null,
-  "patrol-arrived": null,
-  "cart-resting": null,
-  "cart-lost": null,
-  "too-deep": null,
-};

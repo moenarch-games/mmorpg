@@ -5,7 +5,8 @@
 //! (selection modes, game menu, class cards), theme and logo both clients draw, and how
 //! both draw the world: snapshot interpolation, the orbit camera and impact cues (#1058),
 //! the floating combat text a projection raises (#1234), what Interact does (#1252) and the
-//! local character-name policy (#1245).
+//! local character-name policy (#1245), and the words for refusals, events, unit names and
+//! the HUD status (#1278).
 //!
 //! Everything here is a plain function or struct over `mmorpg-core` types and
 //! local input, with no I/O and no rendering. The native client calls it
@@ -33,6 +34,7 @@ pub mod pie_menu;
 pub mod power_draw;
 pub mod prediction;
 pub mod quest;
+pub mod texts;
 pub mod theme;
 pub mod world_map;
 

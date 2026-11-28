@@ -1,8 +1,9 @@
 import type { WorldCommand } from "../../command-wire";
-import type { ErrorCode, ZoneSnapshot } from "../../replication";
+import type { ZoneSnapshot } from "../../replication";
 import type { ContentCatalog, VendorOffer } from "../catalog";
 import { zoneConstants } from "../../zone-constants";
 import type { BagState } from "./bag-state";
+import { panelRefusal } from "./hud-texts";
 
 /** The nearest projected vendor NPC and whether it looks within the zone's vendor reach (a hint; the zone decides). */
 export type NearbyVendor = { npc: number; name: string; inReach: boolean; offers: readonly VendorOffer[] };
@@ -39,15 +40,6 @@ export function nearestVendor(snapshot: ZoneSnapshot, catalog: ContentCatalog): 
     offers: vendor?.offers ?? [],
   };
 }
-
-const REFUSALS: Partial<Record<ErrorCode, string>> = {
-  "not-enough-money": "You do not have enough copper.",
-  "inventory-full": "Your bags cannot hold that.",
-  "invalid-vendor": "That vendor does not trade that.",
-  "out-of-range": "Move closer to the vendor.",
-  "money-overflow": "You cannot hold more copper.",
-  "invalid-inventory-move": "That trade was refused. Your items are unchanged.",
-};
 
 /** The trade, its vendor, the bag revision when it was sent and the sequence the source assigned it. */
 type PendingTrade = { kind: "buy" | "sell"; npc: number; revision: bigint; sequence: number | null };
@@ -103,11 +95,7 @@ export class VendorState {
       if (!answers) {
         continue;
       }
-      this.#feedback = event.code === "too-many-intents"
-        ? "Too many actions. Try the trade again."
-        : event.code === "you-are-dead"
-          ? "You cannot trade while dead."
-          : REFUSALS[event.code] ?? "That trade was refused.";
+      this.#feedback = panelRefusal(event.code, "vendor") ?? "That trade was refused.";
       this.#pending = null;
       return;
     }

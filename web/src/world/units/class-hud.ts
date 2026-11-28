@@ -7,7 +7,7 @@ import { castBarView } from "./cast-bar";
 import { HEROIC_STRIKE_ABILITY } from "./directed-strike";
 import { guardDisplay } from "./shield-guard";
 import { CombatTextFeed, INTERRUPT_FLASH_MS, combatTextMs, viewerInterrupted } from "./combat-text";
-import { unitName } from "./combat-hud";
+import { hudTexts } from "./hud-texts";
 
 /** The aim and guard grids' layout, built before the WASM module loads: high row first, left column first. */
 const AIM_ROWS: readonly StrikeHeight[] = ["high", "middle", "low"];
@@ -530,8 +530,9 @@ export class ClassHud {
     if (target === null) {
       return;
     }
-    const name = unitName(target, snapshot, catalog);
-    setText(frame.name, record ? `${name[0]!.toUpperCase()}${name.slice(1)} · Lv ${record.level}` : `${name[0]!.toUpperCase()}${name.slice(1)}`);
+    const name = hudTexts(snapshot).targetName ?? "";
+    const shown = `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+    setText(frame.name, record ? `${shown} · Lv ${record.level}` : shown);
     const percent = record ? (record.flags.dead ? 0 : record.healthPercent) : 0;
     setStyle(frame.health, "--fill", `${percent}%`);
     frame.health.parentElement?.setAttribute("aria-valuenow", String(percent));

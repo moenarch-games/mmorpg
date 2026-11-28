@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { TICK_HZ, type AuraState, type CastState, type ViewerState, type ZoneEvent } from "../src/replication";
+import { TICK_HZ, type AuraState, type CastState, type ViewerState, type ZoneEvent, type ErrorCode, type ZoneSnapshot } from "../src/replication";
 import type { AbilityRecord, type ContentCatalog } from "../src/world/catalog";
 import { auraPolarity, undescribedAbilities } from "../src/world/units/ability-presentation";
 import { actionBar, cooldownSeconds, formatRemaining, sweepDegrees, tooltipText } from "../src/world/units/ability-state";
 import { auraLabel, auraTimer, sortAuras } from "../src/world/units/aura-display";
-import { errorText } from "../src/world/units/combat-hud";
+import { hudTexts } from "../src/world/units/hud-texts";
 import { castBarView } from "../src/world/units/cast-bar";
 import { CombatTextFeed, combatTexts, viewerInterrupted } from "../src/world/units/combat-text";
 import { HEALTHY_VIEWER, NO_FLAGS, playerEntity, testSnapshot } from "./support/snapshots";
@@ -214,6 +214,8 @@ describe("combat text", () => {
 });
 
 describe("error messages", () => {
+  // The shared refusal line (#1278) the combat HUD shows for an error event.
+  const errorText = (code: ErrorCode, view: ZoneSnapshot) => hudTexts({ ...view, events: [{ kind: "error", code, target: null }] }).feedback;
   const codes = [
     "no-target", "out-of-range", "target-dead", "not-attackable", "you-are-dead", "not-dead", "invalid-target", "too-many-intents",
     "invalid-inventory-move", "inventory-full", "invalid-loot", "not-loot-owner", "empty-loot", "money-overflow",

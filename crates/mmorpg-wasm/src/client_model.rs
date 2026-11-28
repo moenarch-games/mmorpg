@@ -69,7 +69,9 @@ pub(crate) fn remember_view(view: JsValue, decoded: Rc<core::ZoneSnapshot>) {
 /// no store ingested, such as a test's) the view deserialised. A tick's projection is handed to
 /// a dozen rules, and deserialising it from the page object cost thousands of calls into the
 /// page each time (#1257).
-fn core_snapshot(snapshot: &Ts<ZoneSnapshot>) -> Result<Rc<core::ZoneSnapshot>, JsError> {
+pub(crate) fn core_snapshot(
+    snapshot: &Ts<ZoneSnapshot>,
+) -> Result<Rc<core::ZoneSnapshot>, JsError> {
     let view = snapshot.js_value();
     let remembered = VIEWS.with(|views| {
         views
