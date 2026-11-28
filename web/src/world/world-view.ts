@@ -11,7 +11,7 @@ import type {
 import type { WorldCommand } from "../command-wire";
 import { entityKey, sameEntity } from "../entity-ref";
 import type { EntityRef } from "../entity-ref";
-import { ingestedProjection, type EntityState, type StrikeHeight, type ZoneSnapshot } from "../replication";
+import { ingestedProjection, type EntityState, type QuestSheet, type StrikeHeight, type ZoneSnapshot } from "../replication";
 import { DebugOverlay, FrameRate } from "./debug-overlay";
 import { ENVIRONMENT, environmentAt } from "./environment";
 import { wasm } from "../wasm";
@@ -42,8 +42,9 @@ import type { GreyhavenLighting } from "./lighting";
 import { ImpactEffects } from "./impact-effects";
 import { KitEffects } from "./kit-effects";
 import { RaidSmoke } from "./raid-smoke";
-import { type RaidSiteSpots, raidSiteAt, reachableAidTask } from "./raid-aid";
-import { type RaidPrepSpots, reachablePrepStep } from "./raid-prep";
+import { type RaidSiteSpots, raidSiteAt } from "./raid-aid";
+import type { RaidPrepSpots } from "./raid-prep";
+import { type InteractPress, interactPress, nextInteraction } from "./interaction";
 import { RaidSigns } from "./raid-signs";
 import { WalkInBuildings } from "./walk-in-buildings";
 import { ZoneLifecycle } from "./zone-lifecycle";
@@ -75,7 +76,6 @@ import { LootPanel, type LootElements } from "./units/loot-panel";
 import { WaystonePanel, type WaystoneElements } from "./units/waystone-panel";
 import { VendorPanel, type VendorElements } from "./units/vendor-panel";
 import { QuestPanel, type MarkerPoint, type QuestElements } from "./units/quest-panel";
-import { evidenceInReach, liftInReach, mechanismInReach, questActionAt } from "./units/quest-state";
 import type { PartyRequestInput } from "../generated/mmorpg-wasm/mmorpg_wasm.js";
 import { ChatFrame, type ChatElements } from "./units/chat-frame";
 import { DepthsLootPanel, type DepthsLootElements } from "./units/depths-loot-panel";
@@ -90,7 +90,6 @@ import type { Area } from "./scenery";
 import type { WorldSource, ZoneWorld } from "./world-source";
 import type { AudioPreferences, WorldSound } from "./world-sound";
 import { touchContext, type TouchContext } from "../input/touch-layout";
-import { zoneConstants } from "../zone-constants";
 import { profileFacts, profilePhase, profiling } from "./frame-profile";
 
 /**
@@ -499,13 +498,12 @@ export class WorldView {
   readonly #raidSigns = new RaidSigns();
   /** The raided barn's roof centre and smoke span in metres, by objective (#530). */
   #raidRoof: { key: string; top: [number, number, number]; span: [number, number] } | null = null;
-  #reachableDoor: (x: number, z: number) => number = () => 0;
-  #reachableSeat: (x: number, z: number) => number = () => 0;
-  #reachablePieces: (x: number, z: number) => readonly number[] = () => [];
   /** The raid sites (#530, #1019): disturbance circles and aftermath aid task spots (#531), from the scenery. */
   #raidSites: readonly RaidSiteSpots[] = [];
   /** The night raid target's forewarning spots (#532), from the scenery. */
   #raidPrep: RaidPrepSpots | null = null;
+  /** The shared Interact ladder's answer for the touch button (#1252), kept per projection and quest sheet. */
+  #touchNext: { projection: ZoneSnapshot | null; sheet: QuestSheet | null; next: InteractPress | null } = { projection: null, sheet: null, next: null };
   #restClip: (kind: ImportedModelKind) => string = () => { throw new Error("No world is loaded."); };
   /** Models loaded so far with their clip lengths, replayed into each new presenter. */
   readonly #loadedModels: [ImportedModelKind, [string, number][], string | null][] = [];
@@ -932,9 +930,6 @@ export class WorldView {
     this.#ambient = zone.own(new AmbientAnimals(world.scenery.ambient));
     this.#livestock = zone.own(new Livestock(world.scenery.livestock));
     this.#regions = new RegionArt(world, this.#models, this.#inn, this.#outpost, this.#settlement, this.#ambient, () => this.#onArtProgress?.());
-    this.#reachableDoor = world.scenery.buildings.reachableDoor;
-    this.#reachableSeat = world.scenery.buildings.reachableSeat;
-    this.#reachablePieces = world.scenery.reachablePieces;
     this.#raidSites = world.scenery.raidSites;
     this.#raidPrep = world.scenery.raidPrep;
     this.#raidRoof = null;
@@ -1817,95 +1812,50 @@ export class WorldView {
   }
 
   /**
-   * Interact (E / gamepad Start): inspect quest evidence in reach (#1019); lift a load in reach, or set the carried
-   * one down (#1077); work a shrine glyph in reach (#1019); at a selected NPC, perform
-   * its open quest action (#1019) or talk to it;
-   * without one, swing the door in reach
-   * (#158), repair a damaged structure piece in reach (#305, free; moving stops it), or help a
-   * lost night raid's aftermath in reach (#531);
-   * otherwise open the quest dialog, which says whom to approach.
+   * Interact (E / gamepad Start): the shared client model's one ladder (#1252), which the native client and the touch
+   * button read too. It works a glyph in reach even with the weapon drawn (#1019); everything else needs free hands:
+   * raid preparation (#532), quest evidence (#1019), a load (#1077), the selected NPC's quest action or talk, skinning
+   * the selected corpse (#917), setting a load down, a door (#158), a seat (#619), a repair (#305), raid aid (#531), an
+   * ore vein (#917), then talking to the nearest NPC in reach. The zone checks every intent.
    */
   interact(): void {
-    if (!this.#requireFreeHands()) { return; }
     const projection = this.#lastProjection;
-    // The viewer leads every projection; positions are in units.
-    const at = projection?.entities[0]?.position;
-    const talking = projection?.viewer.target?.kind === "npc";
-    // On a forewarned evening: read the tracks, report them to the lookout (even while talking
-    // to him) or brace the barn in reach (#532).
-    const step = at ? this.#prepStep(projection, at) : null;
-    if (step !== null) {
-      this.queueIntent(() => ({ kind: "raid-prepare", step }));
+    // The arena (#551) has none of the hosted world's doors, quests or veins.
+    if (!projection || this.#arena) { return; }
+    const press = interactPress(projection, this.#quests.state.sheet);
+    switch (press.kind) {
+      case "nothing":
+        return;
+      case "sheathe-first":
+        this.#chat.note(`${press.text}.`);
+        return;
+      case "command": {
+        const command = press.command;
+        this.queueIntent(() => command);
+        return;
+      }
+      case "talk":
+        this.#talkTo(press.npc, press.selected);
+        return;
+    }
+  }
+
+  /**
+   * Talks to NPC `npc`: a selected one opens its trade or quest dialog, an unselected one is selected first and opens
+   * once the zone accepts the selection, as after a click.
+   */
+  #talkTo(npc: number, selected: boolean): void {
+    if (selected) {
+      if (this.#catalog?.vendors.has(npc)) { this.#vendor.toggle(); } else { this.#quests.toggleDialog(); }
       return;
     }
-    // Inspect the quest evidence in reach an active quest needs (#1019), even beside its giver.
-    const spot = at ? evidenceInReach(this.#quests.state.sheet, at) : null;
-    if (spot !== null) {
-      this.queueIntent(() => ({ kind: "inspect", spot }));
-      return;
-    }
-    // Lift the viewer's set-down load, or a delivery's load at its source, in reach (#1077).
-    const carrying = projection?.entities[0]?.flags.load != null;
-    const source = at ? liftInReach(this.#quests.state.sheet, at, carrying, projection?.loads ?? []) : null;
-    if (source !== null) {
-      this.queueIntent(() => ({ kind: "lift", source }));
-      return;
-    }
-    // Work the shrine glyph in reach (#1019), quest or not: a seal's, or the ward's mid-fight.
-    const glyph = at ? mechanismInReach(at) : null;
-    if (glyph !== null) {
-      const mechanism = glyph.id;
-      this.queueIntent(() => ({ kind: "operate", mechanism }));
-      return;
-    }
-    // At a selected NPC an active quest acts on (#1019): give it the quest item, ask it for an
-    // interview, start escorting it or hand it the carried load (#1077), instead of talking.
-    const npcTarget = projection?.viewer.target;
-    if (npcTarget?.kind === "npc" && questActionAt(this.#quests.state.sheet, npcTarget.id) !== null) {
-      const npcId = npcTarget.id;
-      this.queueIntent(() => ({ kind: "quest-action", npcId }));
-      return;
-    }
-    // With a load in both arms and no NPC to take it, set it down (#1077).
-    if (carrying && !talking) {
-      this.queueIntent(() => ({ kind: "set-down" }));
-      return;
-    }
-    const door = at && !talking ? this.#reachableDoor(at[0], at[2]) : 0;
-    if (door !== 0) {
-      this.queueIntent((latest) => doorToggle(latest, door));
-      return;
-    }
-    // Or take (or leave) the seat in reach (#619).
-    const seat = at && !talking ? this.#reachableSeat(at[0], at[2]) : 0;
-    if (seat !== 0) {
-      this.queueIntent(() => ({ kind: "sit", seat }));
-      return;
-    }
-    const damaged = new Set(projection?.pieces.map((view) => view.piece) ?? []);
-    const piece = at && !talking ? this.#reachablePieces(at[0], at[2]).find((id) => damaged.has(id)) : undefined;
-    if (piece !== undefined) {
-      this.queueIntent(() => ({ kind: "repair", piece }));
-      return;
-    }
-    // Or tend a guard or mend a breach a lost night raid left in reach (#531).
-    const task = at && !talking ? reachableAidTask(projection?.raid, this.#raidSite(at)?.aid ?? [], at[0], at[2]) : null;
-    if (task !== null) {
-      this.queueIntent(() => ({ kind: "raid-aid", task }));
-      return;
-    }
-    // Or skin the selected boar corpse, or mine the full ore vein in reach (#917).
-    const corpse = at ? this.#skinnableCorpse(projection, at) : null;
-    if (corpse !== null) {
-      this.queueIntent(() => ({ kind: "skin", creatureId: corpse }));
-      return;
-    }
-    const node = at && !talking ? this.#reachableVein(projection, at) : null;
-    if (node !== null) {
-      this.queueIntent(() => ({ kind: "gather", node }));
-      return;
-    }
-    this.toggleQuestDialog();
+    const target: EntityRef = { kind: "npc", id: npc };
+    this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === "npc" && entity.entityId === npc)
+      ? { kind: "select-target", target } : null, (sequence) => {
+      if (sequence !== null) {
+        this.#pendingNpc = { target, sequence };
+      }
+    });
   }
 
   /** Draws each ore vein full, or spent when the projection lists it (#917). */
@@ -1917,67 +1867,31 @@ export class WorldView {
     });
   }
 
-  /** The full ore vein (#917) feet at `at` units can mine, or null. */
-  #reachableVein(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
-    const index = this.#veins.findIndex((vein, node) => !projection?.depletedVeins.includes(node) && (vein.x - at[0]!) ** 2 + (vein.z - at[2]!) ** 2 <= zoneConstants().gatherReachUnits ** 2);
-    return index < 0 ? null : index;
-  }
-
-  /** The selected boar corpse (#917) feet at `at` units can skin, or null; the zone checks the rest. */
-  #skinnableCorpse(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
-    const target = projection?.viewer.target;
-    if (target?.kind !== "creature") { return null; }
-    const corpse = projection?.entities.find((entity) => entity.kind === "creature" && entity.entityId === target.id);
-    if (!corpse?.flags.dead || this.#catalog?.creatureTemplates.get(corpse.appearance)?.family !== "boar") { return null; }
-    const distance = corpse.position.reduce((sum, axis, index) => sum + (axis - at[index]!) ** 2, 0);
-    return distance <= zoneConstants().lootReachUnits ** 2 ? target.id : null;
-  }
-
-  /** The night raid preparation step (#532) feet at `at` units can take now, or null. */
-  #prepStep(projection: ZoneSnapshot | null, at: readonly number[]): number | null {
-    const lookout = this.#raidPrep && projection?.entities.find((entity) => entity.kind === "npc" && entity.entityId === this.#raidPrep!.lookout);
-    return reachablePrepStep(projection?.raid, this.#raidPrep, at[0]!, at[2]!, lookout ? { x: lookout.position[0], z: lookout.position[2] } : null);
-  }
-
   toggleQuestLog(): void {
     this.#quests.toggleLog();
   }
 
-  /** Which touch context buttons apply now (#434), from the last received projection. */
+  /** Which touch context buttons apply now (#434), from the last received projection and the shared Interact ladder (#1252). */
   touchContext(): TouchContext {
     const projection = this.#lastProjection;
-    const at = projection?.entities[0]?.position;
-    const damaged = new Set(projection?.pieces.map((view) => view.piece) ?? []);
+    const sheet = this.#quests.state.sheet;
+    // The ladder reads a whole projection, so it runs once per projection and sheet, not every frame.
+    if (this.#touchNext.projection !== projection || this.#touchNext.sheet !== sheet) {
+      this.#touchNext = { projection, sheet, next: projection && !this.#arena ? nextInteraction(projection, sheet) : null };
+    }
     return touchContext(projection, {
       isVendor: (npc) => this.#catalog?.vendors.has(npc) ?? false,
-      doorInReach: at ? this.#reachableDoor(at[0], at[2]) !== 0 : false,
-      repairInReach: at ? this.#reachablePieces(at[0], at[2]).some((id) => damaged.has(id)) || reachableAidTask(projection?.raid, this.#raidSite(at)?.aid ?? [], at[0], at[2]) !== null || this.#prepStep(projection, at) !== null : false,
+      next: this.#touchNext.next,
       arena: this.#arena,
     });
   }
 
-  /**
-   * The touch interact button: open the loot of a corpse in reach, select the nearest NPC (its
-   * vendor or quest dialog opens once the zone accepts the selection, as after a click), or
-   * otherwise the keyboard Interact (doors and repairs).
-   */
+  /** The touch interact button: open the loot of a corpse in reach, otherwise the keyboard Interact. */
   touchInteract(): void {
-    const context = this.touchContext();
-    if (context.interact !== "loot" && !this.#requireFreeHands()) { return; }
-    if (context.interact === "loot") {
+    if (this.touchContext().interact === "loot") {
       if (!this.#loot.open) {
         this.#loot.toggle();
       }
-      return;
-    }
-    const npc = context.npc;
-    if (npc && (context.interact === "vendor" || context.interact === "talk")) {
-      this.queueIntent((projection) => projection.entities.some((entity) => entity.kind === "npc" && entity.entityId === npc.id)
-        ? { kind: "select-target", target: npc } : null, (sequence) => {
-        if (sequence !== null) {
-          this.#pendingNpc = { target: npc, sequence };
-        }
-      });
       return;
     }
     this.interact();

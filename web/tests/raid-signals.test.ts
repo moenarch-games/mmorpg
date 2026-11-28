@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { smokeRate } from "../src/world/raid-smoke";
-import { aftermathOpen, raidSiteAt, raidSites, reachableAidTask } from "../src/world/raid-aid";
-import { forewarningLine, prepSpots, raidNoticeText, reachablePrepStep } from "../src/world/raid-prep";
+import { aftermathOpen, raidSiteAt, raidSites } from "../src/world/raid-aid";
+import { forewarningLine, prepSpots, raidNoticeText } from "../src/world/raid-prep";
 import { aftermathPlea, raidWarning } from "../src/world/units/quest-panel";
 
 /** A signal without forewarning (#532). */
@@ -27,16 +27,6 @@ describe("night raid signals (#530)", () => {
 });
 
 describe("night raid aftermath aid (#531)", () => {
-  const tasks = [{ x: 8_000, z: 3_450, npc: 0 }, { x: 5_700, z: 4_500, npc: 9 }];
-
-  test("interact finds the open task within the zone's 3 m reach", () => {
-    const open = { ...quiet, phase: 0, integrity: 0, aid: [0, 1] };
-    expect(reachableAidTask(open, tasks, 5_700, 4_250)).toBe(1);
-    expect(reachableAidTask(open, tasks, 5_700, 4_150)).toBeNull();
-    expect(reachableAidTask({ ...open, aid: [0] }, tasks, 5_700, 4_500)).toBeNull();
-    expect(reachableAidTask(null, tasks, 8_000, 3_450)).toBeNull();
-  });
-
   test("each raid site keeps its own tasks, and a player aids at the site nearest it (#1019)", () => {
     // Millbrook's two tasks and the granary's one, as `raidArea()` and `raidAid()` export them.
     const sites = raidSites([7_400, 4_800, 3_500, -11_400, 36_000, 3_500], [0, 8_000, 3_450, 0, 0, 5_700, 4_500, 9, 1, -11_550, 35_000, 0]);
@@ -44,7 +34,6 @@ describe("night raid aftermath aid (#531)", () => {
     expect(raidSiteAt(sites, 8_000, 3_450)).toBe(sites[0]!);
     const granary = raidSiteAt(sites, -11_550, 35_000)!;
     expect(granary).toBe(sites[1]!);
-    expect(reachableAidTask({ ...quiet, phase: 0, integrity: 100, aid: [0] }, granary.aid, -11_550, 35_100)).toBe(0);
     expect(raidSiteAt([], 0, 0)).toBeNull();
   });
 
@@ -58,22 +47,12 @@ describe("night raid aftermath aid (#531)", () => {
 
 describe("night raid forewarning and preparation (#532)", () => {
   const spots = prepSpots([6_250, 1_750, 9, 7_250, 4_300, 8_750, 4_700])!;
-  const lookout = { x: 2_900, z: 2_600 };
   const evening = { phase: 0, integrity: 100, aid: [] as number[], signs: true, warned: false, braced: [] as number[], scouted: false };
 
-  test("interact reads the tracks, reports them to the lookout, then braces the barn", () => {
+  test("the forewarning spots read the tracks, the lookout and each brace", () => {
     expect(spots.braces).toHaveLength(2);
-    expect(reachablePrepStep(evening, spots, 6_250, 1_600, lookout)).toBe(0);
-    expect(reachablePrepStep(evening, spots, 6_250, 1_400, lookout)).toBeNull();
-    expect(reachablePrepStep(evening, spots, 2_900, 2_800, lookout)).toBeNull();
-    const scouted = { ...evening, scouted: true };
-    expect(reachablePrepStep(scouted, spots, 2_900, 2_800, lookout)).toBe(1);
-    expect(reachablePrepStep(scouted, spots, 7_250, 4_300, lookout)).toBeNull();
-    const warned = { ...scouted, warned: true };
-    expect(reachablePrepStep(warned, spots, 7_250, 4_350, lookout)).toBe(2);
-    expect(reachablePrepStep({ ...warned, braced: [0] }, spots, 7_250, 4_350, lookout)).toBeNull();
-    expect(reachablePrepStep({ ...warned, braced: [0] }, spots, 8_750, 4_650, lookout)).toBe(3);
-    expect(reachablePrepStep({ ...quiet, phase: 1, integrity: 90, aid: [] }, spots, 6_250, 1_750, lookout)).toBeNull();
+    expect(spots.tracks).toEqual({ x: 6_250, z: 1_750 });
+    expect(spots.lookout).toBe(9);
   });
 
   test("guards speak of the signs, and the notices never claim a saved barn that fell", () => {

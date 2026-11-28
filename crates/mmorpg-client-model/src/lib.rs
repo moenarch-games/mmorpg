@@ -4,8 +4,8 @@
 //! needs, when a held power shot fires, who owns the mouse, and the front end
 //! (selection modes, game menu, class cards), theme and logo both clients draw, and how
 //! both draw the world: snapshot interpolation, the orbit camera and impact cues (#1058),
-//! the floating combat text a projection raises (#1234), and the local character-name
-//! policy (#1245).
+//! the floating combat text a projection raises (#1234), what Interact does (#1252) and the
+//! local character-name policy (#1245).
 //!
 //! Everything here is a plain function or struct over `mmorpg-core` types and
 //! local input, with no I/O and no rendering. The native client calls it
@@ -22,6 +22,7 @@ pub mod exploration;
 pub mod front_end;
 pub mod hud;
 pub mod impact;
+pub mod interaction;
 pub mod interpolation;
 pub mod logo;
 pub mod manual_aim;

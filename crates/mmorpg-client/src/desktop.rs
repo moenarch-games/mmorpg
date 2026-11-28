@@ -644,94 +644,49 @@ impl App {
                 return true;
             }
             WorldAction::Interact if self.connected() => {
-                // A glyph in reach (#1019) is worked even mid-fight, blade in hand: a ward's weak
-                // point is bared between blows.
-                if let Some(command) = self.presentation.reachable_mechanism() {
-                    self.send_interaction(command);
+                // One ladder for both clients and touch (#1252), from `mmorpg-client-model`.
+                use mmorpg_client_model::interaction::{Interaction, Press, SHEATHE_FIRST, press};
+                let Some(snapshot) = self.presentation.latest() else {
                     return true;
-                }
-                if self
-                    .presentation
-                    .latest()
-                    .is_some_and(|s| s.viewer.weapon_drawn)
-                {
-                    self.npc_context.feedback = "Sheathe your weapon to interact (H)".into();
-                    return true;
-                }
-                if let Some(command) = self.presentation.reachable_raid_prep() {
-                    // On a forewarned evening, reads the tracks, reports them to the lookout
-                    // or braces the barn in reach (#532), even with the lookout selected.
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_skin() {
-                    // Skins the selected boar corpse in reach (#917).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self
-                    .presentation
-                    .reachable_inspect(self.npc_context.quests.as_ref())
-                {
-                    // Inspects the quest evidence in reach an active quest needs (#1019), even
-                    // with the quest giver beside it selected.
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self
-                    .presentation
-                    .reachable_lift(self.npc_context.quests.as_ref())
-                {
-                    // Lifts the player's set-down load, or a delivery's load at its source, in
-                    // reach (#1077).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(EntityRef::Npc(npc)) =
-                    self.presentation.latest().and_then(|s| s.viewer.target)
-                {
-                    // At an NPC an active quest acts on (#1019), Interact gives it the quest
-                    // item, asks it for an interview or starts escorting it.
-                    if let Some(objective) = self.npc_context.quests.as_ref().and_then(|sheet| {
-                        mmorpg_client_model::quest::quest_action_at(
-                            self.presentation.content(),
-                            &sheet.entries,
-                            npc,
-                        )
-                    }) {
-                        self.npc_context.feedback = mmorpg_client_model::quest::objective_label(
-                            objective,
-                            self.presentation.content(),
-                        );
-                        self.send_interaction(mmorpg_core::ZoneCommand::QuestAction { npc });
-                        return true;
+                };
+                let entries = self
+                    .npc_context
+                    .quests
+                    .as_ref()
+                    .map_or(&[][..], |sheet| &sheet.entries);
+                match press(snapshot, self.presentation.content(), entries) {
+                    Press::Nothing => {}
+                    Press::SheatheFirst => self.npc_context.feedback = SHEATHE_FIRST.into(),
+                    Press::Interact(Interaction::Command(command)) => {
+                        if let mmorpg_core::ZoneCommand::QuestAction { npc } = command
+                            && let Some(objective) = mmorpg_client_model::quest::quest_action_at(
+                                self.presentation.content(),
+                                entries,
+                                npc,
+                            )
+                        {
+                            self.npc_context.feedback = mmorpg_client_model::quest::objective_label(
+                                objective,
+                                self.presentation.content(),
+                            );
+                        }
+                        self.send_interaction(command);
                     }
-                    self.npc_context.open(npc);
-                    self.world_controls.set_interaction(true);
-                    // A context owns the number keys until closed.
-                    self.controls.focus_lost();
-                    self.update_movement();
-                } else if self.presentation.carrying() {
-                    // With a load in both arms and no NPC to take it, Interact sets it down (#1077).
-                    self.send_interaction(mmorpg_core::ZoneCommand::SetDown);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_door() {
-                    // Without a selected NPC, interact swings the door in reach (#158).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_seat() {
-                    // Or takes (or leaves) the seat in reach (#619).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_repair() {
-                    // Or repairs a damaged structure piece in reach (#305).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_raid_aid() {
-                    // Or helps the night raid's aftermath in reach (#531).
-                    self.send_interaction(command);
-                    return true;
-                } else if let Some(command) = self.presentation.reachable_gather() {
-                    // Or mines the full ore vein in reach (#917).
-                    self.send_interaction(command);
-                    return true;
+                    Press::Interact(Interaction::Talk { npc, selected }) => {
+                        if !selected {
+                            self.input.send_modify(|input| {
+                                input.target = Some(EntityRef::Npc(npc));
+                                input.selections = input.selections.wrapping_add(1);
+                            });
+                        }
+                        self.npc_context.open(npc);
+                        self.world_controls.set_interaction(true);
+                        // A context owns the number keys until closed.
+                        self.controls.focus_lost();
+                        self.update_movement();
+                    }
                 }
+                return true;
             }
             WorldAction::NextNpc if self.connected() => {
                 if let Some(snapshot) = self.presentation.latest() {
