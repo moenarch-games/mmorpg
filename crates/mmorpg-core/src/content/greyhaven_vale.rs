@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock};
 
 use super::{SpawnGrid, StaticCollider, XzBounds, ZoneContent, ZoneDefinition};
+use crate::rng::splitmix64;
 use crate::{Area, AreaId, Terrain, ZoneAreas};
 
 pub mod adder;
@@ -1109,14 +1110,6 @@ fn in_grove(x: i32, z: i32, origin: [i32; 2], cells: [i32; 2], seed: u64) -> boo
     let wobble =
         (value_noise_q10(i64::from(x), i64::from(z), 2_400, seed ^ 0x0043_4c55_4d50) - 512) * 2 / 5;
     beyond_core(x, z) <= 0 && (dx * dx + dz * dz).isqrt() <= 1_100 + wobble
-}
-
-/// SplitMix64 finaliser: a fixed integer hash, identical on every platform.
-const fn splitmix64(value: u64) -> u64 {
-    let mut z = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    z ^ (z >> 31)
 }
 
 /// Whether a trunk `half` wide at `(x, z)`, with a little room round it, would stand in the

@@ -637,9 +637,6 @@ impl Identity {
     }
 
     fn finish(self) -> u64 {
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        z ^ (z >> 31)
+        mmorpg_core::rng::splitmix64_finish(self.0)
     }
 }

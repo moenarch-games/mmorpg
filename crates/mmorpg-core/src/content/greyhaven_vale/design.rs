@@ -110,15 +110,7 @@ pub fn polygon_contains(polygon: &[[i32; 2]], x: i32, z: i32) -> bool {
     for index in 0..polygon.len() {
         let a = polygon[index];
         let b = polygon[(index + 1) % polygon.len()];
-        if (a[1] > z) == (b[1] > z) {
-            continue;
-        }
-        let (dz, dx) = (i64::from(b[1] - a[1]), i64::from(b[0] - a[0]));
-        let lhs = (i64::from(x) - i64::from(a[0])) * dz;
-        let rhs = (i64::from(z) - i64::from(a[1])) * dx;
-        if (dz > 0 && lhs < rhs) || (dz < 0 && lhs > rhs) {
-            inside = !inside;
-        }
+        inside ^= crate::areas::crosses(a, b, x, z);
     }
     inside
 }
@@ -224,36 +216,42 @@ fn line(points: &[[f64; 2]]) -> Vec<[i32; 2]> {
 
 /// A closed outline rounded into curves: three rounds of corner cutting all the way round.
 fn rounded(points: &[[f64; 2]]) -> Vec<[i32; 2]> {
-    let mut outline = points.to_vec();
-    for _ in 0..3 {
-        let mut cut = Vec::with_capacity(outline.len() * 2);
-        for index in 0..outline.len() {
-            let (a, b) = (outline[index], outline[(index + 1) % outline.len()]);
+    line(&corner_cut(points, 3, true))
+}
+
+/// `points` with their corners cut `rounds` times (Chaikin, #1281): each edge keeps its quarter
+/// and three-quarter points. A closed outline wraps round; an open line keeps its two ends, and
+/// one of fewer than three points stays as it is. Lakes, roads, rivers and the drawn brook
+/// round their courses this way.
+#[must_use]
+pub fn corner_cut(points: &[[f64; 2]], rounds: usize, closed: bool) -> Vec<[f64; 2]> {
+    let mut line = points.to_vec();
+    for _ in 0..rounds {
+        if !closed && line.len() < 3 {
+            break;
+        }
+        let mut cut = Vec::with_capacity(line.len() * 2 + 2);
+        if !closed {
+            cut.push(line[0]);
+        }
+        let edges = if closed { line.len() } else { line.len() - 1 };
+        for index in 0..edges {
+            let (a, b) = (line[index], line[(index + 1) % line.len()]);
             cut.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
             cut.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
         }
-        outline = cut;
+        if !closed {
+            cut.push(line[line.len() - 1]);
+        }
+        line = cut;
     }
-    line(&outline)
+    line
 }
 
 /// A centre line rounded into curves (#816): two rounds of corner cutting, keeping its ends, so
 /// a road or river bends instead of turning at each authored point.
 fn curved(points: &[[f64; 2]]) -> Vec<[i32; 2]> {
-    let mut line = points.to_vec();
-    for _ in 0..2 {
-        if line.len() < 3 {
-            break;
-        }
-        let mut cut = vec![line[0]];
-        for pair in line.windows(2) {
-            let (a, b) = (pair[0], pair[1]);
-            cut.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
-            cut.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-        }
-        cut.push(line[line.len() - 1]);
-        line = cut;
-    }
+    let line = corner_cut(points, 2, false);
     let mut out: Vec<[i32; 2]> = Vec::with_capacity(line.len());
     for point in self::line(&line) {
         if out.last() != Some(&point) {

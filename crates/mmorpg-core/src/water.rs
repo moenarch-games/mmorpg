@@ -87,22 +87,12 @@ impl WaterChannel {
     /// so every host and client derives the same flow.
     #[must_use]
     pub fn flow_at(&self, x: i32, z: i32) -> [i32; 2] {
-        let mut best: Option<(i128, [i128; 2])> = None;
+        let mut best: Option<(u128, [i128; 2])> = None;
         for p in self.points.windows(2) {
             let [ax, az] = p[0].map(i128::from);
             let [bx, bz] = p[1].map(i128::from);
             let (dx, dz) = (bx - ax, bz - az);
-            let (px, pz) = (i128::from(x) - ax, i128::from(z) - az);
-            let length = dx * dx + dz * dz;
-            let along = px * dx + pz * dz;
-            // Squared distance to the segment (whole units², rounded down).
-            let distance = if along <= 0 {
-                px * px + pz * pz
-            } else if along >= length {
-                (px - dx).pow(2) + (pz - dz).pow(2)
-            } else {
-                (px * dz - pz * dx).pow(2) / length
-            };
+            let distance = crate::reach::segment_distance_squared([x, z], p[0], p[1]);
             if best.is_none_or(|(best, _)| distance < best) {
                 best = Some((distance, [dx, dz]));
             }

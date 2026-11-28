@@ -51,17 +51,8 @@ pub(crate) fn village_drawn() -> &'static [[i32; 2]] {
 }
 
 pub(crate) fn water_course(points: &[[i32; 2]]) -> Vec<[f64; 2]> {
-    let mut line: Vec<[f64; 2]> = points.iter().map(|point| point.map(metres)).collect();
-    for _ in 0..2 {
-        let mut cut = vec![line[0]];
-        for pair in line.windows(2) {
-            let (a, b) = (pair[0], pair[1]);
-            cut.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
-            cut.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
-        }
-        cut.push(line[line.len() - 1]);
-        line = cut;
-    }
+    let course: Vec<[f64; 2]> = points.iter().map(|point| point.map(metres)).collect();
+    let line = mmorpg_core::greyhaven_vale::design::corner_cut(&course, 2, false);
     let mut stations = vec![line[0]];
     for pair in line.windows(2) {
         let (a, b) = (pair[0], pair[1]);

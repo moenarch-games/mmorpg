@@ -176,7 +176,7 @@ impl Area {
 
 /// Whether edge `a`→`b` crosses the ray from `(x, z)` towards +x, half-open in z so that
 /// polygons sharing an edge never both claim a point on it.
-fn crosses(a: [i32; 2], b: [i32; 2], x: i32, z: i32) -> bool {
+pub(crate) fn crosses(a: [i32; 2], b: [i32; 2], x: i32, z: i32) -> bool {
     if (a[1] > z) == (b[1] > z) {
         return false;
     }

@@ -809,14 +809,6 @@ pub struct RaidView {
     pub standing: Option<u8>,
 }
 
-/// `splitmix64`: a well-mixed hash of the night's number and the content seed.
-pub(crate) const fn mix(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
-}
-
 /// A body velocity (subunits per tick) and, when it turns, its new facing.
 pub(crate) type Steering = ([i32; 2], Option<u16>);
 

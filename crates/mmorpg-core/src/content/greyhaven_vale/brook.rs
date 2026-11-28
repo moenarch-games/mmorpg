@@ -80,26 +80,9 @@ pub fn waters() -> [WaterVolume; 3] {
 
 /// Centimetres to the closest authored centreline, using the same segment metric as water.
 fn distance(points: &[[i32; 2]], x: i32, z: i32) -> i32 {
-    let squared = points
-        .windows(2)
-        .map(|p| {
-            let [ax, az] = p[0].map(i128::from);
-            let [bx, bz] = p[1].map(i128::from);
-            let (dx, dz) = (bx - ax, bz - az);
-            let (px, pz) = (i128::from(x) - ax, i128::from(z) - az);
-            let length = dx * dx + dz * dz;
-            let along = px * dx + pz * dz;
-            if along <= 0 {
-                px * px + pz * pz
-            } else if along >= length {
-                (px - dx).pow(2) + (pz - dz).pow(2)
-            } else {
-                (px * dz - pz * dx).pow(2) / length
-            }
-        })
-        .min()
-        .unwrap_or(i128::MAX);
-    (squared as u128).isqrt().min(i32::MAX as u128) as i32
+    let squared =
+        crate::reach::polyline_distance_squared([x, z], points).unwrap_or(i128::MAX as u128);
+    squared.isqrt().min(i32::MAX as u128) as i32
 }
 
 /// Clear scenery relief and trunk placement from the authored water banks too.

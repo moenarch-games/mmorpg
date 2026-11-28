@@ -114,16 +114,7 @@ impl Region {
         for &index in edges {
             let a = self.outline[index];
             let b = self.outline[(index + 1) % self.outline.len()];
-            if (a[1] > z) == (b[1] > z) {
-                continue;
-            }
-            // x of the edge at z, compared without division: x < a.x + (z − a.z)(b.x − a.x)/(b.z − a.z)
-            let (dz, dx) = (i64::from(b[1] - a[1]), i64::from(b[0] - a[0]));
-            let lhs = (i64::from(x) - i64::from(a[0])) * dz;
-            let rhs = (i64::from(z) - i64::from(a[1])) * dx;
-            if (dz > 0 && lhs < rhs) || (dz < 0 && lhs > rhs) {
-                inside = !inside;
-            }
+            inside ^= crate::areas::crosses(a, b, x, z);
         }
         inside
     }

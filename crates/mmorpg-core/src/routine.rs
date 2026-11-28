@@ -44,7 +44,7 @@ pub const fn zone_day(tick: u64) -> u64 {
 /// ambushes, confrontations, raid nights and false alarms each roll under their own `salt`.
 #[must_use]
 pub const fn day_roll(seed: u64, tick: u64, salt: u64, odds: [u64; 2]) -> bool {
-    crate::raid::mix(seed ^ zone_day(tick) ^ salt) % odds[1] < odds[0]
+    crate::rng::splitmix64(seed ^ zone_day(tick) ^ salt) % odds[1] < odds[0]
 }
 
 /// The tick an incident began whose daily arrival time is `arrival` (ticks since midnight),

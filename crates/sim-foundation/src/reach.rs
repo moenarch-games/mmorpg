@@ -61,6 +61,39 @@ pub const fn within_cylinder(at: [i32; 3], radius: i32, height: i32, feet: [i32;
     within_xz([at[0], at[2]], [feet[0], feet[2]], radius) && rise.abs() <= height as i64
 }
 
+/// The squared XZ distance from `point` to the segment `a`–`b`, rounded down to whole units²
+/// (#1281): water currents, the brook's banks and scenery's lanes measure the same way. A
+/// zero-length segment measures to its point.
+#[must_use]
+pub const fn segment_distance_squared(point: [i32; 2], a: [i32; 2], b: [i32; 2]) -> u128 {
+    let (dx, dz) = (b[0] as i128 - a[0] as i128, b[1] as i128 - a[1] as i128);
+    let (px, pz) = (
+        point[0] as i128 - a[0] as i128,
+        point[1] as i128 - a[1] as i128,
+    );
+    let length = dx * dx + dz * dz;
+    let along = px * dx + pz * dz;
+    let squared = if along <= 0 {
+        px * px + pz * pz
+    } else if along >= length {
+        (px - dx) * (px - dx) + (pz - dz) * (pz - dz)
+    } else {
+        let cross = px * dz - pz * dx;
+        cross * cross / length
+    };
+    squared.unsigned_abs()
+}
+
+/// The least [`segment_distance_squared`] from `point` to the polyline `points`, or `None`
+/// without a segment.
+#[must_use]
+pub fn polyline_distance_squared(point: [i32; 2], points: &[[i32; 2]]) -> Option<u128> {
+    points
+        .windows(2)
+        .map(|segment| segment_distance_squared(point, segment[0], segment[1]))
+        .min()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
