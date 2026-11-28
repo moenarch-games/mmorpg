@@ -36,26 +36,6 @@ pub(crate) struct BeamTrace {
 }
 
 impl ZoneSimulation {
-    /// Whether `unit` is a living hostile of `attacker`: a creature or prop, or an opposing
-    /// player under the PvP rules.
-    pub(crate) fn hostile_to(&self, attacker: PlayerId, unit: EntityRef) -> bool {
-        match unit {
-            EntityRef::Player(id) => {
-                id != attacker
-                    && self.players_are_hostile(attacker, id)
-                    && self
-                        .players
-                        .get(&id)
-                        .is_some_and(|player| player.is_alive())
-            }
-            EntityRef::Creature(id) => self
-                .creatures
-                .get(&id)
-                .is_some_and(|creature| creature.is_alive()),
-            EntityRef::Npc(_) | EntityRef::Minion(_) => false,
-        }
-    }
-
     /// Frost Breath's victims: hostile units the caster can see within `range` and
     /// `half_angle` degrees of its facing, in `EntityRef` order.
     pub(crate) fn cone_victims(
@@ -74,7 +54,7 @@ impl ZoneSimulation {
             facing,
             range,
             half_angle,
-            |unit| self.hostile_to(player_id, unit),
+            |unit| self.attackable_by_player(player_id, unit),
         )
     }
 
@@ -176,7 +156,7 @@ impl ZoneSimulation {
         #[allow(clippy::cast_possible_truncation)]
         let radius = (length / 2.0 + BEAM_HALF_WIDTH_UNITS).ceil() as i32;
         for unit in self.interest.near(mid[0], mid[1], radius) {
-            if !self.hostile_to(player_id, unit) {
+            if !self.attackable_by_player(player_id, unit) {
                 continue;
             }
             let position = self.unit_position(unit)?;
@@ -297,7 +277,7 @@ impl ZoneSimulation {
             let here = self.unit_position(current)?;
             let mut best: Option<(i64, EntityRef)> = None;
             for unit in self.interest.near(here[0], here[2], radius) {
-                if victims.contains(&unit) || !self.hostile_to(player_id, unit) {
+                if victims.contains(&unit) || !self.attackable_by_player(player_id, unit) {
                     continue;
                 }
                 let position = self.unit_position(unit)?;

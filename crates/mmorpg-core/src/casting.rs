@@ -69,6 +69,24 @@ struct Stomp {
     knockback: i32,
 }
 
+/// A blast's share at `distance` units from its centre, in per mille: linear falloff to half
+/// at the edge of `radius` (#1263, the one rule explosions and stomps use).
+fn blast_share(distance: i64, radius: i32) -> i64 {
+    1_000 - 500 * distance / i64::from(radius.max(1))
+}
+
+/// `roll` scaled by a blast `share`; a unit the blast reaches always takes at least 1.
+fn shared_amount(roll: u32, share: i64) -> u32 {
+    u32::try_from(i64::from(roll) * share / 1_000)
+        .unwrap_or(0)
+        .max(1)
+}
+
+/// A blast's `knockback` scaled by its `share`.
+fn shared_push(knockback: i32, share: i64) -> i32 {
+    i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0)
+}
+
 /// Whether a creature's cast step would change nothing (#1086): dead, or neither casting nor
 /// waiting for its ability.
 fn cast_quiet(creature: &crate::creature::CreatureState) -> bool {
@@ -1108,15 +1126,12 @@ impl ZoneSimulation {
             {
                 continue;
             }
-            // Linear falloff to half at the edge, in per-mille.
-            let share = 1_000 - 500 * distance / i64::from(radius.max(1));
-            let amount = self
+            let share = blast_share(distance, radius);
+            let roll = self
                 .stream(victim)
                 .inclusive(u32::from(damage[0]), u32::from(damage[1]))
                 + bonus;
-            let amount = u32::try_from(i64::from(amount) * share / 1_000)
-                .unwrap_or(0)
-                .max(1);
+            let amount = shared_amount(roll, share);
             match (victim, source) {
                 (EntityRef::Creature(creature_id), _) => {
                     self.player_damages_creature(attacker, creature_id, amount, false, now)?;
@@ -1135,7 +1150,7 @@ impl ZoneSimulation {
                 }
                 _ => continue,
             }
-            let push = i32::try_from(i64::from(knockback) * share / 1_000).unwrap_or(0);
+            let push = shared_push(knockback, share);
             self.knock_away(
                 victim,
                 [centre[0], centre[2]],
@@ -1165,25 +1180,11 @@ impl ZoneSimulation {
             let EntityRef::Player(player_id) = victim else {
                 continue;
             };
-            // Linear falloff to half at the edge, in per-mille.
-            let share = 1_000 - 500 * distance / i64::from(radius);
-            let amount = self
-                .stream(EntityRef::Creature(creature_id))
-                .inclusive(u32::from(stomp.damage[0]), u32::from(stomp.damage[1]))
-                + stomp.bonus;
-            let amount = u32::try_from(i64::from(amount) * share / 1_000)
-                .unwrap_or(0)
-                .max(1);
-            // A boss's special hits harder under a larger attempt's profile (#276).
-            let amount = match self.creatures.get(&creature_id) {
-                Some(creature) => {
-                    let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
-                    creature.scale_damage(&self.content, spawn.template, amount)
-                }
-                None => amount,
-            };
+            let share = blast_share(distance, radius);
+            let roll = self.creature_roll(creature_id, stomp.damage, stomp.bonus);
+            let amount = self.creature_scaled(creature_id, shared_amount(roll, share))?;
             self.creature_damages_player(creature_id, player_id, amount, false)?;
-            let push = i32::try_from(i64::from(stomp.knockback) * share / 1_000).unwrap_or(0);
+            let push = shared_push(stomp.knockback, share);
             self.knock_away(
                 victim,
                 [centre[0], centre[2]],
@@ -1223,7 +1224,6 @@ impl ZoneSimulation {
                 .into_iter()
                 .map(EntityRef::Creature),
         );
-        let origin = crate::physics::Vec3i::new(centre[0], centre[1], centre[2]);
         let mut victims = Vec::new();
         for unit in units {
             let at = self.unit_position(unit)?;
@@ -1231,12 +1231,7 @@ impl ZoneSimulation {
             if distance > i64::from(radius).pow(2) {
                 continue;
             }
-            let shielded = self.world.segment_blocked(
-                origin,
-                crate::physics::Vec3i::new(at[0] - centre[0], at[1] - centre[1], at[2] - centre[2]),
-                |body| body.0 < crate::entity::PLAYER_BODY_BASE,
-            );
-            if !shielded {
+            if self.sight_between(centre, at) {
                 victims.push((unit, distance.isqrt()));
             }
         }
@@ -1415,13 +1410,35 @@ impl ZoneSimulation {
     /// Whether no static content collider lies on the straight segment between the two units'
     /// body centres. Physics owns the deterministic ray query; units never block each other.
     pub(crate) fn line_of_sight(&self, from: EntityRef, to: EntityRef) -> Result<bool, ZoneError> {
-        let origin = self.unit_position(from)?;
-        let end = self.unit_position(to)?;
-        Ok(!self.world.segment_blocked(
-            crate::physics::Vec3i::new(origin[0], origin[1], origin[2]),
-            crate::physics::Vec3i::new(end[0] - origin[0], end[1] - origin[1], end[2] - origin[2]),
+        Ok(self.sight_between(self.unit_position(from)?, self.unit_position(to)?))
+    }
+
+    /// Whether no static content collider lies on the straight segment from `from` to `to`
+    /// (units): line of sight, blast cover and rewound-swing cover share it (#1263).
+    pub(crate) fn sight_between(&self, from: [i32; 3], to: [i32; 3]) -> bool {
+        !self.world.segment_blocked(
+            crate::physics::Vec3i::new(from[0], from[1], from[2]),
+            crate::physics::Vec3i::new(to[0] - from[0], to[1] - from[1], to[2] - from[2]),
             |body| body.0 < crate::entity::PLAYER_BODY_BASE,
-        ))
+        )
+    }
+
+    /// A creature special's damage before falloff (#1263): a roll in `damage` from the
+    /// creature's own stream, plus `bonus`.
+    fn creature_roll(&mut self, creature_id: CreatureId, damage: [u16; 2], bonus: u32) -> u32 {
+        self.stream(EntityRef::Creature(creature_id))
+            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
+            + bonus
+    }
+
+    /// `amount` of a creature's special as it lands: a boss hits harder under a larger
+    /// attempt's locked profile (#276); any other creature's is unchanged.
+    fn creature_scaled(&self, creature_id: CreatureId, amount: u32) -> Result<u32, ZoneError> {
+        let Some(creature) = self.creatures.get(&creature_id) else {
+            return Ok(amount);
+        };
+        let (spawn, _) = Self::creature_content(&self.content, creature_id)?;
+        Ok(creature.scale_damage(&self.content, spawn.template, amount))
     }
 
     fn unit_distance_squared(&self, from: EntityRef, to: EntityRef) -> Result<i64, ZoneError> {
@@ -1695,10 +1712,9 @@ impl ZoneSimulation {
                 if let Some(kind) = ability.projectile {
                     return self.shoot_at(source, target, kind, ability.id);
                 }
-                let amount = self
-                    .stream(EntityRef::Creature(creature_id))
-                    .inclusive(u32::from(damage[0]), u32::from(damage[1]))
-                    + u32::from(scaled(0, per_level, level));
+                let roll =
+                    self.creature_roll(creature_id, damage, u32::from(scaled(0, per_level, level)));
+                let amount = self.creature_scaled(creature_id, roll)?;
                 self.creature_damages_player(creature_id, player_id, amount, false)?;
             }
             AbilityEffect::Bandage { percent, .. } => {
@@ -1789,10 +1805,12 @@ impl ZoneSimulation {
                     let EntityRef::Player(player_id) = victim else {
                         continue;
                     };
-                    let amount = self
-                        .stream(EntityRef::Creature(creature_id))
-                        .inclusive(u32::from(damage[0]), u32::from(damage[1]))
-                        + u32::from(scaled(0, per_level, level));
+                    let roll = self.creature_roll(
+                        creature_id,
+                        damage,
+                        u32::from(scaled(0, per_level, level)),
+                    );
+                    let amount = self.creature_scaled(creature_id, roll)?;
                     self.creature_damages_player(creature_id, player_id, amount, false)?;
                     self.knock_away(victim, [centre[0], centre[2]], fallback, knockback, None)?;
                 }
@@ -1817,10 +1835,8 @@ impl ZoneSimulation {
             .creatures
             .get(&creature_id)
             .map_or(1, |creature| creature.level);
-        let amount = self
-            .stream(EntityRef::Creature(creature_id))
-            .inclusive(u32::from(damage[0]), u32::from(damage[1]))
-            + u32::from(scaled(0, per_level, level));
+        let roll = self.creature_roll(creature_id, damage, u32::from(scaled(0, per_level, level)));
+        let amount = self.creature_scaled(creature_id, roll)?;
         match victim {
             EntityRef::Player(player_id) => {
                 self.creature_damages_player(creature_id, player_id, amount, false)
