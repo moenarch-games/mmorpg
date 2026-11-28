@@ -17,6 +17,11 @@ use mmorpg_client_model::{
 };
 use mmorpg_core as core;
 use serde::{Deserialize, Serialize};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    rc::Rc,
+};
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 
@@ -26,8 +31,63 @@ use crate::wire::{
     ZoneSnapshot,
 };
 
-pub(crate) fn core_snapshot(snapshot: &ZoneSnapshot) -> Result<core::ZoneSnapshot, JsError> {
-    core::ZoneSnapshot::try_from(snapshot).map_err(|error| JsError::new(&error))
+/// How many recent projection views [`remember_view`] keeps: a few sessions' latest.
+const REMEMBERED_VIEWS: usize = 4;
+
+thread_local! {
+    /// The views [`crate::ProjectionStore`] handed to the page last, with their decoded
+    /// projections (#1257).
+    static VIEWS: RefCell<VecDeque<(JsValue, Rc<core::ZoneSnapshot>)>> =
+        const { RefCell::new(VecDeque::new()) };
+    /// Projections the rules deserialised from a page object (`projection-rules`, #1257).
+    static DESERIALISED: Cell<u32> = const { Cell::new(0) };
+}
+
+/// How many projections the client rules deserialised from a page object since the page
+/// loaded: none for the views a projection store handed out (`projection-rules` in
+/// `.performance/contract.json`).
+#[wasm_bindgen(js_name = projectionViewDeserialisations)]
+#[must_use]
+pub fn projection_view_deserialisations() -> u32 {
+    DESERIALISED.with(Cell::get)
+}
+
+/// Remembers the page's `view` of the ingested projection `decoded`: the rules below read
+/// `decoded` when the page hands them that view. The page completes a view only with the bag and
+/// quest sheets the store already holds, so `decoded` is what the view reads as.
+pub(crate) fn remember_view(view: JsValue, decoded: Rc<core::ZoneSnapshot>) {
+    VIEWS.with(|views| {
+        let mut views = views.borrow_mut();
+        if views.len() == REMEMBERED_VIEWS {
+            views.pop_front();
+        }
+        views.push_back((view, decoded));
+    });
+}
+
+/// The projection a rule reads: an ingested view's decoded projection, otherwise (a projection
+/// no store ingested, such as a test's) the view deserialised. A tick's projection is handed to
+/// a dozen rules, and deserialising it from the page object cost thousands of calls into the
+/// page each time (#1257).
+pub(crate) fn core_snapshot(
+    snapshot: &Ts<ZoneSnapshot>,
+) -> Result<Rc<core::ZoneSnapshot>, JsError> {
+    let view = snapshot.js_value();
+    let remembered = VIEWS.with(|views| {
+        views
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(kept, _)| *kept == view)
+            .map(|(_, decoded)| Rc::clone(decoded))
+    });
+    if let Some(decoded) = remembered {
+        return Ok(decoded);
+    }
+    DESERIALISED.with(|count| count.set(count.get().wrapping_add(1)));
+    core::ZoneSnapshot::try_from(&snapshot.to_rust()?)
+        .map(Rc::new)
+        .map_err(|error| JsError::new(&error))
 }
 
 /// A list or optional result as a plain value, absent options as `null` like
@@ -99,7 +159,7 @@ impl From<hud::SlotState> for SlotState {
 /// The action bar for a projection: the viewer's class kit, slot by slot.
 #[wasm_bindgen(js_name = actionBar, unchecked_return_type = "SlotState[]")]
 pub fn action_bar(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let slots: Vec<SlotState> = hud::CombatHud::from_projection(&snapshot)
         .slots
         .into_iter()
@@ -169,14 +229,14 @@ fn combat_texts_js(texts: Vec<combat_text::CombatText>) -> Result<JsValue, JsErr
 /// The floating texts one projection's events produce, in event order.
 #[wasm_bindgen(js_name = combatTexts, unchecked_return_type = "CombatText[]")]
 pub fn combat_texts(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     combat_texts_js(combat_text::combat_texts(&snapshot))
 }
 
 /// Whether this projection interrupted the viewer's own cast.
 #[wasm_bindgen(js_name = viewerInterrupted)]
 pub fn viewer_interrupted(snapshot: Ts<ZoneSnapshot>) -> Result<bool, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     Ok(combat_text::viewer_interrupted(&snapshot))
 }
 
@@ -210,7 +270,7 @@ impl CombatTextFeed {
     /// The texts a newer projection adds; none for one already taken.
     #[wasm_bindgen(unchecked_return_type = "CombatText[]")]
     pub fn observe(&mut self, snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         combat_texts_js(self.feed.observe(&snapshot))
     }
 }
@@ -312,7 +372,7 @@ impl ChatLog {
 
     /// Takes a newer projection's chat; returns whether lines were added.
     pub fn receive(&mut self, snapshot: Ts<ZoneSnapshot>) -> Result<bool, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         Ok(self.logs.receive_chat(&snapshot))
     }
 
@@ -369,7 +429,7 @@ impl PowerDraw {
         snapshot: Ts<ZoneSnapshot>,
         interface_open: bool,
     ) -> Result<bool, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         Ok(self
             .draw
             .press(slot, ability, Some(&snapshot), interface_open))
@@ -394,7 +454,7 @@ impl PowerDraw {
         snapshot: Ts<ZoneSnapshot>,
         interface_open: bool,
     ) -> Result<bool, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         Ok(self.draw.observe(&snapshot, interface_open))
     }
 
@@ -616,7 +676,7 @@ impl MouseOwners {
         snapshot: Ts<ZoneSnapshot>,
         interface_open: bool,
     ) -> Result<Ts<AimPress>, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         let press = if !manual_aim::can_aim(&snapshot, slot, ability, interface_open) {
             AimPress::Use
         } else if self.owners.begin_aim(slot, ability) {
@@ -640,7 +700,7 @@ impl MouseOwners {
         snapshot: Ts<ZoneSnapshot>,
         facing: u16,
     ) -> Result<Option<Vec<i32>>, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         Ok(manual_aim::landing(&snapshot, facing).map(Vec::from))
     }
 
@@ -720,7 +780,7 @@ impl MouseOwners {
                 pie_menu::Wheel::fixed(&choices)
             }
             WheelKindName::Context => {
-                let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+                let snapshot = core_snapshot(&snapshot)?;
                 pie_menu::Wheel::context(&snapshot, &hosted_content())
             }
         };
@@ -732,7 +792,7 @@ impl MouseOwners {
         let Some(wheel) = self.owners.wheel() else {
             return Ok(JsValue::NULL);
         };
-        let class = core_snapshot(&snapshot.to_rust()?)?
+        let class = core_snapshot(&snapshot)?
             .viewer
             .class
             .map(|choice| choice.class);
@@ -807,7 +867,7 @@ impl MouseOwners {
 
     /// Death or a stun in the projection ends the gesture without firing.
     pub fn observe(&mut self, snapshot: Ts<ZoneSnapshot>) -> Result<Ts<EndedGesture>, JsError> {
-        let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+        let snapshot = core_snapshot(&snapshot)?;
         Ok(EndedGesture::from(self.owners.observe(&snapshot)).into_ts()?)
     }
 
@@ -1083,7 +1143,7 @@ pub struct QuestNpc {
 /// The quest NPC Talk addresses: the selected NPC only, else the nearest quest NPC.
 #[wasm_bindgen(js_name = dialogNpc, unchecked_return_type = "QuestNpc | null")]
 pub fn dialog_npc(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let npc = quest::dialog_npc(&snapshot, &hosted_content()).map(|npc| QuestNpc {
         npc: npc.npc.get(),
         in_reach: npc.in_reach,
@@ -1159,7 +1219,7 @@ pub fn mechanism_in_reach(x: i32, y: i32, z: i32) -> Result<JsValue, JsError> {
 /// client model's text.
 #[wasm_bindgen(js_name = shrineStatus)]
 pub fn shrine_status(snapshot: Ts<ZoneSnapshot>) -> Result<Vec<String>, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     Ok(quest::shrine_status(
         &snapshot.seals,
         &snapshot.wards,
@@ -1264,7 +1324,7 @@ pub fn interact_press(
     snapshot: Ts<ZoneSnapshot>,
     #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
 ) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let entries = quest_entries(sheet)?;
     let press = match interaction::press(&snapshot, &hosted_content(), &entries) {
         interaction::Press::Interact(next) => next.into(),
@@ -1283,7 +1343,7 @@ pub fn next_interaction(
     snapshot: Ts<ZoneSnapshot>,
     #[wasm_bindgen(unchecked_param_type = "QuestSheet | null")] sheet: JsValue,
 ) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let entries = quest_entries(sheet)?;
     let next = interaction::next_interaction(&snapshot, &hosted_content(), &entries)
         .map_or(InteractPress::Nothing, Into::into);

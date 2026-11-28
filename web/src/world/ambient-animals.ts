@@ -6,6 +6,7 @@ import { litObject } from "./lighting";
 import type { AmbientAnimalsSource } from "./scenery";
 import { releaseMixer, retainedBundle } from "./zone-lifecycle";
 import { ClipDetail, type ClipWork } from "./clip-detail";
+import { HeldMatrices, shareSkeletons } from "./held-matrices";
 
 /** The rolling `greyhaven-ambient-animals` bundle `scripts/fetch-bundles.sh` places in `web/public`. */
 const AMBIENT_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.ambient-animals/`;
@@ -16,8 +17,11 @@ const FARM_PREFIX = "greyhaven.farm.";
 const WILD_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.wildlife/`;
 const WILD_PREFIX = "greyhaven.wild.";
 
-/** `lift` and `radius`: the species' bounding sphere, its centre `lift` metres above the feet (#1095). */
-type Animal = { root: THREE.Object3D; mixer: THREE.AnimationMixer; actions: (THREE.AnimationAction | null)[]; clip: number; time: number; lift: number; radius: number };
+/**
+ * `lift` and `radius`: the species' bounding sphere, its centre `lift` metres above the feet (#1095). `held`: its
+ * subtree's world matrices, recomputed only in a frame it moved or sampled its clip (#1257).
+ */
+type Animal = { root: THREE.Object3D; held: HeldMatrices; mixer: THREE.AnimationMixer; actions: (THREE.AnimationAction | null)[]; clip: number; time: number; lift: number; radius: number };
 
 /** A species' bounding sphere around its feet, with room for its clips' reach; a generous default if unmeasurable. */
 function speciesBounds(scene: THREE.Object3D): { lift: number; radius: number } {
@@ -84,6 +88,7 @@ export class AmbientAnimals {
       const gltf = loaded.get(key)!;
       // Each animal is a skinned clone of its species' untouched, retained scene: its own skeleton, shared geometry.
       const scene = cloneSkinned(gltf.scene);
+      shareSkeletons(scene);
       // Lit like the rest of the world (#600).
       const root = litObject(scene);
       root.name = entries[index]!;
@@ -93,7 +98,7 @@ export class AmbientAnimals {
         const clip = gltf.animations.find((animation) => animation.name === name);
         return clip ? mixer.clipAction(clip) : null;
       });
-      return { root, mixer, actions, clip: -1, time: NaN, ...bounds.get(key)! };
+      return { root, held: new HeldMatrices(root), mixer, actions, clip: -1, time: NaN, ...bounds.get(key)! };
     });
     this.#detail = new ClipDetail(this.#animals.length);
     this.#changed = true;
@@ -161,6 +166,7 @@ export class AmbientAnimals {
       action.time = time;
       animal.time = time;
       animal.mixer.update(0);
+      animal.held.touch();
     }
   }
 

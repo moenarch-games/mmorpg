@@ -53,7 +53,7 @@ pub struct HudTexts {
 /// The combat HUD's lines for one projection; the page reads it once per projection.
 #[wasm_bindgen(js_name = hudTexts, unchecked_return_type = "HudTexts")]
 pub fn hud_texts(snapshot: Ts<ZoneSnapshot>) -> Result<JsValue, JsError> {
-    let snapshot = core_snapshot(&snapshot.to_rust()?)?;
+    let snapshot = core_snapshot(&snapshot)?;
     let content = hosted_content();
     to_js(&HudTexts {
         status: texts::status_line(&snapshot, &content),

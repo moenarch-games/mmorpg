@@ -5,6 +5,7 @@ import { loadBundleGltfs } from "./static-bundle";
 import { litObject } from "./lighting";
 import type { LivestockSource } from "./scenery";
 import { releaseMixer, retainedBundle } from "./zone-lifecycle";
+import { shareSkeletons } from "./held-matrices";
 
 /** The rolling `greyhaven-farm-animals` bundle (#849) the ambient farm animals come from. */
 const FARM_BUNDLE = `${import.meta.env.BASE_URL}scenery/greyhaven.farm-animals/`;
@@ -63,6 +64,8 @@ export class Livestock {
 
   #clone(gltf: GLTF): Sheep {
     const root = litObject(cloneSkinned(gltf.scene));
+    // One skeleton per skin, not per mesh (#1257).
+    shareSkeletons(root);
     root.name = this.#source.species;
     root.matrixAutoUpdate = false;
     const mixer = new THREE.AnimationMixer(root);
