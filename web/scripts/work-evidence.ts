@@ -1,6 +1,6 @@
 /**
  * Work evidence for the browser operations of `.performance/contract.json` (#1120): `world-frame`, `scenery-frame`,
- * `static-batch-views`, `ambient-clips`, `sun-shadow-casters` and `entry-prebuild`. Each is measured by the same helper in `tests/support/work/` that its bun test
+ * `static-batch-views`, `ambient-clips`, `sun-shadow-casters`, `entry-prebuild` and `hud-texts`. Each is measured by the same helper in `tests/support/work/` that its bun test
  * asserts through, at every scale point the contract declares, and written as `{ "operations": [...] }` to the path
  * given as the first argument; `scripts/operation-work.py` merges it with the Rust examples' samples. Counters only;
  * nothing is timed.
@@ -19,6 +19,7 @@ await import("../tests/support/wasm");
 const { shadowLodReady } = await import("../src/world/shadow-lod");
 const { largestClipsSampledPerFrame } = await import("../tests/support/work/ambient-clips");
 const { prebuildThenEnter } = await import("../tests/support/work/entry-prebuild");
+const { hudTextReadsPerProjection } = await import("../tests/support/work/hud-texts");
 const { greyhavenScenery, warmSceneryFrames } = await import("../tests/support/work/scenery-frame");
 const { staticBatchView } = await import("../tests/support/work/static-batch-views");
 const { largestFrameCascadeRedraws, largestFrameKitShadowCasterExtraPercent, unitShadowTrianglePercent } = await import("../tests/support/work/sun-shadow-casters");
@@ -73,6 +74,7 @@ const MEASUREMENTS: Record<string, Measure> = {
     const { staticParts, prepares, frameStaticBuilds } = await prebuildThenEnter(at(point, "entries"));
     return { frame_static_builds: frameStaticBuilds, static_parts: staticParts, prepares };
   },
+  "hud-texts": (point) => ({ largest_projection_text_reads: hudTextReadsPerProjection(at(point, "frames")) }),
 };
 
 const out = process.argv[2];

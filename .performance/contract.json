@@ -1174,6 +1174,22 @@
           "budget": { "max": 0 }
         }
       ]
+    },
+    {
+      "id": "hud-texts",
+      "description": "Browser HUD texts (#1278): the combat HUD's status and feedback lines and the class HUD's target name come from mmorpg-client-model's texts through one mmorpg-wasm hudTexts call per projection, shared by both HUDs and every frame that shows the projection (Atlas 7.1.i1256). Measured over CombatHud and the shared reader by web/tests/support/work/hud-texts.ts: asserted by web/tests/hud-texts.test.ts (bun test), emitted by web/scripts/work-evidence.ts.",
+      "dimensions": { "frames": { "description": "frames that show each projection, each asking both HUDs" } },
+      "scalePoints": [{ "frames": 1 }, { "frames": 4 }, { "frames": 16 }],
+      "metrics": [
+        {
+          "name": "largest_projection_text_reads",
+          "unit": "calls",
+          "signal": "operation-count",
+          "notes": "hudTexts calls into WASM one projection made (one per HUD and frame before the cache would be two per frame).",
+          "budget": { "max": 1 },
+          "growth": [{ "dimension": "frames", "bound": "constant" }]
+        }
+      ]
     }
   ]
 }
