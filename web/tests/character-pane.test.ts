@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import type { ErrorCode, InventorySlot, ZoneSnapshot } from "../src/replication";
 import { decodeCatalog } from "../src/world/catalog";
 import { BagState } from "../src/world/units/bag-state";
-import { characterPaneModel, itemStatsText } from "../src/world/units/character-pane";
+import { characterPaneModel } from "../src/world/units/character-pane";
+import { wasm } from "../src/wasm";
 import { catalogJson } from "./support/catalog";
 import { HEALTHY_VIEWER, NO_EQUIPMENT, NO_STATS, playerEntity, testSnapshot } from "./support/snapshots";
 
@@ -29,10 +30,11 @@ function refusal(tick: number, revision: bigint, code: ErrorCode): ZoneSnapshot 
   return projection(tick, revision, null, { events: [{ kind: "error", code, target: null }] });
 }
 
-test("catalog stats read as signed attribute text; items without stats add none", () => {
-  expect(itemStatsText(DAGGER_STATS)).toBe("+2 Strength, +2 Agility");
-  expect(itemStatsText({ stamina: 1, strength: 0, agility: 0, intellect: 2 })).toBe("+1 Stamina, +2 Intellect");
-  expect(itemStatsText(NO_STATS)).toBe("");
+test("the hosted catalog words each item's detail and the slot titles as the shared item rules do (#1280)", () => {
+  const hosted = decodeCatalog(wasm.catalog());
+  expect(hosted.items.get(2)?.detail).toBe("+2 Strength, +2 Agility");
+  expect(hosted.items.get(1)?.detail).toBe("");
+  expect(hosted.equipmentSlots).toEqual(["Main hand", "Off hand", "Head", "Chest", "Legs", "Feet"]);
 });
 
 test("the pane lists six labelled slots, totals, health and damage from received facts only", () => {

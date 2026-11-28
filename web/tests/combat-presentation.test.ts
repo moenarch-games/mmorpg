@@ -36,8 +36,8 @@ describe("content catalog", () => {
     expect(catalog.npcs.get(6)?.role).toBe("guard");
     expect(catalog.areas.get(1)).toBe("Greyhaven Outpost");
     expect([...catalog.items.values()].slice(0, 2)).toEqual([
-      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null },
-      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2, find: null },
+      { id: 1, name: "Torn Fur", maxStack: 20, slot: null, stats: { stamina: 0, strength: 0, agility: 0, intellect: 0 }, sellPrice: 1, find: null, detail: "" },
+      { id: 2, name: "Worn Dagger", maxStack: 1, slot: "mainHand", stats: { stamina: 0, strength: 2, agility: 2, intellect: 0 }, sellPrice: 2, find: null, detail: "+2 Strength, +2 Agility" },
     ]);
     expect(catalog.quests.get(2)).toEqual({
       id: 2, name: "Pelts for the Tanner", text: "Bring me five wolf pelts.", giver: 2, ender: 2, prerequisite: 1,
@@ -45,7 +45,9 @@ describe("content catalog", () => {
       requires: [], decision: [],
     });
     expect(catalog.quests.get(1)?.objectives).toEqual([{ kind: "kill", target: 1, count: 6 }]);
-    expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9, materials: [] }] }]);
+    expect([...catalog.vendors.values()]).toEqual([{ npc: 3, offers: [{ item: 2, price: 9, materials: [], text: "Worn Dagger · 9 copper (+2 Strength, +2 Agility)" }] }]);
+    expect(catalog.equipmentSlots[5]).toBe("Feet");
+    expect(catalog.attributeNames).toEqual(["Stamina", "Strength", "Agility", "Intellect"]);
     const broken = (mutate: (json: Record<string, unknown>) => void) => {
       const json = catalogJson();
       mutate(json);

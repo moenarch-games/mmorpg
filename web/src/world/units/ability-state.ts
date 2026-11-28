@@ -52,16 +52,6 @@ export function sweepDegrees(remaining: number, total: number): number {
   return Math.min(360, (remaining / total) * 360);
 }
 
-/** Whole seconds shown on a slot while at least 2 s remain; null below that. */
-export function cooldownSeconds(remainingTicks: number): number | null {
-  return remainingTicks >= 2 * TICK_HZ ? Math.ceil(remainingTicks / TICK_HZ) : null;
-}
-
-/** Time left as a short label: whole seconds, then minutes from one minute. */
-export function formatRemaining(ticks: number): string {
-  const seconds = Math.max(1, Math.ceil(ticks / TICK_HZ));
-  return seconds >= 60 ? `${Math.ceil(seconds / 60)}m` : `${seconds}s`;
-}
 
 function secondsText(ticks: number): string {
   const seconds = ticks / TICK_HZ;

@@ -2,7 +2,6 @@ import type { WorldCommand } from "../../command-wire";
 import type { ZoneSnapshot } from "../../replication";
 import type { ContentCatalog } from "../catalog";
 import { BagState } from "./bag-state";
-import { itemDetailText } from "./character-pane";
 
 export type BagsElements = {
   panel: HTMLElement;
@@ -147,7 +146,7 @@ export class BagsPanel {
     const selectedStack = this.#selected === null ? null : this.#state.slots?.[this.#selected];
     const selectedItem = selectedStack ? this.#catalog?.items.get(selectedStack.itemId) : null;
     // A find names its quality, trait and source beside the move hint (#918).
-    const detail = selectedItem?.find ? ` ${selectedItem.name}: ${itemDetailText(selectedItem)}.` : "";
+    const detail = selectedItem?.find ? ` ${selectedItem.name}: ${selectedItem.detail}.` : "";
     const hint = this.#selected === null ? "Choose an occupied slot." : `Move from slot ${this.#selected + 1}. Choose a quantity and destination.${detail}`;
     if (selection.textContent !== hint) {
       selection.textContent = hint;
@@ -172,7 +171,7 @@ export class BagsPanel {
       if (button.textContent !== text) {
         button.textContent = text;
       }
-      const stats = item ? itemDetailText(item) : "";
+      const stats = item?.detail ?? "";
       if (stats) {
         button.title = stats;
       } else {

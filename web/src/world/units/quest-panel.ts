@@ -4,6 +4,7 @@ import type { ContentCatalog, QuestRecord } from "../catalog";
 import { wasm } from "../../wasm";
 import { aftermathOpen } from "../raid-aid";
 import { forewarningLine } from "../raid-prep";
+import { minimapRules } from "./panel-views";
 import {
   defenceStatus,
   dialogNpc,
@@ -44,7 +45,6 @@ export type QuestElements = {
 /** A quest NPC's marker anchor on screen, in CSS pixels, or not on screen. */
 export type MarkerPoint = { npc: number; x: number; y: number; onScreen: boolean };
 
-const MARKER_TEXT: Record<QuestMarkerKind, string> = { available: "!", complete: "?", "in-progress": "?" };
 const MARKER_LABEL: Record<QuestMarkerKind, string> = {
   available: "Quest available",
   complete: "Quest ready to turn in",
@@ -277,7 +277,7 @@ export class QuestPanel {
         this.#markerNodes.set(point.npc, node);
         this.#elements.markers.append(node);
       }
-      setText(node, MARKER_TEXT[marker]);
+      setText(node, minimapRules().markerGlyphs[marker]);
       node.dataset.marker = marker;
       node.dataset.fresh = String(this.#state.freshlyReady(point.npc));
       node.dataset.npc = String(point.npc);

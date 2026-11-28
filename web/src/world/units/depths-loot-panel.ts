@@ -1,5 +1,5 @@
-import type { DepthsLootView, WorldCommand, ZoneSnapshot } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
-import { TICK_HZ } from "../../replication";
+import type { DepthsLootRow, WorldCommand, ZoneSnapshot } from "../../generated/mmorpg-wasm/mmorpg_wasm.js";
+import { panelViews } from "./panel-views";
 
 export type DepthsLootElements = {
   panel: HTMLElement;
@@ -8,7 +8,8 @@ export type DepthsLootElements = {
 
 /**
  * Captain Thorn's shared loot (#404): a Need/Greed/Pass prompt for each open roll and a claim
- * button for items everyone passed on. The projection carries the state; every button only
+ * button for items everyone passed on. The rows are `mmorpg-client-model`'s
+ * `panels::depths_loot_rows` (#1280), read with the projection's panel views; every button only
  * names a command the zone validates.
  */
 export class DepthsLootPanel {
@@ -39,48 +40,25 @@ export class DepthsLootPanel {
   }
 
   update(snapshot: ZoneSnapshot): void {
-    const view = snapshot.depthsLoot ?? null;
-    if (view === null) {
+    const loot = panelViews(snapshot).depthsLoot;
+    if (loot === null) {
       if (!this.#elements.panel.hidden) { this.reset(); }
       return;
     }
-    // The countdown runs even between sheet updates, so include the whole seconds left.
-    const key = JSON.stringify(view, (_key, value) => typeof value === "bigint" ? value.toString() : value)
-      + secondsLeft(view, snapshot.tick);
+    // The rows carry the countdown, so an unchanged second leaves the list alone.
+    const key = JSON.stringify(loot, (_key, value) => typeof value === "bigint" ? value.toString() : value);
     if (key === this.#rendered) { return; }
     this.#rendered = key;
     this.#elements.panel.hidden = false;
-    this.#elements.list.replaceChildren(...view.drops.map((drop) => this.#row(view, drop, snapshot.tick)));
+    this.#elements.list.replaceChildren(...loot.rows.map((row) => this.#row(loot.runId, row)));
   }
 
-  #row(view: DepthsLootView, drop: DepthsLootView["drops"][number], tick: bigint): HTMLElement {
+  #row(run: bigint, drop: DepthsLootRow): HTMLElement {
     const row = document.createElement("li");
     row.className = "depths-loot-row";
-    const name = document.createElement("span");
-    name.textContent = drop.itemName;
-    row.append(name);
-    const state = drop.state;
-    if (state.kind === "rolling") {
-      if (state.answer !== null) {
-        row.append(text(`You chose ${state.answer}. Waiting for the others…`));
-      } else {
-        const remaining = Number(state.deadline - tick) / TICK_HZ;
-        row.append(text(`${Math.max(0, Math.ceil(remaining))} s`));
-        for (const [action, label, allowed] of [["need", "Need", state.mayNeed], ["greed", "Greed", true], ["pass", "Pass", true]] as const) {
-          row.append(button(view.runId, drop.drop, action, label, allowed));
-        }
-      }
-    } else if (state.kind === "held") {
-      if (state.claimable) {
-        row.append(text("Everyone passed."), button(view.runId, drop.drop, "claim", "Claim", true));
-      } else {
-        row.append(text("Everyone passed; it stays until the run ends."));
-      }
-    } else if (state.won) {
-      const how = state.roll === 0 ? "claimed" : `${state.need ? "Need" : "Greed"} ${state.roll}`;
-      row.append(text(state.pending ? `Yours (${how}) — bag full or arriving…` : `Yours (${how})`));
-    } else {
-      row.append(text("Taken by a party member."));
+    row.append(text(drop.itemName), text(drop.line));
+    for (const { action, label, enabled } of drop.buttons) {
+      row.append(button(run, drop.drop, action, label, enabled));
     }
     return row;
   }
@@ -101,10 +79,4 @@ function button(run: bigint, drop: number, action: string, label: string, enable
   element.dataset.action = action;
   element.disabled = !enabled;
   return element;
-}
-
-function secondsLeft(view: DepthsLootView, tick: bigint): number {
-  return view.drops.reduce((seconds, drop) => {
-    return drop.state.kind === "rolling" ? Math.ceil(Number(drop.state.deadline - tick) / TICK_HZ) : seconds;
-  }, 0);
 }
