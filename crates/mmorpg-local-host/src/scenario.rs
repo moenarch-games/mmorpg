@@ -11,7 +11,7 @@ use strum::VariantArray;
 
 use mmorpg_core::{
     CharacterId, CharacterLocation, CharacterRecord, ClassChoice, PLAYER_HALF_EXTENTS_UNITS,
-    PlayerClass, Sex, ZoneContent, ZoneSimulation, unit::player_max_health,
+    PlayerClass, Sex, ZoneContent, unit::player_max_health,
 };
 
 use crate::host::{LOCAL_ZONE_ID, LocalZoneError, hosted_content};
@@ -524,11 +524,9 @@ pub(crate) fn fresh_record(
     ([x, z], facing): ([i32; 2], u16),
 ) -> Result<CharacterRecord, LocalZoneError> {
     let zone_error = LocalZoneError::Zone;
-    let mut template =
-        ZoneSimulation::with_content(LOCAL_ZONE_ID, Arc::clone(content)).map_err(zone_error)?;
-    template.create_character(1, class).map_err(zone_error)?;
     let id = CharacterId::new(id.to_owned()).map_err(zone_error)?;
-    let mut record = template.capture_character(1, id).map_err(zone_error)?;
+    let mut record = CharacterRecord::fresh(LOCAL_ZONE_ID, Arc::clone(content), class, id)
+        .map_err(zone_error)?;
     // Outer-valley hills are physical (#159): stand on the authored ground, not inside it.
     // On the Redbrand quarry's wall (#1195), stand on its rock.
     let ground = content

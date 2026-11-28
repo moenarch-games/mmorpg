@@ -267,6 +267,30 @@ pub fn zone_match_id(zone_id: ZoneId) -> Result<MatchId, MatchIdError> {
     MatchId::new(format!("zone-{}", zone_id.get()))
 }
 
+/// The zone a [`zone_match_id`] names (#1275): its inverse, refusing any other match id.
+pub fn match_zone(id: &MatchId) -> Result<ZoneId, String> {
+    id.as_str()
+        .strip_prefix("zone-")
+        .ok_or("not a zone match")?
+        .parse::<u32>()
+        .map(ZoneId::new)
+        .map_err(|error| error.to_string())
+}
+
+/// The class and character a session's character claim names (#1275): the class appearance
+/// byte, then the character id in UTF-8.
+pub(crate) fn decode_character_claim(
+    payload: &[u8],
+) -> Result<(mmorpg_core::ClassChoice, mmorpg_core::CharacterId), String> {
+    let (&appearance, raw_id) = payload.split_first().ok_or("missing character claim")?;
+    let class = mmorpg_core::ClassChoice::from_appearance(u32::from(appearance))
+        .ok_or("invalid character class")?;
+    let id = std::str::from_utf8(raw_id).map_err(|error| error.to_string())?;
+    let character =
+        mmorpg_core::CharacterId::new(id.to_owned()).map_err(|error| error.to_string())?;
+    Ok((class, character))
+}
+
 pub fn build_zone_host(
     zone_ids: impl IntoIterator<Item = ZoneId>,
     reconnect_grace_ticks: u64,

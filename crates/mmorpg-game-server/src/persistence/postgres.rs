@@ -893,7 +893,7 @@ fn sql(error: impl std::fmt::Display) -> StoreError {
 mod tests {
     use super::*;
     use crate::ZoneGameServerAdapter;
-    use game_server::{MatchId, MatchRuntime};
+    use game_server::MatchRuntime;
     use mmorpg_characters::LeaseHolder;
     use mmorpg_control_plane::HostId;
     use mmorpg_core::{ClassChoice, PlayerClass, Sex, ZoneId, ZoneSimulation};
@@ -1082,7 +1082,7 @@ mod tests {
         }];
         let snapshot = live.advance_tick().unwrap();
         let batch = SnapshotCommitBatch {
-            match_id: MatchId::new(format!("zone-{}", zone.get())).unwrap(),
+            match_id: crate::zone_match_id(zone).unwrap(),
             snapshot: snapshot.clone(),
             journal: live.replay_log().unwrap().clone(),
             checkpoint: live.checkpoint_replay().unwrap(),
