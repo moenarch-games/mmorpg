@@ -6,7 +6,7 @@
 use mmorpg_core::{DebrisView, EXPLOSION_RADIUS_UNITS, PropKind, debris_pieces};
 
 use super::kit::{Frame, Primitive, Resources, child, qa, qm};
-use crate::Draw;
+use crate::{Draw, geometry::metres};
 
 const WOOD: u32 = 0x8a6a45;
 const DARK_WOOD: u32 = 0x5e4630;
@@ -14,10 +14,6 @@ const IRON: u32 = 0x4b4d52;
 const POWDER: u32 = 0x9c3324;
 const ROCK: u32 = 0x8c8678;
 const DARK_ROCK: u32 = 0x5a5650;
-
-fn metres(units: [i32; 3]) -> [f64; 3] {
-    units.map(|axis| f64::from(axis) / 100.)
-}
 
 /// The colour of `kind`'s piece `index`.
 fn piece_color(kind: PropKind, index: usize) -> u32 {
@@ -114,9 +110,9 @@ pub fn standing(
             let turn = f64::from(piece.yaw) / 65_536. * std::f64::consts::TAU;
             resources.primitive(
                 format!("{id}-piece-{index}"),
-                Primitive::Box(metres(piece.half_extents).map(|half| half * 2.)),
+                Primitive::Box(piece.half_extents.map(metres).map(|half| half * 2.)),
                 piece_color(kind, index),
-                child(centre, metres(piece.offset), qa(1, turn)),
+                child(centre, piece.offset.map(metres), qa(1, turn)),
             )
         })
         .collect();
@@ -147,7 +143,7 @@ pub fn piece(resources: &mut Resources, view: &DebrisView, centre: [f32; 3]) -> 
     let id = format!("debris-{}", view.id);
     let mut draws = vec![resources.primitive(
         format!("{id}-piece"),
-        Primitive::Box(metres(table.half_extents).map(|half| half * 2.)),
+        Primitive::Box(table.half_extents.map(metres).map(|half| half * 2.)),
         piece_color(view.kind, usize::from(view.piece)),
         frame,
     )];
@@ -174,7 +170,7 @@ pub fn piece(resources: &mut Resources, view: &DebrisView, centre: [f32; 3]) -> 
 /// still decides every hit, cover included.
 pub fn blast_ring(resources: &mut Resources, id: &str, feet: [f64; 3]) -> Vec<Draw> {
     const DASHES: u32 = 32;
-    let radius = metres([EXPLOSION_RADIUS_UNITS, 0, 0])[0];
+    let radius = metres(EXPLOSION_RADIUS_UNITS);
     (0..DASHES)
         .map(|index| {
             let a = f64::from(index) / f64::from(DASHES) * std::f64::consts::TAU;

@@ -1,6 +1,6 @@
 //! Browser creature families and NPC role rigs, fitted to their real content boxes.
 use super::{animation::*, kit::*};
-use crate::{Draw, geometry::V};
+use crate::{Draw, colour::shade, geometry::V};
 use mmorpg_core::{CreatureFamily, EntitySnapshot, NpcRole};
 use std::f64::consts::PI;
 struct Parts<'a> {

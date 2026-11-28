@@ -40,9 +40,13 @@ use mmorpg_core::{
 };
 use mmorpg_scenery::Scenery;
 
-use crate::{Draw, geometry::V};
+use crate::colour::shade;
+use crate::{
+    Draw,
+    geometry::{V, metres, position_f32},
+};
 use imported::{Kind, Loadout, Outfit, Playback, Reaction, Region, Resident};
-use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm, shade};
+use kit::{Frame, IQ, Primitive, Resources, offset, qa, qm};
 use player::{Hat, Look};
 
 const HEALTH_BAR_WIDTH: f32 = 1.0;
@@ -1699,15 +1703,15 @@ impl UnitPresenter {
     /// Half extents in metres of a unit's body.
     #[must_use]
     pub fn half(&self, entity: EntityRef, record: &EntitySnapshot) -> [f32; 3] {
-        let character = metres(PLAYER_HALF_EXTENTS_UNITS);
+        let character = position_f32(PLAYER_HALF_EXTENTS_UNITS);
         match entity {
             EntityRef::Creature(_) => self
                 .content
                 .creature_template(CreatureTemplateId::new(record.appearance))
                 .map_or(character, |template| {
-                    metres(template.body_half_extents(record.facing))
+                    position_f32(template.body_half_extents(record.facing))
                 }),
-            EntityRef::Minion(_) => metres(mmorpg_core::minion_half_extents(
+            EntityRef::Minion(_) => position_f32(mmorpg_core::minion_half_extents(
                 mmorpg_core::minion_ability(record.appearance),
             )),
             EntityRef::Player(_) | EntityRef::Npc(_) => character,
@@ -1755,8 +1759,8 @@ impl UnitPresenter {
                         Some(imported::Posture::SitChair),
                         None,
                         Some([
-                            f64::from(seat.root[0] - seat.stand[0]) / 100.,
-                            f64::from(seat.root[1] - seat.stand[1]) / 100.,
+                            metres(seat.root[0] - seat.stand[0]),
+                            metres(seat.root[1] - seat.stand[1]),
                         ]),
                     ),
                     None => (Some(imported::Posture::SitGround), None, None),
@@ -2207,7 +2211,7 @@ impl UnitPresenter {
                     root: swim::lean(root, animation.attitude, f64::from(half[1]) * 2.),
                     // The shifted Druid stands as tall as the companion wolf, on its own feet.
                     height: if shifted {
-                        f64::from(metres(mmorpg_core::COMPANION_HALF_EXTENTS_UNITS)[1]) * 2.
+                        f64::from(position_f32(mmorpg_core::COMPANION_HALF_EXTENTS_UNITS)[1]) * 2.
                     } else {
                         f64::from(half[1]) * 2.
                     },
@@ -2461,7 +2465,7 @@ impl UnitPresenter {
     fn platforms(&mut self, out: &mut UnitFrame, snapshot: &ZoneSnapshot) {
         for platform in self.content.platforms() {
             let rendered = self.rendered(platform.centre_at(snapshot.tick));
-            let [x, y, z] = metres(platform.half_extents).map(f64::from);
+            let [x, y, z] = position_f32(platform.half_extents).map(f64::from);
             if self.kit_platforms.contains(&platform.id) {
                 out.platforms.push(PlatformView {
                     platform: platform.id,
@@ -2933,14 +2937,10 @@ fn velocity_metres_per_second(units_per_tick: i8) -> f64 {
     f64::from(units_per_tick) * f64::from(mmorpg_core::TICK_HZ) / f64::from(UNITS_PER_METRE)
 }
 
-fn metres(value: [i32; 3]) -> [f32; 3] {
-    value.map(|component| component as f32 / UNITS_PER_METRE as f32)
-}
-
 /// Metres, lifted by `scenery`'s presentation relief at the position.
 fn rendered_on(scenery: &Scenery, position: [i32; 3]) -> [f32; 3] {
     let relief = scenery.height_at(position[0], position[2]);
-    let [x, y, z] = metres(position);
+    let [x, y, z] = position_f32(position);
     [x, y + relief as f32 / UNITS_PER_METRE as f32, z]
 }
 
@@ -2967,8 +2967,8 @@ fn bed_of(npc: mmorpg_core::NpcId) -> Option<[f64; 2]> {
     const LYING_PELVIS_DEPTH: f64 = 0.52;
     (npc == house::RESIDENT).then(|| {
         [
-            f64::from(house::BED_CENTRE[0] - house::BEDSIDE[0]) / 100. - LYING_PELVIS_DEPTH,
-            f64::from(house::BED_CENTRE[1] - house::BEDSIDE[1]) / 100.,
+            metres(house::BED_CENTRE[0] - house::BEDSIDE[0]) - LYING_PELVIS_DEPTH,
+            metres(house::BED_CENTRE[1] - house::BEDSIDE[1]),
         ]
     })
 }

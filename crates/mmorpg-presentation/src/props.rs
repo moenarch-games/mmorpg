@@ -1,5 +1,5 @@
 //! Greyhaven prop compositions: one low-poly model per scenery prop kind.
-use super::{Animated, Draw, Kit, Motion, batching::*, geometry::*, terrain::*};
+use super::{Animated, Draw, Kit, Motion, batching::*, colour::*, geometry::*, terrain::*};
 use mmorpg_core::Grip;
 use mmorpg_scenery::{Prop, PropKind, Scenery, TerrainGrid, TreeVariant};
 use std::{
@@ -119,8 +119,9 @@ fn target(s: &Scenery, g: &TerrainGrid, p: &Prop) -> [f64; 2] {
     let mut count = 0.;
     for (i, b) in g.biomes.iter().enumerate() {
         if b.name() == "plaza" {
-            plaza[0] += metres(g.origin[0] + (i % g.columns) as i32 * g.step);
-            plaza[1] += metres(g.origin[1] + (i / g.columns) as i32 * g.step);
+            let [x, z] = g.index_xz(i).map(metres);
+            plaza[0] += x;
+            plaza[1] += z;
             count += 1.;
         }
     }

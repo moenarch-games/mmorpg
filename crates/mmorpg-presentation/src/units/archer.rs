@@ -1,6 +1,6 @@
 //! Normalize the checked-in asset-tooling OBJ with the external precision-preserving OBJ parser.
 use super::{kit::*, player::Look};
-use crate::{Draw, Material, geometry::*};
+use crate::{Draw, Material, colour::rgb, geometry::*};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},

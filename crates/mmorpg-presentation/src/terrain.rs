@@ -1,11 +1,8 @@
 //! Terrain triangulation, overlays, roads, lake beds and water.
-use super::{Draw, batching::*, geometry::*};
+use super::{Draw, batching::*, colour::*, geometry::*};
 use mmorpg_scenery::{Biome, Scenery, TerrainGrid};
 use std::f64::consts::TAU;
 use std::{collections::BTreeMap, sync::Arc};
-pub fn metres(v: i32) -> f64 {
-    f64::from(v) / 100.
-}
 pub fn height(g: &TerrainGrid, c: isize, r: isize) -> f64 {
     metres(
         g.heights[r.clamp(0, g.rows as isize - 1) as usize * g.columns
@@ -61,10 +58,16 @@ impl SampleNormals {
     }
 }
 
-pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
+/// Grid coordinates (fractional column and row, unclamped) of `(x, z)` metres.
+pub(crate) fn grid_at(g: &TerrainGrid, x: f64, z: f64) -> [f64; 2] {
     let step = metres(g.step);
-    let gx = (x - metres(g.origin[0])) / step;
-    let gz = (z - metres(g.origin[1])) / step;
+    [
+        (x - metres(g.origin[0])) / step,
+        (z - metres(g.origin[1])) / step,
+    ]
+}
+pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
+    let [gx, gz] = grid_at(g, x, z);
     let c = gx.floor().clamp(0., (g.columns - 2) as f64) as isize;
     let r = gz.floor().clamp(0., (g.rows - 2) as f64) as isize;
     let fx = (gx - c as f64).clamp(0., 1.);
@@ -76,31 +79,15 @@ pub fn surface(g: &TerrainGrid, x: f64, z: f64) -> f64 {
         h(1, 1) + (h(0, 1) - h(1, 1)) * (1. - fx) + (h(1, 0) - h(1, 1)) * (1. - fz)
     }
 }
+/// Biome `b`'s ground colour before its tone ([`Biome::base_color`]), packed `0xrrggbb`.
 pub fn biome_color(b: Biome) -> u32 {
-    match b.name() {
-        "meadow" => 0x5a7640,
-        "hub" => 0x667c47,
-        "woods" => 0x4d653b,
-        "hollow" => 0x667348,
-        "farmland" => 0x7a5836,
-        "road" => 0xa4865c,
-        "plaza" => 0x8e7e61,
-        "shore" => 0xcdbb88,
-        "lake bed" => 0x5e5a44,
-        "foothills" => 0x5a7244,
-        "highland" => 0x6f7d52,
-        "rock" => 0x8b877e,
-        "snow" => 0xeef1f5,
-        _ => {
-            let c = b.base_color();
-            (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2])
-        }
-    }
+    let [r, g, b] = b.base_color();
+    (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
 }
 fn overlay(b: Biome) -> bool {
     matches!(
-        b.name(),
-        "road" | "lake bed" | "shore" | "plaza" | "farmland"
+        b,
+        Biome::Road | Biome::LakeBed | Biome::Shore | Biome::Plaza | Biome::Farmland
     )
 }
 pub(crate) fn ground_biomes(g: &TerrainGrid) -> Vec<Biome> {
@@ -149,8 +136,14 @@ pub(crate) fn noise(x: f64, z: f64, cell: f64, seed: f64) -> f64 {
 pub(crate) fn tone(b: Biome, x: f64, z: f64) -> u32 {
     let base = biome_color(b);
     if !matches!(
-        b.name(),
-        "meadow" | "hub" | "woods" | "hollow" | "foothills" | "highland" | "rock"
+        b,
+        Biome::Meadow
+            | Biome::Hub
+            | Biome::Woods
+            | Biome::Hollow
+            | Biome::Foothills
+            | Biome::Highland
+            | Biome::Rock
     ) {
         return base;
     }
@@ -172,10 +165,7 @@ pub(crate) fn tone(b: Biome, x: f64, z: f64) -> u32 {
 fn far_color(g: &TerrainGrid, biome: Biome, c: usize, r: usize, n: V) -> u32 {
     let (ci, ri) = (c as isize, r as isize);
     let h = height(g, ci, ri);
-    let (x, z) = (
-        metres(g.origin[0] + c as i32 * g.step),
-        metres(g.origin[1] + r as i32 * g.step),
-    );
+    let [x, z] = g.sample_xz(c, r).map(metres);
     let around = (height(g, ci - 2, ri)
         + height(g, ci + 2, ri)
         + height(g, ci, ri - 2)
@@ -198,8 +188,8 @@ fn far_color(g: &TerrainGrid, biome: Biome, c: usize, r: usize, n: V) -> u32 {
             hold * 0.85,
         )
     };
-    let color = match biome.name() {
-        "snow" | "rock" => {
+    let color = match biome {
+        Biome::Snow | Biome::Rock => {
             // Snow gathers in gullies and on gentle ground above the snow line; ridges and steep
             // faces stay bare.
             let lying = (h - 85.) + 30. * (noise(x, z, 24., 79.) - 0.5) - 20. * ridge;
@@ -208,7 +198,9 @@ fn far_color(g: &TerrainGrid, biome: Biome, c: usize, r: usize, n: V) -> u32 {
             let white = mix(0xf2f5f8, 0xb9c6d6, (-ridge).max(0.) * 0.9);
             mix(grassy(rock, 28.), white, snow)
         }
-        "highland" | "foothills" => grassy(mix(tone(biome, x, z), rock, steep.min(0.5)), 40.),
+        Biome::Highland | Biome::Foothills => {
+            grassy(mix(tone(biome, x, z), rock, steep.min(0.5)), 40.)
+        }
         _ => tone(biome, x, z),
     };
     // A soft hillshade from a fixed high light over the macro relief (40 m), baked in: the
@@ -226,11 +218,6 @@ fn far_color(g: &TerrainGrid, biome: Biome, c: usize, r: usize, n: V) -> u32 {
         .sum::<f64>()
         .max(0.);
     shade(color, (0.5 + 0.65 * lit) * (0.9 + 0.25 * ridge))
-}
-
-/// Whether the open rectangles `a` and `b` (`[min x, min z, max x, max z]`) overlap.
-pub(crate) fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
-    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
 /// Grid cell `cell` (metres; its first sample `s`) cut along the edges of the `holes` in it,
@@ -317,10 +304,8 @@ pub(crate) fn grid(
     let normals = SampleNormals::new(g, cells);
     let within = |x: f64, z: f64| inner[0] < x && x < inner[2] && inner[1] < z && z < inner[3];
     let at = |c: usize, r: usize| {
-        within(
-            metres(g.origin[0] + c as i32 * g.step),
-            metres(g.origin[1] + r as i32 * g.step),
-        )
+        let [x, z] = g.sample_xz(c, r).map(metres);
+        within(x, z)
     };
     for r in cells[1]..cells[3].min(g.rows - 1) {
         for c in cells[0]..cells[2].min(g.columns - 1) {
@@ -328,12 +313,7 @@ pub(crate) fn grid(
                 continue;
             }
             let s = r * g.columns + c;
-            let cell = [
-                metres(g.origin[0] + c as i32 * g.step),
-                metres(g.origin[1] + r as i32 * g.step),
-                metres(g.origin[0] + (c as i32 + 1) * g.step),
-                metres(g.origin[1] + (r as i32 + 1) * g.step),
-            ];
+            let cell = g.cell_rect(c, r).map(metres);
             if holes.iter().any(|hole| overlaps(*hole, cell)) {
                 around_holes(out, g, biomes, s, cell, holes);
                 continue;
@@ -348,10 +328,7 @@ pub(crate) fn grid(
             {
                 let idx = *map.entry(sample).or_insert_with(|| {
                     let (c, r) = (sample % g.columns, sample / g.columns);
-                    let (x, z) = (
-                        metres(g.origin[0] + c as i32 * g.step),
-                        metres(g.origin[1] + r as i32 * g.step),
-                    );
+                    let [x, z] = g.sample_xz(c, r).map(metres);
                     let h = metres(g.heights[sample]);
                     let y = if far && within(x, z) { h - 4. } else { h };
                     let index = out.p.len() as u32;
@@ -378,10 +355,7 @@ pub fn bounds(g: &TerrainGrid, name: &str) -> Option<([f64; 2], [f64; 2])> {
         if b.name() != name {
             continue;
         }
-        let p = [
-            metres(g.origin[0] + (i % g.columns) as i32 * g.step),
-            metres(g.origin[1] + (i / g.columns) as i32 * g.step),
-        ];
+        let p = g.index_xz(i).map(metres);
         for j in 0..2 {
             lo[j] = lo[j].min(p[j]);
             hi[j] = hi[j].max(p[j]);
@@ -413,12 +387,26 @@ fn bed_ellipse(
         let z = c[1] + angle.cos() * r[1] * shaped;
         [x, surface(g, x, z) + lift, z]
     };
-    let mut face = |corners: &[[f64; 3]]| {
+    let face = |corners: &[[f64; 3]]| {
         // Marsh islands and rocks that emerge within a pool are not lake bed.
         if outer >= 0.9 || corners.iter().all(|p| p[1] - lift < water_level - 0.012) {
             m.face(corners);
         }
     };
+    ring_faces(band, rings, segments, point, face);
+}
+
+/// The polar tessellation of an elliptical band, shared by the lake beds, water and surface
+/// hazards: `rings` rings from `band[0]` to `band[1]` of the radii, each of `segments` quads
+/// whose corners are `point(radius, angle)`, a band from the centre starting as a triangle fan.
+fn ring_faces(
+    band: [f64; 2],
+    rings: usize,
+    segments: usize,
+    point: impl Fn(f64, f64) -> V,
+    mut face: impl FnMut(&[V]),
+) {
+    let [inner, outer] = band;
     for ring in 0..rings {
         let from = inner + (outer - inner) * ring as f64 / rings as f64;
         let to = inner + (outer - inner) * (ring + 1) as f64 / rings as f64;
@@ -452,7 +440,7 @@ fn water_ellipse(g: &TerrainGrid, c: [f64; 2], r: [f64; 2], level: f64) -> Geome
         rgb(mix(color, 0x8ab5a0, noise(p[0], p[2], 3.5, 719.) * 0.12)).map(f64::from)
     };
     let wet = |p: [f64; 3]| surface(g, p[0], p[2]) < level - 0.008;
-    let mut face = |corners: &[[f64; 3]]| {
+    let face = |corners: &[[f64; 3]]| {
         // Clip cosmetic water triangles against the same interpolated ground that both
         // clients draw. A raised shore or rock can emerge without a blue glass plane
         // passing through it; this never changes the zone's authored water volume.
@@ -488,24 +476,7 @@ fn water_ellipse(g: &TerrainGrid, c: [f64; 2], r: [f64; 2], level: f64) -> Geome
             out.colors.extend(clipped.into_iter().map(&tint));
         }
     };
-    for ring in 0..rings {
-        let inner = ring as f64 / rings as f64;
-        let outer = (ring + 1) as f64 / rings as f64;
-        for i in 0..segments {
-            let a = i as f64 / segments as f64 * TAU;
-            let b = (i + 1) as f64 / segments as f64 * TAU;
-            if ring == 0 {
-                face(&[point(0., a), point(outer, a), point(outer, b)]);
-            } else {
-                face(&[
-                    point(inner, a),
-                    point(outer, a),
-                    point(outer, b),
-                    point(inner, b),
-                ]);
-            }
-        }
-    }
+    ring_faces([0., 1.], rings, segments, point, face);
     out
 }
 /// `g` with every triangle on its own vertices, lit by its face normal softened towards the
@@ -515,15 +486,7 @@ fn faceted(g: &Geometry) -> Geometry {
     let mut out = Geometry::default();
     for tri in g.indices.as_chunks::<3>().0 {
         let [a, b, c] = [0, 1, 2].map(|k| g.p[tri[k] as usize]);
-        let (u, v) = (
-            [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
-            [c[0] - a[0], c[1] - a[1], c[2] - a[2]],
-        );
-        let face = norm([
-            u[1] * v[2] - u[2] * v[1],
-            u[2] * v[0] - u[0] * v[2],
-            u[0] * v[1] - u[1] * v[0],
-        ]);
+        let face = norm(cross(sub(b, a), sub(c, a)));
         for &i in tri {
             let smooth = g.n[i as usize];
             out.indices.push(out.p.len() as u32);
@@ -539,13 +502,7 @@ fn faceted(g: &Geometry) -> Geometry {
 
 /// The terrain rectangle `[min x, min z, max x, max z]` of grid `g`, in metres.
 pub(crate) fn extent(g: &TerrainGrid) -> [f64; 4] {
-    [
-        g.origin[0],
-        g.origin[1],
-        g.origin[0] + (g.columns as i32 - 1) * g.step,
-        g.origin[1] + (g.rows as i32 - 1) * g.step,
-    ]
-    .map(metres)
+    g.extent().map(metres)
 }
 
 /// An authored surface hazard (#294) lying on the rendered ground: a fan of rings, ice pale
@@ -569,28 +526,11 @@ fn hazard_ellipse(
         mmorpg_core::SurfaceKind::Tar => (0x241b12, 0x0f0b08),
     };
     let tint = |p: [f64; 3]| rgb(mix(near, far, noise(p[0], p[2], 3.0, 311.))).map(f64::from);
-    let mut face = |corners: &[[f64; 3]]| {
+    let face = |corners: &[[f64; 3]]| {
         out.face(corners);
         out.colors.extend(corners.iter().copied().map(&tint));
     };
-    for ring in 0..rings {
-        let inner = ring as f64 / rings as f64;
-        let outer = (ring + 1) as f64 / rings as f64;
-        for i in 0..segments {
-            let a = i as f64 / segments as f64 * TAU;
-            let b = (i + 1) as f64 / segments as f64 * TAU;
-            if ring == 0 {
-                face(&[point(0., a), point(outer, a), point(outer, b)]);
-            } else {
-                face(&[
-                    point(inner, a),
-                    point(outer, a),
-                    point(outer, b),
-                    point(inner, b),
-                ]);
-            }
-        }
-    }
+    ring_faces([0., 1.], rings, segments, point, face);
     out
 }
 

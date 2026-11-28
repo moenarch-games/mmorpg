@@ -1,8 +1,9 @@
 //! Replicated modular structure stages and disposable cosmetic transitions (#306).
 //! No local health, support, repair timer, debris collision or gameplay prediction.
+use crate::geometry::metres;
 use crate::{
     Draw, Material,
-    batching::matrix,
+    geometry::matrix,
     geometry::{Geometry, box_shape, compose, ry, rz, scale, translate},
 };
 use mmorpg_core::{PieceId, PieceStage, PieceView, StructurePiece};
@@ -50,7 +51,7 @@ impl Structures {
             .map(|piece| {
                 (
                     piece.id,
-                    f64::from(scenery.height_at(piece.position[0], piece.position[2])) / 100.0,
+                    metres(scenery.height_at(piece.position[0], piece.position[2])),
                 )
             })
             .collect();
@@ -93,8 +94,8 @@ impl Structures {
                 };
             }
             let age = (seconds - entry.changed).max(0.0);
-            let p = piece.position.map(|v| f64::from(v) / 100.0);
-            let h = piece.half_extents.map(|v| f64::from(v) / 100.0);
+            let p = piece.position.map(metres);
+            let h = piece.half_extents.map(metres);
             // A seal's stone (#1019) sinks whole into the floor as it opens and rises as it
             // closes, over a second; it never breaks into planks or debris.
             if piece.material.is_stone() {
@@ -170,8 +171,8 @@ impl Structures {
                     draws.push(self.draw(
                         piece.id,
                         20,
-                        position.map(|v| f64::from(v) / 100.0),
-                        extents.map(|v| f64::from(v) / 100.0),
+                        position.map(metres),
+                        extents.map(metres),
                         0.0,
                         [0.25, 0.18, 0.12],
                         1.0,

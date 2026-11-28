@@ -1,6 +1,6 @@
 //! Current published player silhouettes and class/sex proportions.
 use super::{animation::*, kit::*};
-use crate::{Draw, geometry::*};
+use crate::{Draw, colour::*, geometry::*};
 use std::f64::consts::PI;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Hat {

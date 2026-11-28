@@ -7,8 +7,11 @@ use std::f64::consts::SQRT_2;
 use mmorpg_core::{Blade, Rockfall, Trap, TrapEffect, TrapTrigger, TriggerVolume, ZoneSnapshot};
 
 use super::UnitPresenter;
-use super::kit::{Frame, IQ, Primitive, Q};
-use crate::{Draw, geometry::V};
+use super::kit::{Frame, IQ, Primitive, from_axes};
+use crate::{
+    Draw,
+    geometry::{V, cross, metres, metres_of},
+};
 
 /// Traps within this range (metres) of the viewer are drawn.
 const DRAW_RANGE_METRES: f64 = 90.;
@@ -23,57 +26,6 @@ const PIT_FLOOR: u32 = 0x1c1a18;
 const PIT_RIM: u32 = 0x8b8173;
 const SPIKE: u32 = 0x6d6f73;
 
-fn metres(value: f64) -> f64 {
-    value / 100.
-}
-
-fn cross(a: V, b: V) -> V {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-/// The quaternion rotating the box axes X and Y onto the orthonormal `x` and `y`.
-fn from_basis(x: V, y: V) -> Q {
-    let z = cross(x, y);
-    let trace = x[0] + y[1] + z[2];
-    if trace > 0. {
-        let s = (trace + 1.).sqrt() * 2.;
-        [
-            (y[2] - z[1]) / s,
-            (z[0] - x[2]) / s,
-            (x[1] - y[0]) / s,
-            0.25 * s,
-        ]
-    } else if x[0] > y[1] && x[0] > z[2] {
-        let s = (1. + x[0] - y[1] - z[2]).sqrt() * 2.;
-        [
-            0.25 * s,
-            (y[0] + x[1]) / s,
-            (z[0] + x[2]) / s,
-            (y[2] - z[1]) / s,
-        ]
-    } else if y[1] > z[2] {
-        let s = (1. + y[1] - x[0] - z[2]).sqrt() * 2.;
-        [
-            (y[0] + x[1]) / s,
-            0.25 * s,
-            (z[1] + y[2]) / s,
-            (z[0] - x[2]) / s,
-        ]
-    } else {
-        let s = (1. + z[2] - x[0] - y[1]).sqrt() * 2.;
-        [
-            (z[0] + x[2]) / s,
-            (z[1] + y[2]) / s,
-            0.25 * s,
-            (x[1] - y[0]) / s,
-        ]
-    }
-}
-
 impl UnitPresenter {
     /// Draws every world trap near the viewer (`viewer` is its feet, metres).
     pub(super) fn traps(
@@ -86,7 +38,7 @@ impl UnitPresenter {
         for trap in content.traps() {
             let [x, z] = trap.anchor();
             if let Some(at) = viewer {
-                let (dx, dz) = (at[0] - f64::from(x) / 100., at[2] - f64::from(z) / 100.);
+                let (dx, dz) = (at[0] - metres(x), at[2] - metres(z));
                 if dx.hypot(dz) > DRAW_RANGE_METRES {
                     continue;
                 }
@@ -112,16 +64,13 @@ impl UnitPresenter {
         };
         let (cx, cz) = (f64::from(plate.centre[0]), f64::from(plate.centre[1]));
         let centre = self.rendered([plate.centre[0], plate.floor, plate.centre[1]]);
-        let (width, depth) = (
-            metres(f64::from(plate.half[0])) * 2.,
-            metres(f64::from(plate.half[1])) * 2.,
-        );
+        let (width, depth) = (metres(plate.half[0]) * 2., metres(plate.half[1]) * 2.);
         draws.push(self.resources.primitive(
             format!("trap-{}-plate-base", trap.id.get()),
             Primitive::Box([width + 0.2, 0.04, depth + 0.2]),
             PLATE_BASE,
             Frame {
-                p: [metres(cx), f64::from(centre[1]) + 0.02, metres(cz)],
+                p: [metres_of(cx), f64::from(centre[1]) + 0.02, metres_of(cz)],
                 q: IQ,
             },
         ));
@@ -135,7 +84,7 @@ impl UnitPresenter {
             Primitive::Box([width, 0.05, depth]),
             color,
             Frame {
-                p: [metres(cx), f64::from(centre[1]) + lift, metres(cz)],
+                p: [metres_of(cx), f64::from(centre[1]) + lift, metres_of(cz)],
                 q: IQ,
             },
         ));
@@ -149,7 +98,7 @@ impl UnitPresenter {
         fall: &Rockfall,
         age: Option<u32>,
     ) {
-        let radius = metres(f64::from(fall.radius));
+        let radius = metres(fall.radius);
         for (index, rock) in fall.rocks.iter().enumerate() {
             let pose = fall.rock_at(rock, age.unwrap_or(0));
             if pose.cleared {
@@ -178,13 +127,16 @@ impl UnitPresenter {
         let head = head.map(f64::from);
         let frame = Frame {
             p: head,
-            q: from_basis(pose.across, [-pose.arm[0], -pose.arm[1], -pose.arm[2]]),
+            q: {
+                let down = [-pose.arm[0], -pose.arm[1], -pose.arm[2]];
+                from_axes(pose.across, down, cross(pose.across, down))
+            },
         };
         let half = blade.half_extents.map(f64::from);
         let size = [
-            metres(half[0]) * 2.,
-            metres(half[1]) * 2.,
-            metres(half[2]) * 2.,
+            metres_of(half[0]) * 2.,
+            metres_of(half[1]) * 2.,
+            metres_of(half[2]) * 2.,
         ];
         draws.push(self.resources.primitive(
             format!("trap-{id}-head"),
@@ -192,7 +144,7 @@ impl UnitPresenter {
             HEAD,
             frame,
         ));
-        let reach = metres(f64::from(blade.arm));
+        let reach = metres(blade.arm);
         let mid = [
             head[0] - pose.arm[0] * reach / 2.,
             head[1] - pose.arm[1] * reach / 2.,
@@ -211,10 +163,7 @@ impl UnitPresenter {
         let id = trap.id.get();
         let centre = self.rendered([volume.centre[0], volume.floor, volume.centre[1]]);
         let [x, y, z] = centre.map(f64::from);
-        let (hw, hd) = (
-            metres(f64::from(volume.half[0])),
-            metres(f64::from(volume.half[1])),
-        );
+        let (hw, hd) = (metres(volume.half[0]), metres(volume.half[1]));
         draws.push(self.resources.primitive(
             format!("trap-{id}-floor"),
             Primitive::Box([2. * hw, 0.04, 2. * hd]),

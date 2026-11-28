@@ -3,8 +3,10 @@
 //! wherever the content's [`mmorpg_core::ClimbSurfaces`] mark rock, on rock props and on
 //! steep terrain, so what looks climbable is exactly what climbs. Sheer rock stays smooth.
 use super::batching::{Batcher, Cull};
-use super::geometry::{Affine, Geometry, V, box_shape, hash, norm, point};
-use super::terrain::{height, metres, surface};
+use super::geometry::{
+    Affine, Geometry, V, box_shape, cross, dot, hash, metres, norm, on_face, point, slope_out,
+};
+use super::terrain::{height, surface};
 use mmorpg_core::{ClimbSurfaces, Grip};
 use mmorpg_scenery::TerrainGrid;
 use std::f64::consts::TAU;
@@ -96,13 +98,7 @@ pub fn route(
     let along = |s: f64, x: f64, o: f64| -> V {
         std::array::from_fn(|i| base[i] + up[i] * s + side[i] * x + out[i] * o)
     };
-    let frame = |centre: V, half: V| Affine {
-        m: std::array::from_fn(|i| {
-            let (r, c) = (i / 3, i % 3);
-            [side, up, out][c][r] * half[c]
-        }),
-        t: centre,
-    };
+    let frame = |centre: V, half: V| on_face(centre, up, out, half);
     // The streak wanders a little side to side and leaves bare gaps where the rock shows:
     // about a third of it, so it reads as wear rather than a painted line.
     let pieces = (length / PIECE).round().max(1.);
@@ -375,10 +371,7 @@ pub fn terrain(
                     }
                     let up = d.map(|v| v / length);
                     let across = if along_x { [0., 0., 1.] } else { [1., 0., 0.] };
-                    let mut out = norm(cross(across, up));
-                    if out[1] < 0. {
-                        out = out.map(|v| -v);
-                    }
+                    let out = slope_out(across, up);
                     let seed = hash(&[p[0], p[2], 7.]);
                     route(p, up, out, length, seed, put);
                 }
@@ -415,18 +408,6 @@ fn hit(g: &Geometry, a: Affine, origin: V, dir: V) -> Option<(V, V)> {
         best = Some((t, n));
     }
     best.map(|(t, n)| (std::array::from_fn(|i| origin[i] + dir[i] * t), n))
-}
-
-fn dot(a: V, b: V) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: V, b: V) -> V {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 #[cfg(test)]

@@ -13,12 +13,12 @@
 //! its waypoints on the presentation clock alone, so a pose is a pure function of time: stable,
 //! bounded and identical in both clients. Cosmetic only: no unit IDs, AI, collision, loot, combat
 //! or ownership; the zone never hears of them.
-use mmorpg_core::UNITS_PER_METRE;
 use mmorpg_scenery::Scenery;
 
 use crate::{
-    batching::matrix,
+    geometry::matrix,
     geometry::{compose, ry, translate},
+    geometry::{metres, metres_of},
 };
 
 /// The rolling releases the clients draw: the ambient animals' and the farm animals' (#849),
@@ -213,16 +213,12 @@ pub fn anchors() -> Vec<[i32; 2]> {
     BEATS.iter().map(|beat| beat.path[0]).collect()
 }
 
-fn metres(units: f64) -> f64 {
-    units / f64::from(UNITS_PER_METRE)
-}
-
 fn heading(from: [i32; 2], to: [i32; 2]) -> f64 {
     f64::from(to[0] - from[0]).atan2(f64::from(to[1] - from[1]))
 }
 
 fn length(from: [i32; 2], to: [i32; 2]) -> f64 {
-    metres(f64::from(to[0] - from[0]).hypot(f64::from(to[1] - from[1])))
+    metres_of(f64::from(to[0] - from[0]).hypot(f64::from(to[1] - from[1])))
 }
 
 /// Where `beat` stands at `seconds`: feet in units, heading, clip and clip time.
@@ -297,7 +293,7 @@ pub fn poses(scenery: &Scenery, seconds: f64, animate: bool) -> Vec<Pose> {
             Pose {
                 key: beat.key,
                 model: matrix(compose(&[
-                    translate(metres(feet[0]), metres(f64::from(lift)), metres(feet[1])),
+                    translate(metres_of(feet[0]), metres(lift), metres_of(feet[1])),
                     ry(yaw),
                 ])),
                 clip,

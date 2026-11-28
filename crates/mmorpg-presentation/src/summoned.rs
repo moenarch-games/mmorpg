@@ -1,9 +1,10 @@
 //! Summoned terrain (#293): the replicated Ice Walls and Earth Pillars of the shared world.
 //! The zone owns position, health and lifetime; this module only draws what the latest
 //! projection names, with a short rise and a crumble when an obstacle disappears.
+use crate::geometry::metres;
 use crate::{
     Draw, Material,
-    batching::matrix,
+    geometry::matrix,
     geometry::{Geometry, box_shape, compose, ry, scale, translate},
 };
 use mmorpg_core::{SummonedTerrainKind, SummonedView};
@@ -96,7 +97,7 @@ impl Summoned {
         let cube = self.cube();
         let mut draws = Vec::new();
         for (id, seen) in &self.seen {
-            let half = seen.view.kind.half_extents().map(|v| f64::from(v) / 100.0);
+            let half = seen.view.kind.half_extents().map(metres);
             let (color, emissive, opacity) = appearance(seen.view.kind);
             // Darker as it is worn down.
             let worn = f32::from(seen.view.health_percent) / 100.0;

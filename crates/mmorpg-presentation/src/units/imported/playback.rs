@@ -1,6 +1,7 @@
 //! The per-unit clip state machine: which clip each body region plays, its clocks and the gait
 //! and traversal speeds it keeps pace with.
 
+use crate::geometry::metres_of;
 use mmorpg_core::{Ledge, StrikeHeight, TraversalView, WaterMode, WeaponFamily};
 
 use super::*;
@@ -29,8 +30,9 @@ pub const LADDER_DOWN_RUNG_OFFSET: f64 = 0.227;
 /// The zone's mantle rise and move across onto the ledge, in metres per second, and how far it
 /// moves across (`mmorpg_core::climb`): a mantle clip plays fast enough to end about when the
 /// zone's mantle does.
-const MANTLE_RISE_SPEED: f64 = mmorpg_core::climb::MANTLE_RISE_UNITS_PER_SECOND as f64 / 100.;
-const MANTLE_ACROSS_SPEED: f64 = mmorpg_core::climb::MANTLE_FORWARD_UNITS_PER_SECOND as f64 / 100.;
+const MANTLE_RISE_SPEED: f64 = metres_of(mmorpg_core::climb::MANTLE_RISE_UNITS_PER_SECOND as f64);
+const MANTLE_ACROSS_SPEED: f64 =
+    metres_of(mmorpg_core::climb::MANTLE_FORWARD_UNITS_PER_SECOND as f64);
 const MANTLE_ACROSS_METERS: f64 = 0.7;
 /// The fastest a mantle clip plays.
 pub const MANTLE_MAX_RATE: f32 = 1.6;
@@ -2687,6 +2689,7 @@ struct Shown {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::metres;
     use mmorpg_core::PlayerClass;
 
     #[allow(clippy::too_many_arguments)]
@@ -2771,8 +2774,8 @@ mod tests {
                 None,
             )
         };
-        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
-        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        let run = metres(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND);
+        let backpedal = metres(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND);
         let creature_walk = 2.4;
         let pi = std::f64::consts::PI;
         for (speed, direction, clip, ground) in [
@@ -2817,8 +2820,8 @@ mod tests {
     /// creature at 2.3 times, legs visibly spinning at double speed.
     #[test]
     fn the_fetched_rangers_walk_and_run_at_a_natural_cadence() {
-        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
-        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        let run = metres(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND);
+        let backpedal = metres(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND);
         let creature_walk = 2.4;
         let pi = std::f64::consts::PI;
         for sex in ["male", "female"] {
@@ -2885,8 +2888,8 @@ mod tests {
                 .lower
                 .0
         };
-        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
-        let backpedal = f64::from(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND) / 100.;
+        let run = metres(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND);
+        let backpedal = metres(mmorpg_core::BACKPEDAL_SPEED_UNITS_PER_SECOND);
         let pi = std::f64::consts::PI;
         assert_eq!(gait(run, 0., true), "Run_Fwd_Loop");
         // A diagonal stays forward.
@@ -4568,7 +4571,7 @@ mod tests {
 
     #[test]
     fn great_weapons_and_loads_run_heavy() {
-        let run = f64::from(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND) / 100.;
+        let run = metres(mmorpg_core::RUN_SPEED_UNITS_PER_SECOND);
         let step = |playback: &mut Playback, cues: Cues<'_>| {
             playback.advance(
                 Kind::Ranger.clips(),
