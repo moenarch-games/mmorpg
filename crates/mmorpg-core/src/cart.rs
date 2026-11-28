@@ -31,7 +31,7 @@
 use std::sync::Arc;
 
 use crate::creature::Life;
-use crate::routine::{DAWN, DUSK, NpcPlacement, along, legs, time_of_day, walk_ticks};
+use crate::routine::{DUSK, NpcPlacement, along, legs, time_of_day, walk_ticks};
 use crate::{CreatureId, EntityRef, NpcId, PlayerId, PostureView, ZoneError, ZoneSimulation};
 
 /// One of two days the bandits wait on the road.
@@ -80,18 +80,13 @@ pub enum CartOutcome {
 /// Whether the day containing `tick` is an ambush day.
 #[must_use]
 pub const fn ambush_day(seed: u64, tick: u64) -> bool {
-    crate::raid::mix(seed ^ day(tick) ^ AMBUSH_SALT) % AMBUSH_DAYS[1] < AMBUSH_DAYS[0]
-}
-
-/// The zone day containing `tick`, from 0.
-const fn day(tick: u64) -> u64 {
-    (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64
+    crate::routine::day_roll(seed, tick, AMBUSH_SALT, AMBUSH_DAYS)
 }
 
 /// The incident a day's ambush is, for its receipts: the day's number, from 1.
 #[must_use]
 pub fn incident(tick: u64) -> u32 {
-    u32::try_from(day(tick) + 1).unwrap_or(u32::MAX)
+    u32::try_from(crate::routine::zone_day(tick) + 1).unwrap_or(u32::MAX)
 }
 
 impl CartRun {
@@ -172,8 +167,7 @@ impl CartRun {
                 let out = &legs[..=self.ambush.min(legs.len().saturating_sub(1))];
                 // Limping, it covers half the ground a tick.
                 if back < 2 * to_ambush {
-                    let mut limp = along(out, back * speed / 2, false);
-                    limp.velocity = limp.velocity.map(|axis| axis / 2);
+                    let limp = crate::routine::limp_along(out, back);
                     return Some((limp, PostureView::Hurt, ROBBED_HEALTH_PERCENT));
                 }
                 let home = NpcPlacement {
@@ -187,22 +181,13 @@ impl CartRun {
     }
 
     pub(crate) fn validate(&self, content: &crate::ZoneContent) -> Result<(), ZoneError> {
-        let in_range = |point: &[i32; 2]| {
-            point
-                .iter()
-                .all(|value| crate::content::within_content_range(*value))
-        };
-        let Some(npc) = content.npc(self.merchant) else {
-            return Err(ZoneError::new("a cart's merchant is not an npc"));
-        };
-        let Some(routine) = content.routine(self.merchant) else {
-            return Err(ZoneError::new("a cart's merchant has no routine"));
-        };
-        let work = npc.position;
-        let errands_done = routine
-            .errands
-            .iter()
-            .all(|errand| errand.leave.saturating_add(errand.span(work)) <= self.leave);
+        let work = crate::routine::outing_post(
+            content,
+            self.merchant,
+            self.leave,
+            &self.path,
+            "cart run",
+        )?;
         // The longest day, a saved cart whose last bandit fell as the hold ended, is home before
         // dusk, and so is a robbed merchant's limp.
         let mut bandits = self.bandits.clone();
@@ -210,10 +195,7 @@ impl CartRun {
         bandits.dedup();
         if self.path.is_empty()
             || self.ambush + 1 >= self.path.len()
-            || !self.path.iter().all(in_range)
-            || self.leave < DAWN
             || self.end(work).saturating_add(HOLD_TICKS) >= DUSK
-            || !errands_done
             || self.bandits.is_empty()
             || bandits.len() != self.bandits.len()
             || self.bandits.iter().any(|&bandit| {
@@ -251,22 +233,14 @@ impl ZoneSimulation {
         if !ambush_day(self.rng_seed(), now) {
             return CartOutcome::Safe;
         }
-        let Some(start) = time_of_day(now)
-            .checked_sub(run.arrival(work))
-            .and_then(|since| now.checked_sub(u64::from(since)))
-        else {
+        let Some(start) = crate::routine::incident_start(now, run.arrival(work)) else {
             return CartOutcome::Held;
         };
         let hold = start..start + u64::from(HOLD_TICKS);
         let fell = run.bandits.iter().map(|bandit| {
             self.creatures
                 .get(bandit)
-                .and_then(|state| match state.life {
-                    Life::Corpse { died_at, .. } | Life::Despawned { died_at } => {
-                        hold.contains(&died_at).then_some(died_at)
-                    }
-                    Life::Alive => None,
-                })
+                .and_then(|state| state.died_within(&hold))
         });
         match fell.collect::<Option<Vec<_>>>() {
             Some(deaths) => CartOutcome::Saved(deaths.into_iter().max().unwrap_or(start) - start),
@@ -358,22 +332,16 @@ impl ZoneSimulation {
         player_id: PlayerId,
         incident: u32,
     ) -> Result<(), ZoneError> {
-        let key = crate::RewardKey::CartDefence { incident };
-        let Err(at) = self.raid.cart_rewarded.binary_search(&player_id) else {
-            return Ok(());
-        };
-        if self.raid.cart_rewarded.len() >= crate::MAX_PLAYERS_PER_ZONE
-            || !crate::rewards::allowed(&self.rewards, player_id, key)
-            || !self.players.contains_key(&player_id)
-        {
-            return Ok(());
-        }
-        self.raid.cart_rewarded.insert(at, player_id);
         let payout = crate::rewards::RewardPayout {
             experience: REWARD_EXPERIENCE,
             copper: REWARD_COPPER,
         };
-        self.pay_zone_reward(player_id, key, payout)
+        self.pay_incident_once(
+            |zone| &mut zone.raid.cart_rewarded,
+            player_id,
+            crate::RewardKey::CartDefence { incident },
+            payout,
+        )
     }
 }
 

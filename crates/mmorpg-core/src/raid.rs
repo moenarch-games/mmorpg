@@ -823,17 +823,15 @@ pub(crate) type Steering = ([i32; 2], Option<u16>);
 /// Whether the night containing `tick` is a raid night.
 #[must_use]
 pub const fn raid_night(seed: u64, tick: u64) -> bool {
-    let night = (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64;
-    mix(seed ^ night) % TRIGGER_NIGHTS[1] < TRIGGER_NIGHTS[0]
+    crate::routine::day_roll(seed, tick, 0, TRIGGER_NIGHTS)
 }
 
 /// Whether the evening containing `tick` shows forewarning signs: every raid night, and a false
 /// alarm on [`FALSE_ALARM_NIGHTS`] of the others.
 #[must_use]
 pub const fn signs_night(seed: u64, tick: u64) -> bool {
-    let night = (tick + crate::ZONE_START_TIME as u64) / crate::DAY_TICKS as u64;
     raid_night(seed, tick)
-        || mix(seed ^ night ^ FALSE_ALARM_SALT) % FALSE_ALARM_NIGHTS[1] < FALSE_ALARM_NIGHTS[0]
+        || crate::routine::day_roll(seed, tick, FALSE_ALARM_SALT, FALSE_ALARM_NIGHTS)
 }
 
 /// Keeps the false-alarm roll independent of the raid roll.
@@ -1375,22 +1373,16 @@ impl ZoneSimulation {
         if index != 0 {
             return Ok(());
         }
-        let key = crate::RewardKey::RaidParticipation { incident };
-        let Err(at) = self.raid.rewarded.binary_search(&player_id) else {
-            return Ok(());
-        };
-        if self.raid.rewarded.len() >= crate::MAX_PLAYERS_PER_ZONE
-            || !crate::rewards::allowed(&self.rewards, player_id, key)
-            || !self.players.contains_key(&player_id)
-        {
-            return Ok(());
-        }
-        self.raid.rewarded.insert(at, player_id);
         let payout = crate::rewards::RewardPayout {
             experience: REWARD_EXPERIENCE,
             copper: REWARD_COPPER,
         };
-        self.pay_zone_reward(player_id, key, payout)
+        self.pay_incident_once(
+            |zone| &mut zone.raid.rewarded,
+            player_id,
+            crate::RewardKey::RaidParticipation { incident },
+            payout,
+        )
     }
 
     /// The defence bonus (#916): each player already rewarded for `incident` who is still near
