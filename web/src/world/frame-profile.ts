@@ -64,7 +64,75 @@ export type ProfiledFrame = FrameFacts & {
   gpuIssue: Record<string, number> | null;
   /** Timer queries the frame's GPU passes took. */
   gpuSpans: number;
+  /** The frame's JS↔WASM boundary crossings (#1256); zero when the module was not instantiated counted. */
+  wasm: WasmBoundary;
 };
+
+/**
+ * Crossings of the JS↔WASM boundary (#1256): calls into the module's exports, calls from the module into its JS imports
+ * (each a JS value built or read for Rust: materialization), and the bytes the generated bindings copied in (allocated
+ * with `__wbindgen_malloc`/`__wbindgen_realloc`) and out (released with `__wbindgen_free` after the copy).
+ */
+export type WasmBoundary = { calls: number; imports: number; bytesIn: number; bytesOut: number };
+
+/** Running totals since the counted module was instantiated, and the calls per export. */
+const boundary: WasmBoundary & { counted: boolean; byExport: Map<string, { calls: number }> } = {
+  counted: false, calls: 0, imports: 0, bytesIn: 0, bytesOut: 0, byExport: new Map(),
+};
+
+/** `exports` with each function counting its calls (and the bindings' allocations as bytes copied). */
+function countedExports(exports: WebAssembly.Exports): WebAssembly.Exports {
+  const counted: WebAssembly.Exports = {};
+  for (const [name, value] of Object.entries(exports)) {
+    if (typeof value !== "function") { counted[name] = value; continue; }
+    const entry = { calls: 0 };
+    boundary.byExport.set(name, entry);
+    const call = value as (...args: number[]) => unknown;
+    counted[name] = name === "__wbindgen_malloc" ? (...args: number[]) => { boundary.calls++; entry.calls++; boundary.bytesIn += args[0] ?? 0; return call(...args); }
+      : name === "__wbindgen_realloc" ? (...args: number[]) => { boundary.calls++; entry.calls++; boundary.bytesIn += Math.max(0, (args[2] ?? 0) - (args[1] ?? 0)); return call(...args); }
+        : name === "__wbindgen_free" ? (...args: number[]) => { boundary.calls++; entry.calls++; boundary.bytesOut += args[1] ?? 0; return call(...args); }
+          : (...args: number[]) => { boundary.calls++; entry.calls++; return call(...args); };
+  }
+  return counted;
+}
+
+/** `imports` with each function counting the module's calls into JS. */
+function countedImports(imports: WebAssembly.Imports | undefined): WebAssembly.Imports | undefined {
+  if (!imports) { return imports; }
+  const counted: WebAssembly.Imports = {};
+  for (const [module, functions] of Object.entries(imports)) {
+    const wrapped: Record<string, WebAssembly.ImportValue> = {};
+    for (const [name, value] of Object.entries(functions)) {
+      const call = value as (...args: unknown[]) => unknown;
+      wrapped[name] = typeof value === "function" ? (...args: unknown[]) => { boundary.imports++; return call(...args); } : value;
+    }
+    counted[module] = wrapped;
+  }
+  return counted;
+}
+
+/**
+ * Runs `init` (the generated bindings' initialization) with its one `WebAssembly.instantiate` counted (#1256): the
+ * instance's exports and imports are wrapped so each frame reports its boundary crossings. Only under `?profile`;
+ * the wrappers change no arguments or results.
+ */
+export async function countWasmBoundary<T>(init: () => Promise<T>): Promise<T> {
+  const instantiate = WebAssembly.instantiate;
+  const counting = async (module: WebAssembly.Module, imports?: WebAssembly.Imports): Promise<WebAssembly.WebAssemblyInstantiatedSource> => {
+    WebAssembly.instantiate = instantiate;
+    const instance = await instantiate(module, countedImports(imports));
+    boundary.counted = true;
+    // Not a `WebAssembly.Instance`, so the bindings take it as an instantiated source.
+    return { instance: { exports: countedExports(instance.exports) } as WebAssembly.Instance, module };
+  };
+  // The bindings pass a compiled module (`loadWasm`), so only that overload is replaced.
+  WebAssembly.instantiate = counting as unknown as typeof WebAssembly.instantiate;
+  try {
+    return await init();
+  } finally {
+    WebAssembly.instantiate = instantiate;
+  }
+}
 
 /** One timer query of a frame: its label, and the main-thread time it was open. */
 type Span = { label: string; query: WebGLQuery; cpu: number };
@@ -170,16 +238,19 @@ class FrameProfile {
   #last = 0;
   /** The GPU pass timer, once a lit frame looked for it; `null` without the timer-query extension. */
   #gpu: GpuPassTimer | null | undefined;
+  /** The boundary totals when the current frame began. */
+  #crossed: WasmBoundary = { calls: 0, imports: 0, bytesIn: 0, bytesOut: 0 };
 
   begin(raf: number): void {
     this.#gpu?.poll();
     const start = performance.now();
     this.#last = start;
+    this.#crossed = { calls: boundary.calls, imports: boundary.imports, bytesIn: boundary.bytesIn, bytesOut: boundary.bytesOut };
     this.#current = {
       raf, start, end: start, passes: [], mainDraws: [], shadowDraws: [], ticks: 0, viewer: [0, 0], heading: 0, nodes: 0, instanceBatches: 0,
       created: { objects: 0, geometries: 0, materials: 0, instanceUploads: 0 },
       phases: { input: 0, simulation: 0, projection: 0, units: 0, scene: 0, render: 0, hud: 0 },
-      gpu: null, gpuIssue: null, gpuSpans: 0,
+      gpu: null, gpuIssue: null, gpuSpans: 0, wasm: { calls: 0, imports: 0, bytesIn: 0, bytesOut: 0 },
     };
   }
 
@@ -233,6 +304,9 @@ class FrameProfile {
     this.#current = null;
     if (current.nodes === 0) { return; }
     current.end = this.#last;
+    const crossed = this.#crossed;
+    current.wasm = { calls: boundary.calls - crossed.calls, imports: boundary.imports - crossed.imports,
+      bytesIn: boundary.bytesIn - crossed.bytesIn, bytesOut: boundary.bytesOut - crossed.bytesOut };
     if (this.#frames.length >= CAPACITY) { this.#frames.shift(); }
     this.#frames.push(current);
   }
@@ -247,11 +321,21 @@ class FrameProfile {
 
 let active: FrameProfile | null = null;
 
+/** Whether the module's boundary is counted, and each export's calls since, most first (#1256). */
+export type WasmBoundaryTotals = { counted: boolean; exports: { name: string; calls: number }[] };
+
 /** Turns profiling on for this page and returns the reader the harness uses. */
-export function enableFrameProfile(): { take(): ProfiledFrame[]; gpuSupported(): boolean | null } {
+export function enableFrameProfile(): { take(): ProfiledFrame[]; gpuSupported(): boolean | null; wasmBoundary(): WasmBoundaryTotals } {
   active ??= new FrameProfile();
   const profile = active;
-  return { take: () => profile.take(), gpuSupported: () => profile.gpuSupported() };
+  return {
+    take: () => profile.take(),
+    gpuSupported: () => profile.gpuSupported(),
+    wasmBoundary: () => ({
+      counted: boundary.counted,
+      exports: [...boundary.byExport].map(([name, { calls }]) => ({ name, calls })).filter(({ calls }) => calls > 0).sort((a, b) => b.calls - a.calls),
+    }),
+  };
 }
 
 /** Whether `?profile` is on; guard any per-frame allocation for the profile with it. */

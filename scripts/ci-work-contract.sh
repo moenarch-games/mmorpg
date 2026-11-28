@@ -29,6 +29,12 @@ if [[ "${MODE}" == structure ]]; then
   exit 0
 fi
 
+# coding-tooling gives the evidence collector ten minutes; compiling the release work examples and
+# WASM module on a cold runner takes longer, so build them first and let the collector only measure.
+start=${SECONDS}
+python3 "${ROOT_DIR}/scripts/operation-work.py" --prebuild
+echo "Work examples and WASM built in $(( SECONDS - start )) s."
+
 start=${SECONDS}
 bun "${work}/src/router.ts" performance work --root "${ROOT_DIR}"
 echo "Work-complexity contract checked in $(( SECONDS - start )) s."

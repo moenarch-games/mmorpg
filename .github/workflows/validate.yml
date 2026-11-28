@@ -27,6 +27,7 @@ jobs:
       allow-skipped: ${{ steps.pages-scope.outputs.allow-skipped }}
       clippy: ${{ steps.pages-scope.outputs.clippy }}
       work-contract: ${{ steps.pages-scope.outputs.work-contract }}
+      runtime-budgets: ${{ steps.pages-scope.outputs.runtime-budgets }}
       studio-frontend: ${{ steps.pages-scope.outputs.studio-frontend }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
       rust_changed: ${{ steps.detect.outputs.rust_changed }}
@@ -125,8 +126,8 @@ jobs:
 
       - name: Validate the work-complexity contract's structure
         # A change to .performance/ must leave the contract valid (#1132): an invalid entry makes
-        # the whole contract unverifiable, and the full check runs only under full validation.
-        # Structure only, no builds. Without a known change list the check runs.
+        # the whole contract unverifiable. Structure only, no builds, so it also covers changes the
+        # work-contract job skips. Without a known change list the check runs.
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,6 +168,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           PR_EVENT: ${{ toJSON(github.event) }}
           RUST_CHANGED: ${{ steps.detect.outputs.rust_changed }}
+          DOCS_ONLY: ${{ steps.detect.outputs.docs_only }}
           FULL_VALIDATION: ${{ steps.detect.outputs.full_validation }}
         run: |
           import json
@@ -212,8 +214,15 @@ jobs:
               selected[job] = active
           # Clippy is enforced at merge time only: PRs stay opt-in (full-validation), the merge queue always lints Rust changes.
           selected["clippy"] = os.environ["GITHUB_EVENT_NAME"] == "merge_group" and os.environ.get("RUST_CHANGED") == "true"
-          # The work-complexity contract runs under full validation only (#1120).
-          selected["work-contract"] = os.environ.get("FULL_VALIDATION") == "true"
+          # The work-complexity contract and the runtime budgets run on every PR and merge-queue run that changes Rust or
+          # browser code, and under full validation (owner decision 2026-11-27, #1256); docs-only changes skip them.
+          # An unknown change list counts as a code change. A label other than the validation labels re-runs nothing.
+          relabelled = event.get("action") in ["labeled", "unlabeled"] and event.get("label", {}).get("name") not in ["browser-evidence", "full-validation"]
+          code = os.environ.get("RUST_CHANGED") == "true" or not paths or any(
+              path.startswith("web/") or path in ["scripts/runtime_budget.py", "scripts/operation-work.py"] for path in paths)
+          selected["work-contract"] = os.environ.get("FULL_VALIDATION") == "true" or (pr and code and not relabelled)
+          # Main's pushes record the runtime baseline the next PR and merge-queue runs warn against.
+          selected["runtime-budgets"] = selected["work-contract"] or (os.environ["GITHUB_EVENT_NAME"] == "push" and os.environ.get("DOCS_ONLY") != "true")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for job, active in selected.items():
                   print(f"{job}={str(active).lower()}", file=output)
@@ -289,9 +298,9 @@ jobs:
       concurrency_group: ${{ github.workflow }}-${{ github.ref }}-clippy
 
   work-contract:
-    # Full validation only (#1120): the work-complexity contract (.performance/contract.json) against
-    # deterministic counters from the Rust work examples and the browser measurements
-    # (web/scripts/work-evidence.ts). Its release builds stay out of ordinary PR and merge-queue runs.
+    # The work-complexity contract (.performance/contract.json, #1120) against deterministic counters
+    # from the Rust work examples and the browser measurements (web/scripts/work-evidence.ts), on every
+    # PR and merge-queue run that changes Rust or browser code and under full validation (#1256).
     needs: scope
     if: needs.scope.outputs.work-contract == 'true'
     permissions:
@@ -312,6 +321,53 @@ jobs:
       artifact_name_suffix: -work-contract
       # The default group is shared with `rust` in this run and would cancel it.
       concurrency_group: ${{ github.workflow }}-${{ github.ref }}-work-contract
+
+  runtime-budgets:
+    # Wall-clock runtime of the native zone scenarios (.performance/runtime.json, #1256) on the hosted
+    # runner: a ceiling crossed fails, a regression against main's latest baseline only warns. Runs where
+    # the work contract does; main's pushes measure the baseline (a cache entry per commit). The browser
+    # frame budgets need a GPU and run through scripts/profile-browser.py --budgets instead.
+    needs: scope
+    if: needs.scope.outputs.runtime-budgets == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-runtime-budgets
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: runtime-budgets
+      - name: Restore main's runtime baseline
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: artifacts/runtime-baseline/native.json
+          key: runtime-baseline-${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.sha }}
+          restore-keys: runtime-baseline-
+      - name: Check the native runtime budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            python3 scripts/runtime_budget.py native --out artifacts/runtime-baseline/native.json
+          else
+            python3 scripts/runtime_budget.py native --baseline artifacts/runtime-baseline/native.json --out artifacts/runtime/native.json
+          fi
+      - name: Record the runtime baseline
+        if: github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: artifacts/runtime-baseline/native.json
+          key: runtime-baseline-${{ github.sha }}
 
   seed-asset-cache:
     # Pull-request and merge-queue caches are scoped to their own ref; only main's cache reaches
@@ -387,7 +443,7 @@ jobs:
       github.event.label.name == 'browser-evidence' || github.event.label.name == 'full-validation'))) &&
       'merge-ready' || 'validation-summary' }}
     if: ${{ always() }}
-    needs: [scope, rust, clippy, work-contract, studio-frontend, pages-validation]
+    needs: [scope, rust, clippy, work-contract, runtime-budgets, studio-frontend, pages-validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -395,5 +451,5 @@ jobs:
       - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@858803b5ce092c1bc9981f215ceab43066bc1ca8
         with:
           needs: ${{ toJSON(needs) }}
-          required: '["scope", "rust", "clippy", "work-contract", "studio-frontend", "pages-validation"]'
+          required: '["scope", "rust", "clippy", "work-contract", "runtime-budgets", "studio-frontend", "pages-validation"]'
           allow-skipped: ${{ needs.scope.outputs.allow-skipped || '[]' }}

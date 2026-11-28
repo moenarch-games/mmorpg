@@ -35,7 +35,7 @@ Recorded measurement environment: Rust 1.98.1, `Cargo.lock` SHA-256 `36adf21ccc4
 
 ## Operation scaling contracts (#138)
 
-`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` the `creature_tick_work` example of `mmorpg-core` and the `grounded_work` and `mover_pairs_work` examples of `sim-foundation` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part.
+`.performance/contract.json` (schema 2) declares the zone's natural operations, the dimensions they scale with and deterministic growth bounds; `coding-tooling performance work --root . --json` checks them against counters that `scripts/operation-work.py` collects from the `operation_work` example of `mmorpg-protocol` the `creature_tick_work` example of `mmorpg-core` and the `grounded_work` and `mover_pairs_work` examples of `sim-foundation` (the `performance:work` capability). Every sampled projection is also compared with the exhaustive visibility oracle, so a smaller count can never come from a wrong answer. Wall-clock time plays no part in these bounds; they run on every PR and merge-queue run that changes Rust or browser code (#1256).
 
 | Operation | Dimensions | Bound |
 | --- | --- | --- |
@@ -54,3 +54,14 @@ Publication work (#1056) is sampled the way the zone host publishes: every recip
 The checks hold at the declared scale points only; they are executable architectural budgets, not a proof of asymptotic complexity. Physics work is counted by the zone's physics step statistics (`StepStats`).
 
 The client presentation has its own operations in the same contract: see [presentation workloads](PRESENTATION_WORKLOADS.md) (#645).
+
+## Runtime budgets (#1256)
+
+Beside the deterministic bounds, `.performance/runtime.json` budgets wall-clock runtime of named scenarios (owner decision, Atlas 7.1.i1256). Its `native` section times the `runtime_scenarios` example of `mmorpg-protocol` in release: Greyhaven zone ticks with 16, 64 and 256 running players, and one publication round (every viewer projected and encoded) at 256, as p50/p95 milliseconds. A value above its absolute ceiling is an error; one worse than main's latest baseline by more than the section's `warnRatio` is a warning only. Timings never decide correctness.
+
+```sh
+python3 scripts/runtime_budget.py native --out artifacts/runtime/native.json     # measure and check the ceilings
+python3 scripts/runtime_budget.py native --baseline <main's native.json>          # also warn on regressions
+```
+
+CI runs it in the `runtime-budgets` job of `.github/workflows/validate.yml` wherever the work contract runs; each push to `main` measures the baseline and stores it as a cache entry that later PR and merge-queue runs restore. The ceilings leave several times the headroom over a 2026-11-27 measurement (Ryzen 7 5700X: tick p95 0.33, 0.83 and 4.1 ms; publication p95 8.0 ms) so hosted-runner noise never fails a run; the 256-player tick stays within one 60 Hz tick.

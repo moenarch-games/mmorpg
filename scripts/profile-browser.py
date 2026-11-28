@@ -32,7 +32,17 @@ Sources, all opt-in and read-only:
   pixel ratio 1 (`fillTest.comparison`): a pass falling towards a quarter is fill-bound, one that holds is
   vertex- or draw-bound;
 - a Chromium trace of `move-rotate` (`--trace`): busy time of the renderer main, GPU and
-  compositor threads, GC, and the longest renderer tasks.
+  compositor threads, GC, and the longest renderer tasks;
+- JS↔WASM boundary crossings per frame (#1256, `wasmBoundaryPerFrame`): calls into the module's exports,
+  its calls into JS imports, and the bytes the bindings copied in and out, with the most called exports
+  (`wasmBoundary`).
+
+Runtime budgets (#1256): `--budgets .performance/runtime.json --baseline .performance/browser-baseline.json`
+checks the `browser` section's scenarios. A ceiling crossed exits non-zero after the report; a metric worse
+than the baseline by the section's ratio prints a warning. `--write-baseline` records the measured values.
+Hosted CI runners have no GPU, so this runs on a GPU machine:
+    uv run --with playwright python scripts/profile-browser.py --no-sweep \
+        --budgets .performance/runtime.json --baseline .performance/browser-baseline.json
 
 `requestAnimationFrame` intervals are frame pacing, not GPU time; they are reported as such.
 
@@ -60,6 +70,8 @@ import time
 from pathlib import Path
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeout, expect, sync_playwright
+
+import runtime_budget
 
 ROOT = Path(__file__).resolve().parents[1]
 ANGLE_ARGS = {
@@ -340,6 +352,10 @@ def summarize(sample, seconds):
         "worstCpuFrames": [{"ms": round(f["end"] - f["start"], 1), "render": round(f["phases"]["render"], 1),
                             "simulation": round(f["phases"]["simulation"], 1), "ticks": f["ticks"], "created": f["created"]}
                            for f in sorted(frames, key=lambda f: f["start"] - f["end"])[:5]],
+        # JS↔WASM boundary crossings per frame (#1256): export calls, the module's calls into JS imports (JS values
+        # built or read for Rust) and the bytes the bindings copied in and out. Absent before the page counted them.
+        "wasmBoundaryPerFrame": {key: dist([f["wasm"][key] for f in frames if "wasm" in f])
+                                 for key in ("calls", "imports", "bytesIn", "bytesOut")},
         "framesCreatingResources": sum(1 for f in frames if f["created"]["geometries"] or f["created"]["materials"] or f["created"]["objects"]),
         "ticksPerFrame": dist([f["ticks"] for f in frames]),
         "nodes": pct([f["nodes"] for f in frames], 50),
@@ -633,7 +649,15 @@ def main():
                         help="profile the Battle Royale practice arena (#552) instead of Greyhaven")
     parser.add_argument("--angle", choices=sorted(ANGLE_ARGS), default="vulkan",
                         help="ANGLE backend (default vulkan; gl needs a display, headless it falls back to software)")
+    parser.add_argument("--budgets", type=Path,
+                        help="check the scenarios against this runtime budget file's browser section "
+                             "(.performance/runtime.json, #1256): a ceiling crossed exits non-zero")
+    parser.add_argument("--baseline", type=Path,
+                        help="with --budgets, warn on regressions against these values (.performance/browser-baseline.json)")
+    parser.add_argument("--write-baseline", type=Path, help="with --budgets, write the measured values here as a baseline")
     args = parser.parse_args()
+    if args.budgets and args.activity:
+        parser.error("--budgets covers the Greyhaven scenarios; leave out --activity")
     gpu_args = ["--enable-gpu", *ANGLE_ARGS[args.angle], "--ignore-gpu-blocklist"]
     # The arena's overview: the whole fortress from above its south side.
     overview = ((0, 70, -150), (0, 0, 0)) if args.activity else "vale"
@@ -688,6 +712,9 @@ def main():
         for name, viewpoint in views:
             report["scenarios"][name] = view(session, viewpoint, args.seconds)
         report["pageErrors"] = session.errors
+        # The exports called most since the module was instantiated (#1256): what each frame's crossings are.
+        totals = session.page.evaluate("window.__valeProfile.wasmBoundary?.() ?? null")
+        report["wasmBoundary"] = totals and {"counted": totals["counted"], "topExports": totals["exports"][:20]}
         session.close()
         if args.fill_test:
             report["fillTest"] = fill_test(browser, url, args, report["scenarios"])
@@ -706,11 +733,25 @@ def main():
         browser.close()
     report["loadAverageAtEnd"] = [round(x, 1) for x in os.getloadavg()]
     server.shutdown()
+    failed = False
+    if args.budgets:
+        # Runtime budgets (#1256): a ceiling crossed fails the run, a regression against the baseline warns.
+        budgets = json.loads(args.budgets.read_text())
+        result = runtime_budget.check(budgets, "browser", report["scenarios"], runtime_budget.load_baseline(args.baseline))
+        report["budgets"] = {"file": str(args.budgets), "baseline": str(args.baseline) if args.baseline else None, **result}
+        failed = bool(result["errors"])
+        if args.write_baseline:
+            document = runtime_budget.values_document("browser", result, renderer=report["display"].get("renderer"),
+                                                      viewport=report["display"]["viewport"], browser=report["browser"]["version"])
+            args.write_baseline.parent.mkdir(parents=True, exist_ok=True)
+            args.write_baseline.write_text(json.dumps(document, indent=2) + "\n")
     text = json.dumps(report, indent=2)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(text)
     print(text)
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
